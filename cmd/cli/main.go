@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"github.com/blackalex1/sentinel-core/pkg/adapter"
 	"github.com/blackalex1/sentinel-core/pkg/ast"
@@ -28,6 +29,8 @@ func main() {
 		handleParse()
 	case "build":
 		handleBuild()
+	case "compile-server":
+		handleCompileServer()
 	case "preset":
 		handlePreset()
 	case "schema":
@@ -264,6 +267,12 @@ func handlePreset() {
 
 	switch subCmd {
 	case "list":
+		if len(os.Args) > 3 && os.Args[3] == "--json" {
+			presets := routing.GetAvailablePresets()
+			bytes, _ := json.MarshalIndent(presets, "", "  ")
+			fmt.Println(string(bytes))
+			return
+		}
 		presets := pm.ListPresets()
 		fmt.Println("Available Routing Presets:")
 		for _, p := range presets {
@@ -319,5 +328,48 @@ func handleSchema() {
 	fmt.Println(string(bytes))
 }
 
+func handleCompileServer() {
+	fs := flag.NewFlagSet("compile-server", flag.ExitOnError)
+	specStr := fs.String("spec", "", "ConfigSpec JSON string")
+	specFile := fs.String("file", "", "ConfigSpec JSON file path")
+	if len(os.Args) > 2 {
+		_ = fs.Parse(os.Args[2:])
+	}
+
+	var rawJSON []byte
+	var err error
+
+	if *specStr != "" {
+		rawJSON = []byte(*specStr)
+	} else if *specFile != "" {
+		rawJSON, err = os.ReadFile(*specFile)
+		if err != nil {
+			fmt.Printf("File error: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		rawJSON, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Printf("Stdin error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	var spec ast.ConfigSpec
+	if err := json.Unmarshal(rawJSON, &spec); err != nil {
+		fmt.Printf("JSON unmarshal error: %v\n", err)
+		os.Exit(1)
+	}
+
+	cfg, err := builder.BuildServerConfig(spec.TargetCore, spec.ServerInbounds, spec.Routing, spec.ClashAPIAddress)
+	if err != nil {
+		fmt.Printf("Build error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println(cfg)
+}
+
 // Suppress unused adapter import if needed
 var _ = adapter.IngestDBNode
+
