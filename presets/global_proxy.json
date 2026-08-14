@@ -1,0 +1,17 @@
+{
+  "id": "global_proxy",
+  "name": "Глобальный прокси",
+  "description": "Весь трафик через прокси, кроме локальной сети",
+  "defaultTarget": "proxy",
+  "rules": [
+    {
+      "order": 1,
+      "name": "Локальная сеть (LAN)",
+      "enabled": true,
+      "target": "direct",
+      "ips": [
+        "geoip:private"
+      ]
+    }
+  ]
+}
