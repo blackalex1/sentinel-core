@@ -37,6 +37,26 @@ func SentinelBuildConfig(specJSON *C.char) *C.char {
 	return C.CString(string(respBytes))
 }
 
+//export SentinelBuildServerConfig
+func SentinelBuildServerConfig(specJSON *C.char) *C.char {
+	goSpecJSON := C.GoString(specJSON)
+
+	var spec ast.ConfigSpec
+	if err := json.Unmarshal([]byte(goSpecJSON), &spec); err != nil {
+		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(errResp))
+	}
+
+	cfg, err := builder.BuildServerConfig(spec.TargetCore, spec.ServerInbounds, spec.Routing, spec.ClashAPIAddress)
+	if err != nil {
+		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(errResp))
+	}
+
+	respBytes, _ := json.Marshal(map[string]string{"config": cfg})
+	return C.CString(string(respBytes))
+}
+
 //export SentinelParseURI
 func SentinelParseURI(rawURI *C.char) *C.char {
 	goURI := C.GoString(rawURI)
