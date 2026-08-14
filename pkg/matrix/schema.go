@@ -4,6 +4,7 @@ import (
 	"strings"
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 	"github.com/blackalex1/sentinel-core/pkg/i18n"
+	"github.com/blackalex1/sentinel-core/pkg/routing"
 )
 
 // ProtocolCapability defines allowed configurations for a specific protocol in the UI
@@ -42,6 +43,7 @@ type ConfigurationSchema struct {
 	Engines         []EngineOption                `json:"engines"`
 	Protocols       map[string]ProtocolCapability `json:"protocols"`
 	SniffingOptions []SniffingOption              `json:"sniffingOptions"`
+	Presets         []routing.PresetSummary       `json:"presets"`
 }
 
 // GetConfigurationSchema returns the dynamic schema localized for the requested language ("ru" / "en")
@@ -163,6 +165,7 @@ func GetConfigurationSchema(lang string) *ConfigurationSchema {
 				{ID: "quic", DisplayName: "QUIC (Initial SNI)", Description: "Extracts domain names from QUIC initial handshakes", Default: true},
 				{ID: "fakedns", DisplayName: "FakeDNS (Domain restoration)", Description: "Restores original domains from FakeDNS IP pool", Default: true},
 			},
+			Presets: routing.GetAvailablePresets(),
 		}
 	}
 
@@ -275,5 +278,6 @@ func GetConfigurationSchema(lang string) *ConfigurationSchema {
 			{ID: "quic", DisplayName: "QUIC (Анализ SNI)", Description: "Извлечение имени домена из начального QUIC пакета", Default: true},
 			{ID: "fakedns", DisplayName: "FakeDNS (Восстановление домена)", Description: "Восстановление доменного имени из пула FakeDNS", Default: true},
 		},
+		Presets: routing.GetAvailablePresets(),
 	}
 }
