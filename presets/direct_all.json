@@ -1,0 +1,7 @@
+{
+  "id": "direct_all",
+  "name": "Прямое подключение",
+  "description": "Прямой доступ для всего трафика (без прокси)",
+  "defaultTarget": "direct",
+  "rules": []
+}

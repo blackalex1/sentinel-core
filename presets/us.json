@@ -1,0 +1,13 @@
+{
+  "id": "us",
+  "name": "Сайты США (US)",
+  "description": "Все IP и сайты США",
+  "defaultTarget": "block",
+  "domains": [
+    "geosite:category-us-gov",
+    "regexp:.*\\.us$"
+  ],
+  "ips": [
+    "geoip:us"
+  ]
+}
