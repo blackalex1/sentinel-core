@@ -1,0 +1,34 @@
+# Binaries and compiled files
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+*.out
+
+# Large geo data binaries (should be downloaded in runtime / release)
+*.dat
+data/*.dat
+bin/*.dat
+
+# Test artifacts and temporary files
+*.tmp
+*.log
+tests/temp_*
+sentinel_test_*
+
+# IDEs and OS files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Go test coverage
+*.coverprofile
+coverage.out
+coverage.html

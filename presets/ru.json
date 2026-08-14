@@ -1,0 +1,26 @@
+{
+  "id": "ru",
+  "name": "Сайты России (RU)",
+  "description": "Все IP и сайты России",
+  "defaultTarget": "direct",
+  "domains": [
+    "geosite:ru",
+    "geosite:category-gov-ru",
+    "geosite:yandex",
+    "geosite:vk",
+    "geosite:mailru",
+    "geosite:sberbank",
+    "geosite:tinkoff",
+    "geosite:ozon",
+    "geosite:wildberries",
+    "geosite:2gis",
+    "geosite:avito",
+    "regexp:.*\\.ru$",
+    "regexp:.*\\.su$",
+    "regexp:.*\\.рф$",
+    "regexp:.*\\.xn--p1ai$"
+  ],
+  "ips": [
+    "geoip:ru"
+  ]
+}

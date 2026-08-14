@@ -1,0 +1,113 @@
+package builder
+
+import (
+	"fmt"
+	"github.com/blackalex1/sentinel-core/pkg/ast"
+	"github.com/blackalex1/sentinel-core/pkg/compiler/hysteria"
+	"github.com/blackalex1/sentinel-core/pkg/compiler/singbox"
+	"github.com/blackalex1/sentinel-core/pkg/compiler/xray"
+	"github.com/blackalex1/sentinel-core/pkg/events"
+	"github.com/blackalex1/sentinel-core/pkg/i18n"
+	"github.com/blackalex1/sentinel-core/pkg/matrix"
+	"github.com/blackalex1/sentinel-core/pkg/routing"
+)
+
+// BuildResult contains the compiled JSON config and any warnings emitted during compilation
+type BuildResult struct {
+	TargetCore  ast.TargetCore               `json:"targetCore"`
+	ConfigJSON  string                       `json:"configJson"`
+	Warnings    []matrix.NegotiationWarning  `json:"warnings,omitempty"`
+}
+
+// BuildClientConfig compiles a complete client configuration for the specified target core.
+func BuildClientConfig(spec *ast.ConfigSpec) (*BuildResult, error) {
+	if spec == nil {
+		return nil, fmt.Errorf("config specification cannot be nil")
+	}
+
+	targetCore := spec.TargetCore
+	if targetCore == "" {
+		targetCore = ast.CoreSingBox
+	}
+
+	// If no explicit routing spec provided, use the Sentinel Routing Engine Smart Policy
+	if spec.Routing == nil {
+		engine := routing.NewEngine()
+		spec.Routing = engine.CompilePolicy(routing.DefaultSmartPolicy())
+	}
+
+	var jsonConfig string
+	var warnings []matrix.NegotiationWarning
+	var err error
+
+	// Check if native Hysteria2 is requested but routing table or TUN is required
+	if targetCore == ast.CoreHysteria2 {
+		hasRouting := spec.Routing != nil && len(spec.Routing.Rules) > 0
+		hasTun := spec.ClientInbound != nil && (spec.ClientInbound.Mode == ast.InboundModeDesktopTun || spec.ClientInbound.Mode == ast.InboundModeMobileVpn)
+		hasServerInbounds := len(spec.ServerInbounds) > 0
+
+		if hasRouting || hasTun || hasServerInbounds {
+			if spec.StrictMode {
+				return nil, fmt.Errorf("%s", i18n.TGlobal("HY2_STRICT_REJECT"))
+			}
+			// Auto-switch to Sing-box which natively supports Hysteria 2 + Full Routing Table + TUN
+			targetCore = ast.CoreSingBox
+			warnings = append(warnings, matrix.NegotiationWarning{
+				Feature: matrix.FeatureRouting,
+				Message: i18n.TGlobal("HY2_AUTO_SWITCH_SINGBOX"),
+				Action:  "AUTO_SWITCH_TO_SINGBOX",
+			})
+		}
+	}
+
+	var subWarnings []matrix.NegotiationWarning
+
+	switch targetCore {
+	case ast.CoreSingBox:
+		c := singbox.NewCompiler()
+		jsonConfig, subWarnings, err = c.Compile(spec)
+	case ast.CoreXray:
+		c := xray.NewCompiler()
+		jsonConfig, subWarnings, err = c.Compile(spec)
+	case ast.CoreHysteria2:
+		c := hysteria.NewCompiler()
+		jsonConfig, subWarnings, err = c.Compile(spec)
+	default:
+		return nil, fmt.Errorf("unsupported target core: %s", targetCore)
+	}
+	warnings = append(warnings, subWarnings...)
+
+	if err != nil {
+		// Emit fatal error event to global bus
+		events.GetGlobalBus().Publish(events.NewEvent(
+			events.CategoryCompileWarning,
+			events.SeverityError,
+			events.CodeInvalidConfigSyntax,
+			fmt.Sprintf("Compilation failed for core '%s': %v", targetCore, err),
+			map[string]interface{}{"targetCore": targetCore},
+			events.ActionNone,
+		))
+		return nil, err
+	}
+
+	// Emit any negotiation warnings to global bus
+	for _, w := range warnings {
+		events.GetGlobalBus().Publish(events.NewEvent(
+			events.CategoryCompileWarning,
+			events.SeverityWarn,
+			events.CodeFeatureDowngrade,
+			w.Message,
+			map[string]interface{}{
+				"feature": w.Feature,
+				"action":  w.Action,
+			},
+			events.ActionNone,
+		))
+	}
+
+	return &BuildResult{
+		TargetCore: targetCore,
+		ConfigJSON: jsonConfig,
+		Warnings:   warnings,
+	}, nil
+}

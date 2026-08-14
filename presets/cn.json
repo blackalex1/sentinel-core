@@ -1,0 +1,13 @@
+{
+  "id": "cn",
+  "name": "Сайты Китая (CN)",
+  "description": "Все IP и сайты Китая",
+  "defaultTarget": "block",
+  "domains": [
+    "geosite:cn",
+    "regexp:.*\\.cn$"
+  ],
+  "ips": [
+    "geoip:cn"
+  ]
+}

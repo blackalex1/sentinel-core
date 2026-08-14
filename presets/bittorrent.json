@@ -1,0 +1,17 @@
+{
+  "id": "bittorrent",
+  "name": "BitTorrent трафик",
+  "description": "Торрент-трафик и трекеры",
+  "defaultTarget": "block",
+  "protocols": [
+    "bittorrent"
+  ],
+  "domains": [
+    "domain:torrent",
+    "domain:tracker",
+    "domain:peerexchange",
+    "keyword:torrent",
+    "keyword:tracker",
+    "geosite:torrentz"
+  ]
+}
