@@ -70,6 +70,23 @@ func SentinelParseURI(rawURI *C.char) *C.char {
 	return C.CString(string(jsonBytes))
 }
 
+//export SentinelGenerateURI
+func SentinelGenerateURI(profileJSON *C.char) *C.char {
+	goJSON := C.GoString(profileJSON)
+	var p ast.ServerProfile
+	if err := json.Unmarshal([]byte(goJSON), &p); err != nil {
+		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(errResp))
+	}
+	uri, err := parser.GenerateURI(&p)
+	if err != nil {
+		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(errResp))
+	}
+	respBytes, _ := json.Marshal(map[string]string{"uri": uri})
+	return C.CString(string(respBytes))
+}
+
 //export SentinelListPresets
 func SentinelListPresets() *C.char {
 	presets := routing.GetAvailablePresets()

@@ -27,6 +27,8 @@ func main() {
 	switch command {
 	case "parse":
 		handleParse()
+	case "generate":
+		handleGenerate()
 	case "build":
 		handleBuild()
 	case "compile-server":
@@ -370,6 +372,42 @@ func handleCompileServer() {
 	fmt.Println(cfg)
 }
 
+func handleGenerate() {
+	fs := flag.NewFlagSet("generate", flag.ExitOnError)
+	profileStr := fs.String("profile", "", "ServerProfile JSON string")
+	if len(os.Args) > 2 {
+		_ = fs.Parse(os.Args[2:])
+	}
+
+	var rawJSON []byte
+	var err error
+
+	if *profileStr != "" {
+		rawJSON = []byte(*profileStr)
+	} else {
+		rawJSON, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Printf("Stdin error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	var p ast.ServerProfile
+	if err := json.Unmarshal(rawJSON, &p); err != nil {
+		fmt.Printf("JSON error: %v\n", err)
+		os.Exit(1)
+	}
+
+	uri, err := parser.GenerateURI(&p)
+	if err != nil {
+		fmt.Printf("Generate error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println(uri)
+}
+
 // Suppress unused adapter import if needed
 var _ = adapter.IngestDBNode
+
 
