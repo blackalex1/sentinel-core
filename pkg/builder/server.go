@@ -9,9 +9,19 @@ import (
 )
 
 // BuildServerConfig compiles a complete node server configuration for Sentinel-Panel.
-func BuildServerConfig(targetCore ast.TargetCore, serverInbounds []ast.ServerInboundSpec, routing *ast.RoutingSpec, clashAPI string) (string, error) {
+func BuildServerConfig(targetCore ast.TargetCore, serverInbounds []ast.ServerInboundSpec, routing *ast.RoutingSpec, clashAPI string, logPathAndLevel ...string) (string, error) {
 	if targetCore == "" {
 		targetCore = ast.CoreSingBox
+	}
+
+	logPath := ""
+	if len(logPathAndLevel) > 0 {
+		logPath = logPathAndLevel[0]
+	}
+
+	lvl := "info"
+	if len(logPathAndLevel) > 1 && logPathAndLevel[1] != "" {
+		lvl = logPathAndLevel[1]
 	}
 
 	if targetCore == ast.CoreHysteria2 {
@@ -24,7 +34,7 @@ func BuildServerConfig(targetCore ast.TargetCore, serverInbounds []ast.ServerInb
 		if routing != nil && len(routing.Rules) > 0 {
 			forwardPort = 20808
 		}
-		return sc.CompileServer(serverInbounds[0], forwardPort)
+		return sc.CompileServer(serverInbounds[0], forwardPort, lvl)
 	}
 
 	spec := &ast.ConfigSpec{
@@ -32,7 +42,8 @@ func BuildServerConfig(targetCore ast.TargetCore, serverInbounds []ast.ServerInb
 		ServerInbounds:  serverInbounds,
 		Routing:         routing,
 		ClashAPIAddress: clashAPI,
-		LogLevel:        "info",
+		LogLevel:        lvl,
+		LogPath:         logPath,
 	}
 
 	if targetCore == ast.CoreXray {

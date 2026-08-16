@@ -1,33 +1,73 @@
 package routing
 
+import (
+	"strings"
+	"github.com/blackalex1/sentinel-core/pkg/i18n"
+)
+
 // PresetSummary represents metadata of a routing preset loaded dynamically from JSON
 type PresetSummary struct {
 	ID            string `json:"id"`
+	Type          string `json:"type,omitempty"` // "quick_rule" or "template"
 	Name          string `json:"name"`
 	Description   string `json:"description"`
 	DefaultTarget string `json:"defaultTarget"`
 	RulesCount    int    `json:"rulesCount"`
 }
 
-// GetAvailablePresets returns the list of all dynamically loaded presets directly from the JSON files (single source of truth)
-func GetAvailablePresets() []PresetSummary {
+// GetAvailablePresetsLocalized returns the list of all dynamically loaded presets localized for the specified language ("ru", "en")
+func GetAvailablePresetsLocalized(lang string) []PresetSummary {
 	pm := GetPresetManager()
 	presets := pm.ListPresets()
+	loc := i18n.Locale(strings.ToLower(lang))
+	if loc != i18n.LocaleEN && loc != i18n.LocaleRU {
+		loc = i18n.GetLocale()
+	}
+
 	list := make([]PresetSummary, 0, len(presets))
 	for _, p := range presets {
 		count := len(p.Rules)
 		if count == 0 {
 			count = 1
 		}
+
+		pType := p.Type
+		if pType == "" {
+			if p.ID == "global_proxy" || p.ID == "direct_all" {
+				pType = "template"
+			} else {
+				pType = "quick_rule"
+			}
+		}
+
+		nameKey := "PRESET_" + strings.ToUpper(p.ID) + "_NAME"
+		descKey := "PRESET_" + strings.ToUpper(p.ID) + "_DESC"
+
+		localizedName := i18n.T(loc, nameKey)
+		if localizedName == nameKey {
+			localizedName = p.Name
+		}
+
+		localizedDesc := i18n.T(loc, descKey)
+		if localizedDesc == descKey {
+			localizedDesc = p.Description
+		}
+
 		list = append(list, PresetSummary{
 			ID:            p.ID,
-			Name:          p.Name,
-			Description:   p.Description,
+			Type:          pType,
+			Name:          localizedName,
+			Description:   localizedDesc,
 			DefaultTarget: p.DefaultTarget,
 			RulesCount:    count,
 		})
 	}
 	return list
+}
+
+// GetAvailablePresets returns the list of all dynamically loaded presets directly using the current global locale
+func GetAvailablePresets() []PresetSummary {
+	return GetAvailablePresetsLocalized(string(i18n.GetLocale()))
 }
 
 // BuildTableFromPresets constructs a prioritized RoutingTable from an active list of preset IDs and optional target overrides.

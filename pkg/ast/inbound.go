@@ -62,8 +62,21 @@ type ServerInboundSpec struct {
 	Multiplex     bool                  `json:"multiplex,omitempty"`
 
 	// Hysteria 2 specific server options
-	ObfsType      string `json:"obfsType,omitempty"`
-	ObfsPassword  string `json:"obfsPassword,omitempty"`
-	BandwidthUp   string `json:"bandwidthUp,omitempty"`
-	BandwidthDown string `json:"bandwidthDown,omitempty"`
+	PortHop        string `json:"portHop,omitempty"`
+	AdminPort      int    `json:"adminPort,omitempty"`
+	AuthURL        string `json:"authUrl,omitempty"`
+	ObfsType       string `json:"obfsType,omitempty"`
+	ObfsPassword   string `json:"obfsPassword,omitempty"`
+	BandwidthUp    string `json:"bandwidthUp,omitempty"`
+	BandwidthDown  string `json:"bandwidthDown,omitempty"`
+	MasqType       string `json:"masqType,omitempty"`
+	MasqValue      string `json:"masqValue,omitempty"`
+	MasqStatusCode int    `json:"masqStatusCode,omitempty"`
+	SocksPort      int                      `json:"socksPort,omitempty"`
+	SocksUsername  string                   `json:"socksUsername,omitempty"`
+	SocksPassword  string                   `json:"socksPassword,omitempty"`
+	Fallbacks      []map[string]interface{} `json:"fallbacks,omitempty"`
+	RawSettings    map[string]interface{}   `json:"settings,omitempty"`
+	StreamSettings map[string]interface{}   `json:"streamSettings,omitempty"`
+	Sniffing       map[string]interface{}   `json:"sniffing,omitempty"`
 }

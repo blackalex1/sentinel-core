@@ -72,7 +72,7 @@ func TestPresetManager_RegexCompilation(t *testing.T) {
 			if d == "regexp:.*\\.ru$" {
 				hasRegexRU = true
 			}
-			if d == "geosite:ru" {
+			if d == "geosite:category-ru" || d == "geosite:ru" {
 				hasGeositeRU = true
 			}
 		}
@@ -87,7 +87,7 @@ func TestPresetManager_RegexCompilation(t *testing.T) {
 		t.Errorf("expected regexp:.*\\.ru$ in compiled ru rules")
 	}
 	if !hasGeositeRU {
-		t.Errorf("expected geosite:ru in compiled ru rules")
+		t.Errorf("expected geosite:category-ru in compiled ru rules")
 	}
 	if !hasGeoIPRU {
 		t.Errorf("expected geoip:ru in compiled ru rules")
