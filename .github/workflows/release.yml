@@ -29,8 +29,11 @@ jobs:
           go-version: '1.24'
           cache: false
 
-      - name: Run Full Test Suite
-        run: go test -v -race ./...
+      - name: Run Full Test Suite (Multi-threaded & Parallel)
+        run: |
+          CPU_COUNT=$(nproc 2>/dev/null || echo 4)
+          echo "Running test suite with ${CPU_COUNT} parallel worker threads..."
+          go test -v -race -p "${CPU_COUNT}" -parallel "${CPU_COUNT}" ./...
 
   # 2. Multi-platform cross-compilation (Server, Desktop, Mobile/Android) and release publishing
   build-and-release:
