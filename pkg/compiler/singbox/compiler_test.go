@@ -645,3 +645,46 @@ func TestSingboxCompiler_ShadowsocksInbounds(t *testing.T) {
 	}
 }
 
+func TestSingboxCompiler_Hysteria2PortHoppingOutbound(t *testing.T) {
+	c := NewCompiler()
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreSingBox,
+		Routing: &ast.RoutingSpec{
+			Outbounds: []map[string]interface{}{
+				{
+					"tag":      "hy2-relay",
+					"protocol": "hysteria2",
+					"settings": map[string]interface{}{
+						"address":  "cybergrid.servequake.com",
+						"port":     "8443-20443",
+						"password": "secret_password_123",
+					},
+					"streamSettings": map[string]interface{}{
+						"security": "tls",
+						"tlsSettings": map[string]interface{}{
+							"serverName":    "download.visualstudio.microsoft.com",
+							"allowInsecure": true,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile Hysteria 2 outbound: %v", err)
+	}
+
+	if !strings.Contains(cfg, `"8443:20443"`) {
+		t.Errorf("expected server_ports with 8443:20443, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"secret_password_123"`) {
+		t.Errorf("expected password secret_password_123, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"download.visualstudio.microsoft.com"`) {
+		t.Errorf("expected server_name, got:\n%s", cfg)
+	}
+}
+
+

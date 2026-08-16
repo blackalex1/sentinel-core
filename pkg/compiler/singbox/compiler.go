@@ -72,81 +72,9 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 				outbounds = append(outbounds, ob)
 				continue
 			}
-			proto, _ := ob["protocol"].(string)
-			if proto == "" {
-				proto = "freedom"
-			}
-			switch proto {
-			case "freedom", "direct":
-				outbounds = append(outbounds, map[string]interface{}{"type": "direct", "tag": tag})
-			case "blackhole", "block":
-				outbounds = append(outbounds, map[string]interface{}{"type": "block", "tag": tag})
-			case "hysteria2", "hysteria":
-				hyOb := map[string]interface{}{
-					"type": "hysteria2",
-					"tag":  tag,
-				}
-				var sMap map[string]interface{}
-				if sm, ok := ob["settings"].(map[string]interface{}); ok {
-					sMap = sm
-				} else if smStr, ok := ob["settings"].(string); ok && smStr != "" {
-					_ = json.Unmarshal([]byte(smStr), &sMap)
-				}
-				if sMap != nil {
-					if addr, ok := sMap["address"].(string); ok {
-						hyOb["server"] = addr
-					}
-					if port, ok := sMap["port"].(float64); ok {
-						hyOb["server_port"] = int(port)
-					} else if port, ok := sMap["port"].(int); ok {
-						hyOb["server_port"] = port
-					}
-					if pwd, ok := sMap["password"].(string); ok {
-						hyOb["password"] = pwd
-					}
-					if obfsType, ok := sMap["obfs_type"].(string); ok && obfsType != "" {
-						obfsMap := map[string]interface{}{
-							"type": obfsType,
-						}
-						if obfsPwd, ok := sMap["obfs_password"].(string); ok && obfsPwd != "" {
-							obfsMap["password"] = obfsPwd
-						}
-						hyOb["obfs"] = obfsMap
-					}
-				}
-				tlsObj := map[string]interface{}{
-					"enabled": true,
-				}
-				var tsMap map[string]interface{}
-				if tsm, ok := ob["stream_settings"].(map[string]interface{}); ok {
-					tsMap = tsm
-				} else if tsm, ok := ob["streamSettings"].(map[string]interface{}); ok {
-					tsMap = tsm
-				} else if tsmStr, ok := ob["stream_settings"].(string); ok && tsmStr != "" {
-					_ = json.Unmarshal([]byte(tsmStr), &tsMap)
-				} else if tsmStr, ok := ob["streamSettings"].(string); ok && tsmStr != "" {
-					_ = json.Unmarshal([]byte(tsmStr), &tsMap)
-				}
-				if tsMap != nil {
-					if tlsSettings, ok := tsMap["tlsSettings"].(map[string]interface{}); ok {
-						if sn, ok := tlsSettings["serverName"].(string); ok && sn != "" {
-							tlsObj["server_name"] = sn
-						}
-						if insec, ok := tlsSettings["allowInsecure"].(bool); ok {
-							tlsObj["insecure"] = insec
-						}
-					}
-				}
-				if _, ok := tlsObj["server_name"]; !ok {
-					if srv, ok := hyOb["server"].(string); ok && srv != "" && !strings.Contains(srv, ":") {
-						tlsObj["server_name"] = srv
-					}
-					tlsObj["insecure"] = true
-				}
-				hyOb["tls"] = tlsObj
-				outbounds = append(outbounds, hyOb)
-			default:
-				outbounds = append(outbounds, map[string]interface{}{"type": "direct", "tag": tag})
+			outboundObj := CompileRawOutboundToSingbox(ob)
+			if outboundObj != nil {
+				outbounds = append(outbounds, outboundObj)
 			}
 		}
 	}
