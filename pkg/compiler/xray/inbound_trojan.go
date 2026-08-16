@@ -2,6 +2,7 @@ package xray
 
 import (
 	"github.com/blackalex1/sentinel-core/pkg/ast"
+	"github.com/blackalex1/sentinel-core/pkg/crypto"
 )
 
 // buildXrayTrojanInbound compiles an ast.ServerInboundSpec into an Xray Trojan inbound configuration.
@@ -58,7 +59,7 @@ func buildXrayTrojanInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 		if rawList, ok := settings["clients"].([]interface{}); !ok || len(rawList) == 0 {
 			settings["clients"] = []map[string]interface{}{
 				{
-					"password": "default-trojan-password",
+					"password": crypto.GenerateRandomPassword(16),
 					"email":    "default",
 				},
 			}
