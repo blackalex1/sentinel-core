@@ -64,9 +64,16 @@ func buildXrayShadowsocksInbound(sb *ast.ServerInboundSpec) map[string]interface
 			}
 		}
 	}
-	if pwd != "" {
-		settings["password"] = pwd
+	if pwd == "" {
+		if strings.HasPrefix(method, "2022-blake3-aes-128") {
+			pwd = "AAAAAAAAAAAAAAAAAAAAAA=="
+		} else if strings.HasPrefix(method, "2022-blake3-aes-256") || strings.HasPrefix(method, "2022-blake3-chacha20") {
+			pwd = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+		} else {
+			pwd = "default-shadowsocks-password"
+		}
 	}
+	settings["password"] = pwd
 
 	// 3. For classic AEAD methods (non-2022), Xray expects password in root and no clients array
 	if !strings.HasPrefix(method, "2022-") {
