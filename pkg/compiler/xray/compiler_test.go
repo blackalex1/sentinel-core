@@ -501,6 +501,18 @@ func TestXrayCompiler_LogLevelAndLogPath(t *testing.T) {
 	if !strings.Contains(cfgDebug, `"loglevel": "debug"`) {
 		t.Errorf("expected loglevel debug: %s", cfgDebug)
 	}
+
+	// Test AccessLog and ErrorLog
+	specCustomLogs := &ast.ConfigSpec{
+		TargetCore: ast.CoreXray,
+		LogLevel:   "error",
+		AccessLog:  "none",
+		ErrorLog:   "/var/log/xray/error.log",
+	}
+	cfgCustomLogs, _, _ := c.Compile(specCustomLogs)
+	if !strings.Contains(cfgCustomLogs, `"access": "none"`) || !strings.Contains(cfgCustomLogs, `"/var/log/xray/error.log"`) {
+		t.Errorf("expected access none and custom error log: %s", cfgCustomLogs)
+	}
 }
 
 func TestXrayCompiler_AdditionalBranches(t *testing.T) {
