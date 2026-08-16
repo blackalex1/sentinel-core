@@ -658,6 +658,12 @@ func TestSingboxCompiler_Hysteria2PortHoppingOutbound(t *testing.T) {
 						"address":  "cybergrid.servequake.com",
 						"port":     "8443-20443",
 						"password": "secret_password_123",
+						"obfs": map[string]interface{}{
+							"type": "salamander",
+							"salamander": map[string]interface{}{
+								"password": "salamander_secret",
+							},
+						},
 					},
 					"streamSettings": map[string]interface{}{
 						"security": "tls",
@@ -684,6 +690,12 @@ func TestSingboxCompiler_Hysteria2PortHoppingOutbound(t *testing.T) {
 	}
 	if !strings.Contains(cfg, `"download.visualstudio.microsoft.com"`) {
 		t.Errorf("expected server_name, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"salamander_secret"`) {
+		t.Errorf("expected obfs password salamander_secret, got:\n%s", cfg)
+	}
+	if strings.Contains(cfg, `"salamander": {`) {
+		t.Errorf("sing-box obfs should be flat and not contain nested salamander struct, got:\n%s", cfg)
 	}
 }
 
