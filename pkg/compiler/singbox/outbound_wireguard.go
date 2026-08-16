@@ -8,17 +8,21 @@ import (
 
 // buildWireGuardOutbound compiles an ast.ServerProfile into a Sing-box WireGuard outbound object.
 func buildWireGuardOutbound(tag string, node *ast.ServerProfile) (map[string]interface{}, error) {
+	pubKey := node.PeerPublicKey
+	if pubKey == "" {
+		pubKey = node.PublicKey
+	}
 	out := map[string]interface{}{
-		"type":        "wireguard",
-		"tag":         tag,
-		"server":      node.Address,
-		"server_port": node.Port,
-		"private_key": node.PrivateKey,
-		"peer_public_key": node.PublicKey,
+		"type":            "wireguard",
+		"tag":             tag,
+		"server":          node.Address,
+		"server_port":     node.Port,
+		"private_key":     node.PrivateKey,
+		"peer_public_key": pubKey,
 	}
 
-	if node.PresharedKey != "" {
-		out["pre_shared_key"] = node.PresharedKey
+	if node.PreSharedKey != "" {
+		out["pre_shared_key"] = node.PreSharedKey
 	}
 
 	if len(node.LocalAddress) > 0 {

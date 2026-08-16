@@ -1,11 +1,33 @@
 package singbox
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 )
+
+// parseMapOrJSON safely parses a map or JSON string into map[string]interface{}.
+func parseMapOrJSON(val interface{}) map[string]interface{} {
+	if val == nil {
+		return nil
+	}
+	switch v := val.(type) {
+	case map[string]interface{}:
+		return v
+	case string:
+		vTrim := strings.TrimSpace(v)
+		if vTrim == "" || vTrim == "{}" {
+			return nil
+		}
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(vTrim), &m); err == nil {
+			return m
+		}
+	}
+	return nil
+}
 
 // buildSingBoxTLS extracts and builds TLS/Reality configuration map from an ast.ServerProfile.
 func buildSingBoxTLS(node *ast.ServerProfile) map[string]interface{} {
