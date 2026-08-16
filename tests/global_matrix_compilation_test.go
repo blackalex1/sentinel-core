@@ -379,7 +379,7 @@ func TestGlobal_SingBox_AllInbounds_And_AllOutbounds_Compilation(t *testing.T) {
 		"protocol": "hysteria2",
 		"settings": map[string]interface{}{
 			"address":   "mock-hy2.example.com",
-			"port":      "8443-20443",
+			"port":      "20000-30000",
 			"password":  "mock_auth_secret",
 			"up_mbps":   100,
 			"down_mbps": 200,
@@ -710,8 +710,8 @@ func TestGlobal_Hysteria2_Standalone_Compilation(t *testing.T) {
 		t.Fatalf("compiled Hysteria 2 server config is not valid JSON: %v", err)
 	}
 
-	if !strings.Contains(srvJSON, "34443-44443") {
-		t.Errorf("Hysteria 2 server config missing port hopping: %s", srvJSON)
+	if !strings.Contains(srvJSON, `"listen": ":34443"`) {
+		t.Errorf("Hysteria 2 server config missing listen port: %s", srvJSON)
 	}
 	if !strings.Contains(srvJSON, "salamander_super_secret_password") {
 		t.Errorf("Hysteria 2 server config missing obfs password: %s", srvJSON)

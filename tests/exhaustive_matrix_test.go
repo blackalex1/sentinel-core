@@ -484,7 +484,7 @@ func TestExhaustive_Hysteria2_Permutations(t *testing.T) {
 		{"", ""},
 	}
 
-	portOptions := []string{"443", "40000-50000", "8443:20443"}
+	portOptions := []string{"443", "40000-50000", "20000:30000"}
 	bandwidths := []struct {
 		up   string
 		down string

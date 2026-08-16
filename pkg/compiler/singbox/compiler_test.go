@@ -655,8 +655,8 @@ func TestSingboxCompiler_Hysteria2PortHoppingOutbound(t *testing.T) {
 					"tag":      "hy2-relay",
 					"protocol": "hysteria2",
 					"settings": map[string]interface{}{
-						"address":  "relay.example.com",
-						"port":     "8443-20443",
+						"address":  "example.com",
+						"port":     "20000-30000",
 						"password": "secret_password_123",
 						"obfs": map[string]interface{}{
 							"type": "salamander",
@@ -682,8 +682,8 @@ func TestSingboxCompiler_Hysteria2PortHoppingOutbound(t *testing.T) {
 		t.Fatalf("failed to compile Hysteria 2 outbound: %v", err)
 	}
 
-	if !strings.Contains(cfg, `"8443:20443"`) {
-		t.Errorf("expected server_ports with 8443:20443, got:\n%s", cfg)
+	if !strings.Contains(cfg, `"20000:30000"`) {
+		t.Errorf("expected server_ports with 20000:30000, got:\n%s", cfg)
 	}
 	if !strings.Contains(cfg, `"secret_password_123"`) {
 		t.Errorf("expected password secret_password_123, got:\n%s", cfg)
