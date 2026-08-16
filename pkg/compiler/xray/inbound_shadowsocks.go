@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/blackalex1/sentinel-core/pkg/ast"
+	"github.com/blackalex1/sentinel-core/pkg/crypto"
 )
 
 // buildXrayShadowsocksInbound compiles an ast.ServerInboundSpec into an Xray Shadowsocks inbound configuration.
@@ -65,13 +66,7 @@ func buildXrayShadowsocksInbound(sb *ast.ServerInboundSpec) map[string]interface
 		}
 	}
 	if pwd == "" {
-		if strings.HasPrefix(method, "2022-blake3-aes-128") {
-			pwd = "AAAAAAAAAAAAAAAAAAAAAA=="
-		} else if strings.HasPrefix(method, "2022-blake3-aes-256") || strings.HasPrefix(method, "2022-blake3-chacha20") {
-			pwd = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-		} else {
-			pwd = "default-shadowsocks-password"
-		}
+		pwd = crypto.GenerateShadowsocksKey(method)
 	}
 	settings["password"] = pwd
 

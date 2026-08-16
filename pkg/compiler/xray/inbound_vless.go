@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/blackalex1/sentinel-core/pkg/ast"
+	"github.com/blackalex1/sentinel-core/pkg/crypto"
 )
 
 // buildXrayVLESSInbound compiles an ast.ServerInboundSpec into an Xray VLESS inbound configuration.
@@ -90,7 +91,7 @@ func buildXrayVLESSInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 		if rawList, ok := settings["clients"].([]interface{}); !ok || len(rawList) == 0 {
 			settings["clients"] = []map[string]interface{}{
 				{
-					"id":    "00000000-0000-0000-0000-000000000000",
+					"id":    crypto.GenerateRandomUUID(),
 					"email": "default",
 				},
 			}
