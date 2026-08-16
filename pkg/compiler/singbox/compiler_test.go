@@ -699,4 +699,69 @@ func TestSingboxCompiler_Hysteria2PortHoppingOutbound(t *testing.T) {
 	}
 }
 
+func TestSingboxCompiler_FallbackURLTestGroup(t *testing.T) {
+	c := NewCompiler()
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreSingBox,
+		Routing: &ast.RoutingSpec{
+			Outbounds: []map[string]interface{}{
+				{
+					"tag":      "hy2-out",
+					"protocol": "hysteria2",
+					"settings": map[string]interface{}{
+						"address":               "hy2.example.com",
+						"port":                  443,
+						"password":              "pass123",
+						"fallback_outbound":     "vless-backup",
+						"health_check_url":      "https://www.gstatic.com/generate_204",
+						"health_check_interval": 15,
+						"fallback_strategy":     "priority",
+					},
+					"streamSettings": map[string]interface{}{
+						"security": "tls",
+						"tlsSettings": map[string]interface{}{
+							"serverName": "hy2.example.com",
+						},
+					},
+				},
+				{
+					"tag":      "vless-backup",
+					"protocol": "vless",
+					"settings": map[string]interface{}{
+						"vnext": []interface{}{
+							map[string]interface{}{
+								"address": "vless.example.com",
+								"port":    443,
+								"users": []interface{}{
+									map[string]interface{}{
+										"id": "e99dc462-8409-4e45-bf28-665544332211",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile fallback config: %v", err)
+	}
+
+	if !strings.Contains(cfg, `"type": "urltest"`) {
+		t.Errorf("expected urltest group in config, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"tag": "hy2-out"`) {
+		t.Errorf("expected urltest group with tag hy2-out, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"hy2-out-primary"`) {
+		t.Errorf("expected hy2-out-primary node tag, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"vless-backup"`) {
+		t.Errorf("expected vless-backup in outbounds list, got:\n%s", cfg)
+	}
+}
+
 

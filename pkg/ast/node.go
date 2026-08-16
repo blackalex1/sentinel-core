@@ -110,6 +110,12 @@ type ServerProfile struct {
 	MTU           int      `json:"mtu,omitempty"`
 	ReservedBytes []int    `json:"reservedBytes,omitempty"` // e.g. [0, 0, 0]
 
+	// Fallback / URLTest Group parameters
+	BackupOutbounds     []string `json:"backupOutbounds,omitempty"`
+	FallbackStrategy    string   `json:"fallbackStrategy,omitempty"` // priority, least_ping, load_balance
+	HealthCheckURL      string   `json:"healthCheckUrl,omitempty"`
+	HealthCheckInterval int      `json:"healthCheckInterval,omitempty"`
+
 	// Dynamic extra parameters
 	Extra map[string]interface{} `json:"extra,omitempty"`
 }
