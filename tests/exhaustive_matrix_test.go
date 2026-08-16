@@ -88,9 +88,14 @@ func TestExhaustive_Shadowsocks_Ciphers_And_Networks(t *testing.T) {
 	singboxBin := getBinPath("../../panel/bin/sing-box.exe")
 	xrayBin := getBinPath("../../panel/bin/xray.exe")
 
+	portCounter := 31000
 	for _, c := range ciphers {
 		for _, net := range networks {
 			testName := fmt.Sprintf("%s_net_%s", c.cipher, net)
+			sbPort := portCounter
+			xrayPort := portCounter + 1
+			portCounter += 2
+
 			t.Run(testName, func(t *testing.T) {
 				// 1. Sing-box Outbound
 				sbNode := &ast.ServerProfile{
@@ -111,7 +116,7 @@ func TestExhaustive_Shadowsocks_Ciphers_And_Networks(t *testing.T) {
 
 				sbInbound := ast.ServerInboundSpec{
 					Tag:      "ss-in",
-					Port:     30050,
+					Port:     sbPort,
 					Protocol: "shadowsocks",
 					RawSettings: map[string]interface{}{
 						"method":   c.cipher,
@@ -160,7 +165,7 @@ func TestExhaustive_Shadowsocks_Ciphers_And_Networks(t *testing.T) {
 
 				xrayInbound := ast.ServerInboundSpec{
 					Tag:      "ss-in",
-					Port:     30051,
+					Port:     xrayPort,
 					Protocol: "shadowsocks",
 					RawSettings: map[string]interface{}{
 						"method":   c.cipher,

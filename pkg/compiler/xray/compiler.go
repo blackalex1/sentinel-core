@@ -162,44 +162,60 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 			outbounds = append(outbounds, xrayOb)
 
 			if settingsMap != nil {
+				var backups []string
 				if backupsRaw, ok := settingsMap["backup_outbounds"]; ok {
-					var backups []string
 					if bList, ok := backupsRaw.([]interface{}); ok {
 						for _, b := range bList {
-							if bStr, ok := b.(string); ok && bStr != "" {
+							if bStr, ok := b.(string); ok && bStr != "" && bStr != tag {
 								backups = append(backups, bStr)
 							}
 						}
 					} else if bList, ok := backupsRaw.([]string); ok {
-						backups = bList
+						for _, b := range bList {
+							if b != "" && b != tag {
+								backups = append(backups, b)
+							}
+						}
+					}
+				}
+				if fbStr, ok := settingsMap["fallback_outbound"].(string); ok && fbStr != "" && fbStr != tag {
+					found := false
+					for _, b := range backups {
+						if b == fbStr {
+							found = true
+							break
+						}
+					}
+					if !found {
+						backups = append(backups, fbStr)
+					}
+				}
+
+				if len(backups) > 0 {
+					balancerTag := fmt.Sprintf("balancer-%s", tag)
+					backupOutboundMap[tag] = balancerTag
+
+					if pURL, ok := settingsMap["health_check_url"].(string); ok && pURL != "" {
+						probeURL = pURL
+					}
+					if pInt, ok := settingsMap["health_check_interval"].(float64); ok && pInt > 0 {
+						probeInterval = fmt.Sprintf("%ds", int(pInt))
+					} else if pInt, ok := settingsMap["health_check_interval"].(int); ok && pInt > 0 {
+						probeInterval = fmt.Sprintf("%ds", pInt)
 					}
 
-					if len(backups) > 0 {
-						balancerTag := fmt.Sprintf("balancer-%s", tag)
-						backupOutboundMap[tag] = balancerTag
+					observatorySubjects = append(observatorySubjects, tag)
+					observatorySubjects = append(observatorySubjects, backups...)
 
-						if pURL, ok := settingsMap["health_check_url"].(string); ok && pURL != "" {
-							probeURL = pURL
-						}
-						if pInt, ok := settingsMap["health_check_interval"].(float64); ok && pInt > 0 {
-							probeInterval = fmt.Sprintf("%ds", int(pInt))
-						} else if pInt, ok := settingsMap["health_check_interval"].(int); ok && pInt > 0 {
-							probeInterval = fmt.Sprintf("%ds", pInt)
-						}
-
-						observatorySubjects = append(observatorySubjects, tag)
-						observatorySubjects = append(observatorySubjects, backups...)
-
-						fallbackTag := backups[0]
-						balancers = append(balancers, map[string]interface{}{
-							"tag":         balancerTag,
-							"selector":    []string{tag},
-							"fallbackTag": fallbackTag,
-							"strategy": map[string]interface{}{
-								"type": "leastPing",
-							},
-						})
-					}
+					fallbackTag := backups[0]
+					balancers = append(balancers, map[string]interface{}{
+						"tag":         balancerTag,
+						"selector":    []string{tag},
+						"fallbackTag": fallbackTag,
+						"strategy": map[string]interface{}{
+							"type": "leastPing",
+						},
+					})
 				}
 			}
 		}
