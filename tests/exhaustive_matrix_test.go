@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +24,12 @@ import (
 	"github.com/blackalex1/sentinel-core/pkg/crypto"
 	"github.com/blackalex1/sentinel-core/pkg/routing"
 )
+
+var testGlobalPort int32 = 25000
+
+func nextTestPort() int {
+	return int(atomic.AddInt32(&testGlobalPort, 1))
+}
 
 // Helper to generate self-signed cert and key temporary files
 func createTestCertAndKey(t *testing.T) (string, string, func()) {
@@ -88,13 +95,11 @@ func TestExhaustive_Shadowsocks_Ciphers_And_Networks(t *testing.T) {
 	singboxBin := getBinPath("../../panel/bin/sing-box.exe")
 	xrayBin := getBinPath("../../panel/bin/xray.exe")
 
-	portCounter := 31000
 	for _, c := range ciphers {
 		for _, net := range networks {
 			testName := fmt.Sprintf("%s_net_%s", c.cipher, net)
-			sbPort := portCounter
-			xrayPort := portCounter + 1
-			portCounter += 2
+			sbPort := nextTestPort()
+			xrayPort := nextTestPort()
 
 			t.Run(testName, func(t *testing.T) {
 				// 1. Sing-box Outbound
@@ -252,7 +257,7 @@ func TestExhaustive_VLESS_Permutations(t *testing.T) {
 
 					sbInbound := ast.ServerInboundSpec{
 						Tag:        "vless-in",
-						Port:       31001,
+						Port:       nextTestPort(),
 						Protocol:   "vless",
 						Transport:  "tcp",
 						Security:   "reality",
@@ -332,7 +337,7 @@ func TestExhaustive_VLESS_Permutations(t *testing.T) {
 
 				sbInbound := ast.ServerInboundSpec{
 					Tag:            "vless-tls-in",
-					Port:           31002,
+					Port:           nextTestPort(),
 					Protocol:       "vless",
 					Transport:      tr.transport,
 					Security:       "tls",

@@ -193,79 +193,25 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 			outbounds = append(outbounds, xrayOb)
 
 			if settingsMap != nil {
-				var backups []string
-				if backupsRaw, ok := settingsMap["backup_outbounds"]; ok {
-					if bList, ok := backupsRaw.([]interface{}); ok {
-						for _, b := range bList {
-							if bStr, ok := b.(string); ok && bStr != "" && bStr != tag {
-								backups = append(backups, bStr)
-							}
-						}
-					} else if bList, ok := backupsRaw.([]string); ok {
-						for _, b := range bList {
-							if b != "" && b != tag {
-								backups = append(backups, b)
-							}
-						}
-					}
-				}
-				if fbStr, ok := settingsMap["fallback_outbound"].(string); ok && fbStr != "" && fbStr != tag {
-					found := false
-					for _, b := range backups {
-						if b == fbStr {
-							found = true
-							break
-						}
-					}
-					if !found {
-						backups = append(backups, fbStr)
-					}
-				}
-
+				backups, pURL, pInt, strat := ExtractXrayFallbackSettings(settingsMap, tag)
 				if len(backups) > 0 {
 					balancerTag := fmt.Sprintf("balancer-%s", tag)
 					backupOutboundMap[tag] = balancerTag
 
-					if pURL, ok := settingsMap["health_check_url"].(string); ok && pURL != "" {
-						probeURL = pURL
-					}
-					if pInt, ok := settingsMap["health_check_interval"].(float64); ok && pInt > 0 {
-						probeInterval = fmt.Sprintf("%ds", int(pInt))
-					} else if pInt, ok := settingsMap["health_check_interval"].(int); ok && pInt > 0 {
-						probeInterval = fmt.Sprintf("%ds", pInt)
-					}
+					probeURL = pURL
+					probeInterval = pInt
 
 					observatorySubjects = append(observatorySubjects, tag)
 					observatorySubjects = append(observatorySubjects, backups...)
 
-					fallbackTag := backups[0]
-					balancers = append(balancers, map[string]interface{}{
-						"tag":         balancerTag,
-						"selector":    []string{tag},
-						"fallbackTag": fallbackTag,
-						"strategy": map[string]interface{}{
-							"type": "leastPing",
-						},
-					})
+					balancerObj := BuildXrayBalancer(tag, balancerTag, backups, strat)
+					balancers = append(balancers, balancerObj)
 				}
 			}
 		}
 
 		if len(observatorySubjects) > 0 {
-			seen := make(map[string]bool)
-			var uniqueSubjects []string
-			for _, s := range observatorySubjects {
-				if !seen[s] {
-					seen[s] = true
-					uniqueSubjects = append(uniqueSubjects, s)
-				}
-			}
-			observatory = map[string]interface{}{
-				"subjectSelector":   uniqueSubjects,
-				"probeUrl":          probeURL,
-				"probeInterval":     probeInterval,
-				"enableConcurrency": true,
-			}
+			observatory = BuildXrayObservatory(observatorySubjects, probeURL, probeInterval)
 		}
 	}
 
