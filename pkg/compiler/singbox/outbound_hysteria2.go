@@ -278,9 +278,6 @@ func compileRawHysteria2Outbound(tag string, sMap, tsMap map[string]interface{})
 			if allowInsecure, ok := tlsSettings["allowInsecure"].(bool); ok && allowInsecure {
 				tlsMap["insecure"] = true
 			}
-			if pin, ok := tlsSettings["pinnedPeerCertSha256"].(string); ok && pin != "" {
-				tlsMap["pinned_peer_cert_sha256"] = pin
-			}
 			if alpnRaw, ok := tlsSettings["alpn"]; ok {
 				if alpnList, ok := alpnRaw.([]interface{}); ok {
 					var alpnStr []string
@@ -312,11 +309,6 @@ func compileRawHysteria2Outbound(tag string, sMap, tsMap map[string]interface{})
 			tlsMap["insecure"] = true
 		} else if allowInsecure, ok := sMap["allowInsecure"].(bool); ok && allowInsecure {
 			tlsMap["insecure"] = true
-		}
-		if pin, ok := sMap["pin_sha256"].(string); ok && pin != "" {
-			tlsMap["pinned_peer_cert_sha256"] = pin
-		} else if pin, ok := sMap["pinnedPeerCertSha256"].(string); ok && pin != "" {
-			tlsMap["pinned_peer_cert_sha256"] = pin
 		}
 	}
 
