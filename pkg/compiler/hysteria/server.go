@@ -18,16 +18,7 @@ func NewServerCompiler() *ServerCompiler {
 // CompileServer builds official Hysteria 2 server config (with Webhook Auth and local Xray routing forward)
 func (sc *ServerCompiler) CompileServer(inbound ast.ServerInboundSpec, forwardToXraySocksPort int, logLevel ...string) (string, error) {
 	listenAddr := fmt.Sprintf(":%d", inbound.Port)
-	if inbound.PortHop != "" {
-		parts := strings.Split(inbound.PortHop, "-")
-		if len(parts) == 2 {
-			var startP int
-			fmt.Sscanf(parts[0], "%d", &startP)
-			if startP == inbound.Port {
-				listenAddr = fmt.Sprintf(":%s", inbound.PortHop)
-			}
-		}
-	} else if inbound.ListenAddress != "" && inbound.ListenAddress != "0.0.0.0" && inbound.ListenAddress != "::" {
+	if inbound.ListenAddress != "" && inbound.ListenAddress != "0.0.0.0" && inbound.ListenAddress != "::" {
 		listenAddr = fmt.Sprintf("%s:%d", inbound.ListenAddress, inbound.Port)
 	}
 
