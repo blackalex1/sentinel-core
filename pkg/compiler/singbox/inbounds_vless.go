@@ -44,6 +44,22 @@ func buildVLESSInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 			if flow == "" {
 				flow = defaultFlow
 			}
+			// Sing-box requires flow to be empty or "xtls-rprx-vision", and only for TCP + (Reality or TLS)
+			if sb.Transport != "" && sb.Transport != "tcp" {
+				flow = ""
+			}
+			sec := sb.Security
+			if sec == "" && sb.StreamSettings != nil {
+				if s, ok := sb.StreamSettings["security"].(string); ok {
+					sec = s
+				}
+			}
+			if sec != "reality" && sec != "tls" {
+				flow = ""
+			}
+			if flow != "xtls-rprx-vision" {
+				flow = ""
+			}
 			if flow != "" {
 				userMap["flow"] = flow
 			}

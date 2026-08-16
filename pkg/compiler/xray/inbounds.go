@@ -101,8 +101,30 @@ func BuildXrayInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 						"id":    uid,
 						"email": c.Email,
 					}
-					if c.Flow != "" {
-						cl["flow"] = c.Flow
+					flow := c.Flow
+					if flow == "" && sb.RawSettings != nil {
+						if f, ok := sb.RawSettings["flow"].(string); ok && f != "" {
+							flow = f
+						}
+					}
+					// Flow is only supported for TCP + (Reality or TLS)
+					if sb.Transport != "" && sb.Transport != "tcp" {
+						flow = ""
+					}
+					secVal := sb.Security
+					if secVal == "" && sb.StreamSettings != nil {
+						if s, ok := sb.StreamSettings["security"].(string); ok {
+							secVal = s
+						}
+					}
+					if secVal != "reality" && secVal != "tls" {
+						flow = ""
+					}
+					if flow != "" && flow != "xtls-rprx-vision" && flow != "xtls-rprx-vision-udp443" {
+						flow = ""
+					}
+					if flow != "" {
+						cl["flow"] = flow
 					}
 					clients = append(clients, cl)
 				}
