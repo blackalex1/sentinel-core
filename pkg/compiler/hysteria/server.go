@@ -18,7 +18,9 @@ func NewServerCompiler() *ServerCompiler {
 // CompileServer builds official Hysteria 2 server config (with Webhook Auth and local Xray routing forward)
 func (sc *ServerCompiler) CompileServer(inbound ast.ServerInboundSpec, forwardToXraySocksPort int, logLevel ...string) (string, error) {
 	listenAddr := fmt.Sprintf(":%d", inbound.Port)
-	if inbound.ListenAddress != "" && inbound.ListenAddress != "0.0.0.0" && inbound.ListenAddress != "::" {
+	if inbound.PortHop != "" && strings.Contains(inbound.PortHop, "-") {
+		listenAddr = fmt.Sprintf(":%s", strings.TrimPrefix(inbound.PortHop, ":"))
+	} else if inbound.ListenAddress != "" && inbound.ListenAddress != "0.0.0.0" && inbound.ListenAddress != "::" {
 		listenAddr = fmt.Sprintf("%s:%d", inbound.ListenAddress, inbound.Port)
 	}
 
@@ -136,44 +138,43 @@ func (sc *ServerCompiler) CompileServer(inbound ast.ServerInboundSpec, forwardTo
 		configObj["bandwidth"] = bandwidthMap
 	}
 
-	// Masquerade
-	masqMap := map[string]interface{}{}
-	switch inbound.MasqType {
-	case "file":
-		masqMap["type"] = "file"
-		masqMap["file"] = map[string]interface{}{"dir": inbound.MasqValue}
-	case "proxy":
-		masqMap["type"] = "proxy"
-		masqMap["proxy"] = map[string]interface{}{"url": normalizeMasqURL(inbound.MasqValue), "rewriteHost": true}
-	case "string", "status", "drop":
-		statusCode := 404
-		if inbound.MasqStatusCode > 0 {
-			statusCode = inbound.MasqStatusCode
-		}
-		content := "Not Found"
-		if statusCode == 403 {
-			content = "Forbidden"
-		} else if statusCode == 444 {
-			content = "Connection dropped"
-		}
-		masqMap["type"] = "string"
-		masqMap["string"] = map[string]interface{}{
-			"statusCode": statusCode,
-			"content":    content,
-		}
-	default:
-		if inbound.MasqValue != "" && inbound.ObfsPassword == "" {
-			masqMap["type"] = "proxy"
-			masqMap["proxy"] = map[string]interface{}{"url": normalizeMasqURL(inbound.MasqValue), "rewriteHost": true}
-		} else {
+	// Masquerade - ONLY included if explicitly configured by the user
+	if inbound.MasqType != "" && inbound.MasqType != "none" {
+		masqMap := map[string]interface{}{}
+		switch inbound.MasqType {
+		case "file":
+			if inbound.MasqValue != "" {
+				masqMap["type"] = "file"
+				masqMap["file"] = map[string]interface{}{"dir": inbound.MasqValue}
+			}
+		case "proxy":
+			if inbound.MasqValue != "" {
+				masqMap["type"] = "proxy"
+				masqMap["proxy"] = map[string]interface{}{"url": normalizeMasqURL(inbound.MasqValue), "rewriteHost": true}
+			}
+		case "string", "status", "drop":
+			statusCode := 404
+			if inbound.MasqStatusCode > 0 {
+				statusCode = inbound.MasqStatusCode
+			}
+			content := "Not Found"
+			if statusCode == 403 {
+				content = "Forbidden"
+			} else if statusCode == 444 {
+				content = "Connection dropped"
+			} else if inbound.MasqValue != "" {
+				content = inbound.MasqValue
+			}
 			masqMap["type"] = "string"
 			masqMap["string"] = map[string]interface{}{
-				"statusCode": 404,
-				"content":    "Not Found",
+				"statusCode": statusCode,
+				"content":    content,
 			}
 		}
+		if len(masqMap) > 0 {
+			configObj["masquerade"] = masqMap
+		}
 	}
-	configObj["masquerade"] = masqMap
 
 	// Outbound: Forward decrypted traffic into local Xray for full routing!
 	socksPort := forwardToXraySocksPort
