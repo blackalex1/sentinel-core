@@ -37,14 +37,16 @@ func buildShadowsocksInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 	}
 	inbound["method"] = method
 
-	// 2. Network (tcp, udp, or tcp,udp)
+	// 2. Network (tcp, udp, or omitted for both)
 	if sb.RawSettings != nil {
 		if net, ok := sb.RawSettings["network"].(string); ok && net != "" {
-			inbound["network"] = net
+			if parsedNet := parseInboundNetwork(net); parsedNet != "" {
+				inbound["network"] = parsedNet
+			}
 		}
 	}
 
-	// 3. Password (Server Key)
+	// 3. Password / Users
 	serverPassword := ""
 	if sb.RawSettings != nil {
 		if pwd, ok := sb.RawSettings["password"].(string); ok && pwd != "" {
@@ -52,32 +54,44 @@ func buildShadowsocksInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 		}
 	}
 
-	// 4. Users / Multi-user credentials
-	if len(sb.Clients) > 0 {
-		users := make([]map[string]interface{}, 0, len(sb.Clients))
-		for _, c := range sb.Clients {
-			userMap := map[string]interface{}{
-				"name": c.Email,
-			}
-			pwd := c.Password
-			if pwd == "" {
-				pwd = c.UUID
-			}
-			if pwd == "" {
-				pwd = c.ID
-			}
-			userMap["password"] = pwd
-			users = append(users, userMap)
-		}
-		inbound["users"] = users
+	is2022 := strings.HasPrefix(method, "2022-")
 
-		if serverPassword == "" && !strings.HasPrefix(method, "2022-") {
-			inbound["password"] = sb.Clients[0].Password
+	if is2022 {
+		// Shadowsocks 2022 multi-user mode
+		if serverPassword != "" {
+			inbound["password"] = serverPassword
 		}
-	}
-
-	if serverPassword != "" {
-		inbound["password"] = serverPassword
+		if len(sb.Clients) > 0 {
+			users := make([]map[string]interface{}, 0, len(sb.Clients))
+			for _, c := range sb.Clients {
+				pwd := c.Password
+				if pwd == "" {
+					pwd = c.UUID
+				}
+				if pwd == "" {
+					pwd = c.ID
+				}
+				users = append(users, map[string]interface{}{
+					"name":     c.Email,
+					"password": pwd,
+				})
+			}
+			inbound["users"] = users
+		}
+	} else {
+		// Legacy AEAD (single password per port)
+		if serverPassword == "" && len(sb.Clients) > 0 {
+			serverPassword = sb.Clients[0].Password
+			if serverPassword == "" {
+				serverPassword = sb.Clients[0].UUID
+			}
+			if serverPassword == "" {
+				serverPassword = sb.Clients[0].ID
+			}
+		}
+		if serverPassword != "" {
+			inbound["password"] = serverPassword
+		}
 	}
 
 	// 5. Common options (multiplex, sniffing, timeouts)
