@@ -66,6 +66,39 @@ func buildVLESSInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 			users = append(users, userMap)
 		}
 		inbound["users"] = users
+	} else if sb.RawSettings != nil {
+		if rawClients, ok := sb.RawSettings["clients"].([]interface{}); ok && len(rawClients) > 0 {
+			users := make([]map[string]interface{}, 0, len(rawClients))
+			for _, rc := range rawClients {
+				if rcMap, ok := rc.(map[string]interface{}); ok {
+					uid, _ := rcMap["uuid"].(string)
+					if uid == "" {
+						uid, _ = rcMap["id"].(string)
+					}
+					if uid == "" {
+						uid, _ = rcMap["password"].(string)
+					}
+					email, _ := rcMap["email"].(string)
+					userMap := map[string]interface{}{
+						"name": email,
+						"uuid": uid,
+					}
+					if fl, ok := rcMap["flow"].(string); ok && fl == "xtls-rprx-vision" {
+						sec := sb.Security
+						if sec == "" && sb.StreamSettings != nil {
+							if s, ok := sb.StreamSettings["security"].(string); ok {
+								sec = s
+							}
+						}
+						if sec == "reality" || sec == "tls" {
+							userMap["flow"] = fl
+						}
+					}
+					users = append(users, userMap)
+				}
+			}
+			inbound["users"] = users
+		}
 	}
 
 	// 2. TLS / Reality

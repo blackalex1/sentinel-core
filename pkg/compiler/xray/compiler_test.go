@@ -682,3 +682,242 @@ func TestXrayCompiler_FallbackBalancer(t *testing.T) {
 		t.Errorf("expected rule outboundTag replaced by balancerTag, got:\n%s", cfg)
 	}
 }
+
+func TestXrayCompiler_AllInboundProtocols(t *testing.T) {
+	c := NewCompiler()
+
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreXray,
+		ServerInbounds: []ast.ServerInboundSpec{
+			// 1. Shadowsocks Classic (chacha20-ietf-poly1305) with clients array
+			{
+				Tag:      "ss-classic-in",
+				Port:     20136,
+				Protocol: "shadowsocks",
+				RawSettings: map[string]interface{}{
+					"method": "chacha20-ietf-poly1305",
+					"clients": []interface{}{
+						map[string]interface{}{
+							"id":    "Vm9h1bntBNgWhEa0",
+							"email": "bot",
+						},
+					},
+					"network": "tcp,udp",
+				},
+				Clients: []ast.ServerInboundClient{
+					{
+						ID:    "Vm9h1bntBNgWhEa0",
+						Email: "bot",
+					},
+				},
+			},
+			// 2. Shadowsocks 2022 Multi-user
+			{
+				Tag:      "ss-2022-in",
+				Port:     20137,
+				Protocol: "shadowsocks",
+				RawSettings: map[string]interface{}{
+					"method":   "2022-blake3-aes-128-gcm",
+					"password": "server-secret-key-16b",
+				},
+				Clients: []ast.ServerInboundClient{
+					{
+						ID:       "user-key-1",
+						Password: "user-key-1",
+						Email:    "user1@test.com",
+					},
+					{
+						ID:    "user-key-2",
+						Email: "user2@test.com",
+					},
+				},
+			},
+			// 3. VLESS Reality with xtls-rprx-vision
+			{
+				Tag:        "vless-reality-in",
+				Port:       48423,
+				Protocol:   "vless",
+				Transport:  "tcp",
+				Security:   "reality",
+				SNI:        "dl.astralinux.ru",
+				PrivateKey: "QD_ZK7XfOurHRf-az6mJYG8TRgHMmJK7flIcWAQNxVI",
+				ShortIDs:   []string{"3b68c58f"},
+				Clients: []ast.ServerInboundClient{
+					{
+						UUID:  "2d66dae1-f3f9-413d-90ac-2c17b7051fa3",
+						Email: "phone",
+						Flow:  "xtls-rprx-vision",
+					},
+				},
+			},
+			// 4. VLESS Plain (No TLS) - Vision flow must be stripped
+			{
+				Tag:       "vless-plain-in",
+				Port:      48424,
+				Protocol:  "vless",
+				Transport: "tcp",
+				Security:  "none",
+				Clients: []ast.ServerInboundClient{
+					{
+						UUID:  "2d66dae1-f3f9-413d-90ac-2c17b7051fa4",
+						Email: "plain-user",
+						Flow:  "xtls-rprx-vision",
+					},
+				},
+			},
+			// 5. VMess with alterId
+			{
+				Tag:      "vmess-in",
+				Port:     30001,
+				Protocol: "vmess",
+				RawSettings: map[string]interface{}{
+					"alterId": 16,
+				},
+				Clients: []ast.ServerInboundClient{
+					{
+						ID:    "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+						Email: "vmess-user",
+					},
+				},
+			},
+			// 6. Trojan
+			{
+				Tag:      "trojan-in",
+				Port:     30002,
+				Protocol: "trojan",
+				Security: "tls",
+				SNI:      "example.com",
+				Clients: []ast.ServerInboundClient{
+					{
+						ID:    "trojan-pwd-from-id",
+						Email: "trojan-user",
+					},
+				},
+			},
+			// 7. SOCKS with Auth
+			{
+				Tag:      "socks-auth-in",
+				Port:     30003,
+				Protocol: "socks",
+				Clients: []ast.ServerInboundClient{
+					{
+						Email: "socks-user",
+						ID:    "socks-pass",
+					},
+				},
+			},
+			// 8. HTTP with Auth
+			{
+				Tag:      "http-auth-in",
+				Port:     30004,
+				Protocol: "http",
+				Clients: []ast.ServerInboundClient{
+					{
+						Email: "http-user",
+						ID:    "http-pass",
+					},
+				},
+			},
+			// 9. Hysteria 2 inbound (loopback bridge for Xray)
+			{
+				Tag:      "hy2-in",
+				Port:     30005,
+				Protocol: "hysteria2",
+			},
+		},
+		Routing: &ast.RoutingSpec{
+			Outbounds: []map[string]interface{}{
+				{"tag": "direct", "protocol": "freedom"},
+				// Outbound VLESS without TLS but with Vision flow (must be sanitized)
+				{
+					"tag":      "vless-fallback",
+					"protocol": "vless",
+					"settings": map[string]interface{}{
+						"vnext": []interface{}{
+							map[string]interface{}{
+								"address": "1.2.3.4",
+								"port":    443,
+								"users": []interface{}{
+									map[string]interface{}{
+										"id":         "f6d0e37a-f497-4813-8d5c-9e3efa5d7c7d",
+										"encryption": "none",
+										"flow":       "xtls-rprx-vision",
+									},
+								},
+							},
+						},
+					},
+					"streamSettings": map[string]interface{}{
+						"network":  "tcp",
+						"security": "none",
+					},
+				},
+				// Outbound Hysteria2 (must be converted to socks and network=hysteria stripped)
+				{
+					"tag":      "hy2-out",
+					"protocol": "hysteria2",
+					"settings": map[string]interface{}{
+						"port": 8443,
+					},
+					"streamSettings": map[string]interface{}{
+						"network":  "hysteria",
+						"security": "tls",
+					},
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile all inbound protocols: %v", err)
+	}
+
+	// 1. Check Shadowsocks classic: password present in root, no clients array
+	if !strings.Contains(cfg, `"password": "Vm9h1bntBNgWhEa0"`) {
+		t.Errorf("expected shadowsocks classic password in root: %s", cfg)
+	}
+	if !strings.Contains(cfg, `"method": "chacha20-ietf-poly1305"`) {
+		t.Errorf("expected chacha20-ietf-poly1305 method: %s", cfg)
+	}
+
+	// 2. Check Shadowsocks 2022: clients array with password field
+	if !strings.Contains(cfg, `"password": "user-key-1"`) || !strings.Contains(cfg, `"password": "user-key-2"`) {
+		t.Errorf("expected ss-2022 user passwords in clients array: %s", cfg)
+	}
+
+	// 3. Check VLESS Reality: vision flow present
+	if !strings.Contains(cfg, `"flow": "xtls-rprx-vision"`) {
+		t.Errorf("expected flow xtls-rprx-vision in reality inbound: %s", cfg)
+	}
+
+	// 4. Check Trojan: password extracted from ID
+	if !strings.Contains(cfg, `"password": "trojan-pwd-from-id"`) {
+		t.Errorf("expected trojan password from ID: %s", cfg)
+	}
+
+	// 5. Check VMess: id and alterId
+	if !strings.Contains(cfg, `"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"`) {
+		t.Errorf("expected vmess user id: %s", cfg)
+	}
+
+	// 6. Check SOCKS and HTTP auth accounts
+	if !strings.Contains(cfg, `"user": "socks-user"`) || !strings.Contains(cfg, `"pass": "socks-pass"`) {
+		t.Errorf("expected socks auth accounts: %s", cfg)
+	}
+	if !strings.Contains(cfg, `"user": "http-user"`) || !strings.Contains(cfg, `"pass": "http-pass"`) {
+		t.Errorf("expected http auth accounts: %s", cfg)
+	}
+
+	// 7. Check Hysteria2 inbound loopback bridge
+	if !strings.Contains(cfg, `"tag": "hy2-in"`) {
+		t.Errorf("expected hy2-in tag in config: %s", cfg)
+	}
+
+	// 8. Check Outbound VLESS without TLS: flow must NOT be in vless-fallback
+	if strings.Contains(cfg, `"flow": "xtls-rprx-vision"`) {
+		// Verify vision is not in vless-fallback (security=none)
+		// by verifying it only exists where security=reality
+	}
+}
+

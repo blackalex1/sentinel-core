@@ -34,6 +34,27 @@ func buildTrojanInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 			})
 		}
 		inbound["users"] = users
+	} else if sb.RawSettings != nil {
+		if rawClients, ok := sb.RawSettings["clients"].([]interface{}); ok && len(rawClients) > 0 {
+			users := make([]map[string]interface{}, 0, len(rawClients))
+			for _, rc := range rawClients {
+				if rcMap, ok := rc.(map[string]interface{}); ok {
+					pwd, _ := rcMap["password"].(string)
+					if pwd == "" {
+						pwd, _ = rcMap["id"].(string)
+					}
+					if pwd == "" {
+						pwd, _ = rcMap["uuid"].(string)
+					}
+					email, _ := rcMap["email"].(string)
+					users = append(users, map[string]interface{}{
+						"name":     email,
+						"password": pwd,
+					})
+				}
+			}
+			inbound["users"] = users
+		}
 	}
 
 	if tlsMap := buildInboundTLS(sb); tlsMap != nil {
@@ -76,6 +97,27 @@ func buildVMessInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 			})
 		}
 		inbound["users"] = users
+	} else if sb.RawSettings != nil {
+		if rawClients, ok := sb.RawSettings["clients"].([]interface{}); ok && len(rawClients) > 0 {
+			users := make([]map[string]interface{}, 0, len(rawClients))
+			for _, rc := range rawClients {
+				if rcMap, ok := rc.(map[string]interface{}); ok {
+					uid, _ := rcMap["uuid"].(string)
+					if uid == "" {
+						uid, _ = rcMap["id"].(string)
+					}
+					if uid == "" {
+						uid, _ = rcMap["password"].(string)
+					}
+					email, _ := rcMap["email"].(string)
+					users = append(users, map[string]interface{}{
+						"name": email,
+						"uuid": uid,
+					})
+				}
+			}
+			inbound["users"] = users
+		}
 	}
 
 	if tlsMap := buildInboundTLS(sb); tlsMap != nil {
