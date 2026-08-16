@@ -764,4 +764,196 @@ func TestSingboxCompiler_FallbackURLTestGroup(t *testing.T) {
 	}
 }
 
+func TestSingboxCompiler_AllInboundProtocols(t *testing.T) {
+	c := NewCompiler()
+
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreSingBox,
+		ServerInbounds: []ast.ServerInboundSpec{
+			// 1. Shadowsocks Classic (chacha20-ietf-poly1305) with clients
+			{
+				Tag:      "ss-classic-in",
+				Port:     20136,
+				Protocol: "shadowsocks",
+				RawSettings: map[string]interface{}{
+					"method":  "chacha20-ietf-poly1305",
+					"network": "tcp,udp",
+				},
+				Clients: []ast.ServerInboundClient{
+					{
+						ID:    "Vm9h1bntBNgWhEa0",
+						Email: "bot",
+					},
+				},
+			},
+			// 2. Shadowsocks 2022 Multi-user
+			{
+				Tag:      "ss-2022-in",
+				Port:     20137,
+				Protocol: "shadowsocks",
+				RawSettings: map[string]interface{}{
+					"method": "2022-blake3-aes-128-gcm",
+				},
+				Clients: []ast.ServerInboundClient{
+					{
+						Password: "key1",
+						Email:    "user1@test.com",
+					},
+					{
+						ID:    "key2",
+						Email: "user2@test.com",
+					},
+				},
+			},
+			// 3. VLESS Reality with xtls-rprx-vision
+			{
+				Tag:        "vless-reality-in",
+				Port:       48423,
+				Protocol:   "vless",
+				Transport:  "tcp",
+				Security:   "reality",
+				SNI:        "dl.astralinux.ru",
+				PrivateKey: "QD_ZK7XfOurHRf-az6mJYG8TRgHMmJK7flIcWAQNxVI",
+				ShortIDs:   []string{"3b68c58f"},
+				Clients: []ast.ServerInboundClient{
+					{
+						UUID:  "2d66dae1-f3f9-413d-90ac-2c17b7051fa3",
+						Email: "phone",
+						Flow:  "xtls-rprx-vision",
+					},
+				},
+			},
+			// 4. VMess
+			{
+				Tag:      "vmess-in",
+				Port:     30001,
+				Protocol: "vmess",
+				Clients: []ast.ServerInboundClient{
+					{
+						UUID:  "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+						Email: "vmess-user",
+					},
+				},
+			},
+			// 5. Trojan
+			{
+				Tag:      "trojan-in",
+				Port:     30002,
+				Protocol: "trojan",
+				Security: "tls",
+				SNI:      "example.com",
+				Clients: []ast.ServerInboundClient{
+					{
+						ID:    "trojan-pass",
+						Email: "trojan-user",
+					},
+				},
+			},
+			// 6. Hysteria 2 with Salamander obfs and masquerade
+			{
+				Tag:          "hy2-in",
+				Port:         8443,
+				Protocol:     "hysteria2",
+				ObfsType:     "salamander",
+				ObfsPassword: "my-obfs-password",
+				MasqType:     "proxy",
+				MasqValue:    "https://yahoo.com",
+				Clients: []ast.ServerInboundClient{
+					{
+						Password: "hy2-user-password",
+						Email:    "hy2-user",
+					},
+				},
+			},
+			// 7. TUIC
+			{
+				Tag:      "tuic-in",
+				Port:     30003,
+				Protocol: "tuic",
+				Clients: []ast.ServerInboundClient{
+					{
+						UUID:     "tuic-uuid-1234",
+						Password: "tuic-password",
+						Email:    "tuic-user",
+					},
+				},
+			},
+			// 8. SOCKS5 with Auth
+			{
+				Tag:      "socks-in",
+				Port:     30004,
+				Protocol: "socks",
+				Clients: []ast.ServerInboundClient{
+					{
+						Email:    "socks-user",
+						Password: "socks-pass",
+					},
+				},
+			},
+			// 9. HTTP with Auth
+			{
+				Tag:      "http-in",
+				Port:     30005,
+				Protocol: "http",
+				Clients: []ast.ServerInboundClient{
+					{
+						Email:    "http-user",
+						Password: "http-pass",
+					},
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile all Sing-box inbound protocols: %v", err)
+	}
+
+	// 1. Shadowsocks Classic password
+	if !strings.Contains(cfg, `"password": "Vm9h1bntBNgWhEa0"`) {
+		t.Errorf("expected shadowsocks password: %s", cfg)
+	}
+
+	// 2. Shadowsocks 2022 users
+	if !strings.Contains(cfg, `"password": "key1"`) || !strings.Contains(cfg, `"password": "key2"`) {
+		t.Errorf("expected ss 2022 users: %s", cfg)
+	}
+
+	// 3. VLESS Reality + Vision
+	if !strings.Contains(cfg, `"flow": "xtls-rprx-vision"`) {
+		t.Errorf("expected vless vision flow: %s", cfg)
+	}
+
+	// 4. Trojan & VMess
+	if !strings.Contains(cfg, `"password": "trojan-pass"`) {
+		t.Errorf("expected trojan password: %s", cfg)
+	}
+	if !strings.Contains(cfg, `"uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"`) {
+		t.Errorf("expected vmess uuid: %s", cfg)
+	}
+
+	// 5. Hysteria 2 obfs and masquerade
+	if !strings.Contains(cfg, `"type": "salamander"`) || !strings.Contains(cfg, `"password": "my-obfs-password"`) {
+		t.Errorf("expected hysteria2 salamander obfs: %s", cfg)
+	}
+	if !strings.Contains(cfg, `"type": "proxy"`) || !strings.Contains(cfg, `"url": "https://yahoo.com"`) {
+		t.Errorf("expected hysteria2 masquerade proxy: %s", cfg)
+	}
+
+	// 6. TUIC
+	if !strings.Contains(cfg, `"type": "tuic"`) || !strings.Contains(cfg, `"uuid": "tuic-uuid-1234"`) {
+		t.Errorf("expected tuic uuid: %s", cfg)
+	}
+
+	// 7. SOCKS & HTTP
+	if !strings.Contains(cfg, `"username": "socks-user"`) || !strings.Contains(cfg, `"password": "socks-pass"`) {
+		t.Errorf("expected socks user/pass: %s", cfg)
+	}
+	if !strings.Contains(cfg, `"username": "http-user"`) || !strings.Contains(cfg, `"password": "http-pass"`) {
+		t.Errorf("expected http user/pass: %s", cfg)
+	}
+}
+
+
 
