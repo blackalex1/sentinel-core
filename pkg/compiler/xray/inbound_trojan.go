@@ -54,6 +54,16 @@ func buildXrayTrojanInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 		}
 		settings["clients"] = clients
 	}
+	if clientsList, ok := settings["clients"].([]map[string]interface{}); !ok || len(clientsList) == 0 {
+		if rawList, ok := settings["clients"].([]interface{}); !ok || len(rawList) == 0 {
+			settings["clients"] = []map[string]interface{}{
+				{
+					"password": "default-trojan-password",
+					"email":    "default",
+				},
+			}
+		}
+	}
 
 	return map[string]interface{}{
 		"tag":            sb.Tag,

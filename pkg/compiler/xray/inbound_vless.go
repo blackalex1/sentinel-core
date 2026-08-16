@@ -85,8 +85,16 @@ func buildXrayVLESSInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 			}
 		}
 		settings["clients"] = clients
-	} else if _, ok := settings["clients"]; !ok {
-		settings["clients"] = []map[string]interface{}{}
+	}
+	if clientsList, ok := settings["clients"].([]map[string]interface{}); !ok || len(clientsList) == 0 {
+		if rawList, ok := settings["clients"].([]interface{}); !ok || len(rawList) == 0 {
+			settings["clients"] = []map[string]interface{}{
+				{
+					"id":    "00000000-0000-0000-0000-000000000000",
+					"email": "default",
+				},
+			}
+		}
 	}
 
 	// VLESS Encryption (vlessenc) vs standard VLESS
