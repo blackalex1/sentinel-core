@@ -32,6 +32,12 @@ func buildXrayStreamSettings(node *ast.ServerProfile) map[string]interface{} {
 	if fp == "" {
 		fp = "chrome"
 	}
+	switch fp {
+	case "chrome", "firefox", "safari", "ios", "edge", "qq", "360", "random", "randomized":
+		// valid for xray
+	default:
+		fp = "chrome"
+	}
 
 	if security == "reality" {
 		realitySettings := map[string]interface{}{
