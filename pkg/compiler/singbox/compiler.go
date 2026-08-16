@@ -122,6 +122,12 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 							validBackups = append(validBackups, bStr)
 						}
 					}
+				} else if bkRaw, ok := sMap["backup_outbounds"].([]string); ok {
+					for _, bStr := range bkRaw {
+						if bStr != "" && bStr != tag {
+							validBackups = append(validBackups, bStr)
+						}
+					}
 				}
 				if bkStr, ok := sMap["fallback_outbound"].(string); ok && bkStr != "" && bkStr != tag {
 					found := false

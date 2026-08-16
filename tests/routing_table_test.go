@@ -26,7 +26,7 @@ func TestRoutingTable_PanelScreenshotExactMatch(t *testing.T) {
 		Order:    2,
 		Name:     "local",
 		Enabled:  true,
-		Target:   "VLESS-CYBERGRID-SERVEQUAKE-COM",
+		Target:   "VLESS-MOCK-OUTBOUND",
 		Inbounds: []string{"inbound-11"},
 	})
 
@@ -60,7 +60,7 @@ func TestRoutingTable_PanelScreenshotExactMatch(t *testing.T) {
 		Order:    6,
 		Name:     "double",
 		Enabled:  true,
-		Target:   "HYSTERIA2-CYBERGRID-SERVEQUAKE-COM",
+		Target:   "HYSTERIA2-MOCK-OUTBOUND",
 		Inbounds: []string{"inbound-8"},
 	})
 
@@ -68,7 +68,7 @@ func TestRoutingTable_PanelScreenshotExactMatch(t *testing.T) {
 		Order:    7,
 		Name:     "botik",
 		Enabled:  true,
-		Target:   "HY_BOT_V2",
+		Target:   "HY_BOT_MOCK",
 		Inbounds: []string{"inbound-4"},
 	})
 
@@ -84,19 +84,19 @@ func TestRoutingTable_PanelScreenshotExactMatch(t *testing.T) {
 		t.Errorf("Rule 1 expected ActionBlock/block, got %s / %s", routingSpec.Rules[0].Action, routingSpec.Rules[0].OutboundTag)
 	}
 
-	// 2. Check Rule 2 (local -> VLESS-CYBERGRID-SERVEQUAKE-COM)
-	if routingSpec.Rules[1].OutboundTag != "VLESS-CYBERGRID-SERVEQUAKE-COM" {
-		t.Errorf("Rule 2 expected outbound tag VLESS-CYBERGRID-SERVEQUAKE-COM, got: %s", routingSpec.Rules[1].OutboundTag)
+	// 2. Check Rule 2 (local -> VLESS-MOCK-OUTBOUND)
+	if routingSpec.Rules[1].OutboundTag != "VLESS-MOCK-OUTBOUND" {
+		t.Errorf("Rule 2 expected outbound tag VLESS-MOCK-OUTBOUND, got: %s", routingSpec.Rules[1].OutboundTag)
 	}
 	if len(routingSpec.Rules[1].InboundTags) != 1 || routingSpec.Rules[1].InboundTags[0] != "inbound-11" {
 		t.Errorf("Rule 2 expected inbound-11 tag, got: %v", routingSpec.Rules[1].InboundTags)
 	}
 
 	// 3. Check Rule 6 & 7 custom chained outbound targets
-	if routingSpec.Rules[5].OutboundTag != "HYSTERIA2-CYBERGRID-SERVEQUAKE-COM" {
+	if routingSpec.Rules[5].OutboundTag != "HYSTERIA2-MOCK-OUTBOUND" {
 		t.Errorf("Rule 6 target mismatch: %s", routingSpec.Rules[5].OutboundTag)
 	}
-	if routingSpec.Rules[6].OutboundTag != "HY_BOT_V2" {
+	if routingSpec.Rules[6].OutboundTag != "HY_BOT_MOCK" {
 		t.Errorf("Rule 7 target mismatch: %s", routingSpec.Rules[6].OutboundTag)
 	}
 
@@ -112,14 +112,14 @@ func TestRoutingTable_PanelScreenshotExactMatch(t *testing.T) {
 	}
 
 	// Verify Sing-box config JSON contains the exact chained outbound tags
-	if !strings.Contains(res.ConfigJSON, "VLESS-CYBERGRID-SERVEQUAKE-COM") {
-		t.Errorf("Sing-box JSON missing VLESS-CYBERGRID-SERVEQUAKE-COM")
+	if !strings.Contains(res.ConfigJSON, "VLESS-MOCK-OUTBOUND") {
+		t.Errorf("Sing-box JSON missing VLESS-MOCK-OUTBOUND")
 	}
-	if !strings.Contains(res.ConfigJSON, "HYSTERIA2-CYBERGRID-SERVEQUAKE-COM") {
-		t.Errorf("Sing-box JSON missing HYSTERIA2-CYBERGRID-SERVEQUAKE-COM")
+	if !strings.Contains(res.ConfigJSON, "HYSTERIA2-MOCK-OUTBOUND") {
+		t.Errorf("Sing-box JSON missing HYSTERIA2-MOCK-OUTBOUND")
 	}
-	if !strings.Contains(res.ConfigJSON, "HY_BOT_V2") {
-		t.Errorf("Sing-box JSON missing HY_BOT_V2")
+	if !strings.Contains(res.ConfigJSON, "HY_BOT_MOCK") {
+		t.Errorf("Sing-box JSON missing HY_BOT_MOCK")
 	}
 
 	// 5. Test JSON Export and Import
