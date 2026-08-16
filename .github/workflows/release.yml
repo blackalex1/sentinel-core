@@ -76,36 +76,85 @@ jobs:
             echo "Publishing STABLE RELEASE: tag=${RAW_VER}, version=${CLEAN_VER}"
           fi
 
-      - name: Cross-Compile CLI Binaries (Linux, Windows, macOS)
+      - name: Parallel Cross-Compile CLI Binaries (Linux, Windows, macOS)
         run: |
           mkdir -p dist
           LDFLAGS="-s -w -X main.Version=${{ steps.vars.outputs.VERSION }}"
+          pids=()
 
-          # Linux (amd64, arm64)
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-linux-amd64 ./cmd/cli
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-linux-arm64 ./cmd/cli
+          build_cli() {
+            local os="$1"
+            local arch="$2"
+            local out="$3"
+            echo "⏳ [START] CLI ${os}/${arch} -> ${out}"
+            if CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" go build -ldflags="$LDFLAGS" -o "${out}" ./cmd/cli; then
+              echo "✅ [DONE]  CLI ${os}/${arch} -> ${out}"
+            else
+              echo "❌ [FAIL]  CLI ${os}/${arch} -> ${out}" >&2
+              return 1
+            fi
+          }
 
-          # Windows (amd64, arm64)
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-windows-amd64.exe ./cmd/cli
-          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-windows-arm64.exe ./cmd/cli
+          # Spawn all CLI targets concurrently
+          build_cli "linux" "amd64" "dist/sentinel-core-linux-amd64" &
+          pids+=($!)
 
-          # macOS (amd64, arm64)
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-darwin-amd64 ./cmd/cli
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-darwin-arm64 ./cmd/cli
+          build_cli "linux" "arm64" "dist/sentinel-core-linux-arm64" &
+          pids+=($!)
 
-      - name: Cross-Compile C-Shared FFI / JNI Libraries (Linux, Windows, Android)
+          build_cli "windows" "amd64" "dist/sentinel-core-windows-amd64.exe" &
+          pids+=($!)
+
+          build_cli "windows" "arm64" "dist/sentinel-core-windows-arm64.exe" &
+          pids+=($!)
+
+          build_cli "darwin" "amd64" "dist/sentinel-core-darwin-amd64" &
+          pids+=($!)
+
+          build_cli "darwin" "arm64" "dist/sentinel-core-darwin-arm64" &
+          pids+=($!)
+
+          # Wait for all background builds to complete
+          failed=0
+          for pid in "${pids[@]}"; do
+            if ! wait "$pid"; then
+              failed=1
+            fi
+          done
+
+          if [ $failed -ne 0 ]; then
+            echo "❌ Parallel CLI cross-compilation encountered errors!" >&2
+            exit 1
+          fi
+
+      - name: Parallel Cross-Compile C-Shared FFI / JNI Libraries (Linux, Windows, Android)
         run: |
           LDFLAGS="-s -w -X main.Version=${{ steps.vars.outputs.VERSION }}"
+          pids=()
 
-          # Linux amd64 shared library & header
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-linux-amd64.so ./cmd/cshared
-          cp dist/libsentinel-core-linux-amd64.h dist/sentinel-core.h 2>/dev/null || true
+          build_cshared() {
+            local desc="$1"
+            shift
+            echo "⏳ [START] FFI ${desc}"
+            if "$@"; then
+              echo "✅ [DONE]  FFI ${desc}"
+            else
+              echo "❌ [FAIL]  FFI ${desc}" >&2
+              return 1
+            fi
+          }
+
+          # Linux amd64 shared library
+          build_cshared "Linux amd64 .so" env CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-linux-amd64.so ./cmd/cshared &
+          pids+=($!)
 
           # Linux arm64 shared library
-          CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-linux-arm64.so ./cmd/cshared
+          build_cshared "Linux arm64 .so" env CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-linux-arm64.so ./cmd/cshared &
+          pids+=($!)
 
           # Windows amd64 DLL
-          CC=x86_64-w64-mingw32-gcc CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/sentinel-core-windows-amd64.dll ./cmd/cshared
+          build_cshared "Windows amd64 .dll" env CC=x86_64-w64-mingw32-gcc CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/sentinel-core-windows-amd64.dll ./cmd/cshared &
+          pids+=($!)
 
           # Locate Android NDK for Android compilation
           if [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ]; then
@@ -121,16 +170,41 @@ jobs:
             TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
             # Android C-Shared Libraries (.so)
-            CC="$TOOLCHAIN/aarch64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-android-arm64.so ./cmd/cshared || true
-            CC="$TOOLCHAIN/armv7a-linux-androideabi24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-android-arm.so ./cmd/cshared || true
-            CC="$TOOLCHAIN/x86_64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-android-x86_64.so ./cmd/cshared || true
+            build_cshared "Android arm64 .so" env CC="$TOOLCHAIN/aarch64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-android-arm64.so ./cmd/cshared &
+            pids+=($!)
+
+            build_cshared "Android armv7 .so" env CC="$TOOLCHAIN/armv7a-linux-androideabi24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-android-arm.so ./cmd/cshared &
+            pids+=($!)
+
+            build_cshared "Android x86_64 .so" env CC="$TOOLCHAIN/x86_64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-android-x86_64.so ./cmd/cshared &
+            pids+=($!)
 
             # Android CLI Binaries
-            CC="$TOOLCHAIN/aarch64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-android-arm64 ./cmd/cli || true
-            CC="$TOOLCHAIN/armv7a-linux-androideabi24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm go build -ldflags="$LDFLAGS" -o dist/sentinel-core-android-arm ./cmd/cli || true
-            CC="$TOOLCHAIN/x86_64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-android-x86_64 ./cmd/cli || true
+            build_cshared "Android arm64 CLI" env CC="$TOOLCHAIN/aarch64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-android-arm64 ./cmd/cli &
+            pids+=($!)
+
+            build_cshared "Android armv7 CLI" env CC="$TOOLCHAIN/armv7a-linux-androideabi24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm go build -ldflags="$LDFLAGS" -o dist/sentinel-core-android-arm ./cmd/cli &
+            pids+=($!)
+
+            build_cshared "Android x86_64 CLI" env CC="$TOOLCHAIN/x86_64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-android-x86_64 ./cmd/cli &
+            pids+=($!)
           else
             echo "Android NDK not found on runner, skipping Android builds"
+          fi
+
+          # Wait for all background builds to complete
+          failed=0
+          for pid in "${pids[@]}"; do
+            if ! wait "$pid"; then
+              failed=1
+            fi
+          done
+
+          cp dist/libsentinel-core-linux-amd64.h dist/sentinel-core.h 2>/dev/null || true
+
+          if [ $failed -ne 0 ]; then
+            echo "❌ Parallel C-Shared / FFI cross-compilation encountered errors!" >&2
+            exit 1
           fi
 
           ls -lh dist/
