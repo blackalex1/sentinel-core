@@ -1,8 +1,8 @@
 package singbox
 
 import (
-	"fmt"
 	"strings"
+
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 )
 
@@ -91,199 +91,49 @@ func BuildSingBoxInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 		}
 	}
 
-	// 2. Server Inbounds (for Sentinel-Panel)
+	// 2. Server Inbounds (Modular per-protocol builders)
 	for _, sb := range spec.ServerInbounds {
-		listenAddr := sb.ListenAddress
-		if listenAddr == "" {
-			listenAddr = "::"
+		protoLower := strings.ToLower(sb.Protocol)
+		var serverIn map[string]interface{}
+
+		switch protoLower {
+		case "shadowsocks":
+			serverIn = buildShadowsocksInbound(&sb)
+		case "vless":
+			serverIn = buildVLESSInbound(&sb)
+		case "vmess":
+			serverIn = buildVMessInbound(&sb)
+		case "hysteria2", "hysteria":
+			serverIn = buildHysteria2Inbound(&sb)
+		case "trojan":
+			serverIn = buildTrojanInbound(&sb)
+		case "tuic":
+			serverIn = buildTUICInbound(&sb)
+		case "http":
+			serverIn = buildHTTPInbound(&sb)
+		case "socks":
+			serverIn = buildSocksInbound(&sb)
+		default:
+			// Generic fallback
+			listenAddr := sb.ListenAddress
+			if listenAddr == "" {
+				listenAddr = "::"
+			}
+			serverIn = map[string]interface{}{
+				"type":        sb.Protocol,
+				"tag":         sb.Tag,
+				"listen":      listenAddr,
+				"listen_port": sb.Port,
+			}
+			if tlsMap := buildInboundTLS(&sb); tlsMap != nil {
+				serverIn["tls"] = tlsMap
+			}
+			applyCommonInboundOptions(serverIn, &sb)
 		}
 
-		serverIn := map[string]interface{}{
-			"type":        sb.Protocol,
-			"tag":         sb.Tag,
-			"listen":      listenAddr,
-			"listen_port": sb.Port,
+		if serverIn != nil {
+			inbounds = append(inbounds, serverIn)
 		}
-
-		// Add server users / clients
-		if len(sb.Clients) > 0 {
-			users := make([]map[string]interface{}, 0, len(sb.Clients))
-			protoLower := strings.ToLower(sb.Protocol)
-			for _, c := range sb.Clients {
-				userMap := map[string]interface{}{}
-				if protoLower == "http" || protoLower == "socks" || protoLower == "mixed" {
-					uname := c.Email
-					if uname == "" {
-						uname = c.ID
-					}
-					if uname == "" {
-						uname = c.UUID
-					}
-					userMap["username"] = uname
-					userMap["password"] = c.Password
-				} else if protoLower == "vless" || protoLower == "vmess" {
-					userMap["name"] = c.Email
-					uid := c.UUID
-					if uid == "" {
-						uid = c.ID
-					}
-					if uid == "" {
-						uid = c.Password
-					}
-					userMap["uuid"] = uid
-					if c.Flow != "" && protoLower == "vless" {
-						userMap["flow"] = c.Flow
-					}
-				} else {
-					userMap["name"] = c.Email
-					pwd := c.Password
-					if pwd == "" {
-						pwd = c.UUID
-					}
-					if pwd == "" {
-						pwd = c.ID
-					}
-					userMap["password"] = pwd
-				}
-				users = append(users, userMap)
-			}
-			serverIn["users"] = users
-		}
-
-		// Server TLS / Reality
-		sec := sb.Security
-		if sec == "" && sb.StreamSettings != nil {
-			if s, ok := sb.StreamSettings["security"].(string); ok {
-				sec = s
-			}
-		}
-
-		if sec == ast.SecurityReality || sec == "reality" {
-			privateKey := sb.PrivateKey
-			serverName := sb.SNI
-			dest := "example.com:443"
-			shortIDs := sb.ShortIDs
-			if sb.StreamSettings != nil {
-				if rs, ok := sb.StreamSettings["realitySettings"].(map[string]interface{}); ok {
-					if pk, ok := rs["privateKey"].(string); ok && pk != "" {
-						privateKey = pk
-					}
-					if d, ok := rs["dest"].(string); ok && d != "" {
-						dest = d
-					}
-					if sns, ok := rs["serverNames"].([]interface{}); ok && len(sns) > 0 {
-						if sn, ok := sns[0].(string); ok && sn != "" {
-							serverName = sn
-						}
-					}
-					if sids, ok := rs["shortIds"].([]interface{}); ok {
-						for _, sid := range sids {
-							if s, ok := sid.(string); ok {
-								shortIDs = append(shortIDs, s)
-							}
-						}
-					}
-				}
-			}
-			destHost := serverName
-			destPort := 443
-			if strings.Contains(dest, ":") {
-				parts := strings.Split(dest, ":")
-				destHost = parts[0]
-				fmt.Sscanf(parts[1], "%d", &destPort)
-			}
-			serverIn["tls"] = map[string]interface{}{
-				"enabled":     true,
-				"server_name": serverName,
-				"reality": map[string]interface{}{
-					"enabled":     true,
-					"private_key": privateKey,
-					"short_id":    shortIDs,
-					"handshake": map[string]interface{}{
-						"server":      destHost,
-						"server_port": destPort,
-					},
-				},
-			}
-		} else if sec == ast.SecurityTLS || sec == "tls" {
-			certPath := sb.CertPath
-			keyPath := sb.KeyPath
-			serverName := sb.SNI
-			if sb.StreamSettings != nil {
-				if ts, ok := sb.StreamSettings["tlsSettings"].(map[string]interface{}); ok {
-					if sn, ok := ts["serverName"].(string); ok && sn != "" {
-						serverName = sn
-					}
-					if cp, ok := ts["certificateFile"].(string); ok && cp != "" {
-						certPath = cp
-					}
-					if kp, ok := ts["keyFile"].(string); ok && kp != "" {
-						keyPath = kp
-					}
-				}
-			}
-			serverIn["tls"] = map[string]interface{}{
-				"enabled":          true,
-				"server_name":      serverName,
-				"certificate_path": certPath,
-				"key_path":         keyPath,
-			}
-		}
-
-		// Shadowsocks server parameters
-		if sb.Protocol == "shadowsocks" || strings.ToLower(sb.Protocol) == "shadowsocks" {
-			method := ""
-			if sb.RawSettings != nil {
-				if m, ok := sb.RawSettings["method"].(string); ok && m != "" {
-					method = m
-				} else if c, ok := sb.RawSettings["cipher"].(string); ok && c != "" {
-					method = c
-				}
-			}
-			if method == "" && sb.Security != "" && sb.Security != "none" {
-				method = sb.Security
-			}
-			if method == "" {
-				method = "2022-blake3-aes-128-gcm"
-			}
-			serverIn["method"] = method
-
-			if sb.RawSettings != nil {
-				if pwd, ok := sb.RawSettings["password"].(string); ok && pwd != "" {
-					serverIn["password"] = pwd
-				}
-				if net, ok := sb.RawSettings["network"].(string); ok && net != "" {
-					serverIn["network"] = net
-				}
-			}
-			if _, hasPwd := serverIn["password"]; !hasPwd && len(sb.Clients) > 0 {
-				if !strings.HasPrefix(method, "2022-") {
-					serverIn["password"] = sb.Clients[0].Password
-				}
-			}
-		}
-
-		// Hysteria 2 server parameters
-		if sb.Protocol == ast.ProtoHysteria2 {
-			if sb.ObfsPassword != "" {
-				obfsType := "salamander"
-				if sb.ObfsType != "" {
-					obfsType = sb.ObfsType
-				}
-				serverIn["obfs"] = map[string]interface{}{
-					"type":     obfsType,
-					"password": sb.ObfsPassword,
-				}
-			}
-			if sb.BandwidthUp != "" {
-				serverIn["up_mbps"] = parseBandwidth(sb.BandwidthUp)
-			}
-			if sb.BandwidthDown != "" {
-				serverIn["down_mbps"] = parseBandwidth(sb.BandwidthDown)
-			}
-		}
-
-		inbounds = append(inbounds, serverIn)
 	}
 
 	if len(inbounds) == 0 {
