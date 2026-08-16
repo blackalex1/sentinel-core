@@ -133,7 +133,7 @@ jobs:
           name: Sentinel-Core ${{ steps.vars.outputs.TAG_NAME }}
           make_latest: true
           draft: false
-          prerelease: ${{ contains(steps.vars.outputs.TAG_NAME, 'beta') || contains(steps.vars.outputs.TAG_NAME, 'alpha') || contains(steps.vars.outputs.TAG_NAME, 'rc') }}
+          prerelease: false
           generate_release_notes: true
           files: |
             dist/sentinel-core-linux-amd64

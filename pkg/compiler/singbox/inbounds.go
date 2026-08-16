@@ -108,12 +108,21 @@ func BuildSingBoxInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 		// Add server users / clients
 		if len(sb.Clients) > 0 {
 			users := make([]map[string]interface{}, 0, len(sb.Clients))
+			protoLower := strings.ToLower(sb.Protocol)
 			for _, c := range sb.Clients {
-				userMap := map[string]interface{}{
-					"name": c.Email,
-				}
-				protoLower := strings.ToLower(sb.Protocol)
-				if protoLower == "vless" || protoLower == "vmess" {
+				userMap := map[string]interface{}{}
+				if protoLower == "http" || protoLower == "socks" || protoLower == "mixed" {
+					uname := c.Email
+					if uname == "" {
+						uname = c.ID
+					}
+					if uname == "" {
+						uname = c.UUID
+					}
+					userMap["username"] = uname
+					userMap["password"] = c.Password
+				} else if protoLower == "vless" || protoLower == "vmess" {
+					userMap["name"] = c.Email
 					uid := c.UUID
 					if uid == "" {
 						uid = c.ID
@@ -126,6 +135,7 @@ func BuildSingBoxInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 						userMap["flow"] = c.Flow
 					}
 				} else {
+					userMap["name"] = c.Email
 					pwd := c.Password
 					if pwd == "" {
 						pwd = c.UUID
