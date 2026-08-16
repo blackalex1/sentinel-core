@@ -19,9 +19,19 @@ func BuildServerConfig(targetCore ast.TargetCore, serverInbounds []ast.ServerInb
 		logPath = logPathAndLevel[0]
 	}
 
-	lvl := "info"
+	lvl := ""
 	if len(logPathAndLevel) > 1 && logPathAndLevel[1] != "" {
 		lvl = logPathAndLevel[1]
+	}
+
+	accessLog := ""
+	if len(logPathAndLevel) > 2 {
+		accessLog = logPathAndLevel[2]
+	}
+
+	errorLog := ""
+	if len(logPathAndLevel) > 3 {
+		errorLog = logPathAndLevel[3]
 	}
 
 	if targetCore == ast.CoreHysteria2 {
@@ -44,6 +54,8 @@ func BuildServerConfig(targetCore ast.TargetCore, serverInbounds []ast.ServerInb
 		ClashAPIAddress: clashAPI,
 		LogLevel:        lvl,
 		LogPath:         logPath,
+		AccessLog:       accessLog,
+		ErrorLog:        errorLog,
 	}
 
 	if targetCore == ast.CoreXray {

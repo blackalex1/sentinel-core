@@ -320,8 +320,31 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 	logMap := map[string]interface{}{
 		"loglevel": logLevel,
 	}
-	if spec.LogPath != "" {
+
+	// Access Log handling
+	if spec.AccessLog != "" {
+		if spec.AccessLog == "console" || spec.AccessLog == "stdout" {
+			logMap["access"] = ""
+		} else {
+			logMap["access"] = spec.AccessLog
+		}
+	} else if spec.LogPath != "" {
 		logMap["access"] = spec.LogPath
+	} else {
+		// When no log path is set, suppress connection-level access logs unless debug/info is explicitly requested
+		if logLevel == "warning" || logLevel == "error" || logLevel == "none" {
+			logMap["access"] = "none"
+		}
+	}
+
+	// Error Log handling
+	if spec.ErrorLog != "" {
+		if spec.ErrorLog == "console" || spec.ErrorLog == "stderr" {
+			logMap["error"] = ""
+		} else {
+			logMap["error"] = spec.ErrorLog
+		}
+	} else if spec.LogPath != "" {
 		logMap["error"] = spec.LogPath
 	}
 
