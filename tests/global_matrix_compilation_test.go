@@ -710,8 +710,8 @@ func TestGlobal_Hysteria2_Standalone_Compilation(t *testing.T) {
 		t.Fatalf("compiled Hysteria 2 server config is not valid JSON: %v", err)
 	}
 
-	if !strings.Contains(srvJSON, `"listen": ":34443"`) {
-		t.Errorf("Hysteria 2 server config missing listen port: %s", srvJSON)
+	if !strings.Contains(srvJSON, `"listen": ":34443-44443"`) {
+		t.Errorf("Hysteria 2 server config missing listen port range: %s", srvJSON)
 	}
 	if !strings.Contains(srvJSON, "salamander_super_secret_password") {
 		t.Errorf("Hysteria 2 server config missing obfs password: %s", srvJSON)
