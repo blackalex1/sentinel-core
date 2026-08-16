@@ -8,11 +8,18 @@ import (
 
 // buildHysteria2Outbound compiles an ast.ServerProfile into a Sing-box Hysteria 2 outbound object.
 func buildHysteria2Outbound(tag string, node *ast.ServerProfile) (map[string]interface{}, error) {
+	authPass := node.Password
+	if node.Username != "" && node.Password != "" {
+		authPass = node.Username + ":" + node.Password
+	} else if node.Password == "" && node.Username != "" {
+		authPass = node.Username
+	}
+
 	out := map[string]interface{}{
 		"type":     "hysteria2",
 		"tag":      tag,
 		"server":   node.Address,
-		"password": node.Password,
+		"password": authPass,
 	}
 
 	if node.PortHopping != "" {

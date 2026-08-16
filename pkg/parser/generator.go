@@ -120,12 +120,29 @@ func generateHysteria2(p *ast.ServerProfile) (string, error) {
 	if p.PortHopping != "" {
 		q.Set("mport", p.PortHopping)
 	}
+	if p.BandwidthUp != "" {
+		q.Set("up", p.BandwidthUp)
+	}
+	if p.BandwidthDown != "" {
+		q.Set("down", p.BandwidthDown)
+	}
 	if len(p.ALPN) > 0 {
 		q.Set("alpn", strings.Join(p.ALPN, ","))
 	}
 
 	queryStr := q.Encode()
-	uri := fmt.Sprintf("hysteria2://%s@%s:%d", url.QueryEscape(p.Password), p.Address, p.Port)
+	var authStr string
+	if p.Username != "" && p.Password != "" {
+		authStr = url.UserPassword(p.Username, p.Password).String()
+	} else if p.Password != "" {
+		authStr = url.QueryEscape(p.Password)
+	} else if p.Username != "" {
+		authStr = url.QueryEscape(p.Username)
+	} else {
+		authStr = "secret"
+	}
+
+	uri := fmt.Sprintf("hysteria2://%s@%s:%d", authStr, p.Address, p.Port)
 	if queryStr != "" {
 		uri += "?" + queryStr
 	}

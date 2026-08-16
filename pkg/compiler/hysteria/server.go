@@ -63,21 +63,29 @@ func (sc *ServerCompiler) CompileServer(inbound ast.ServerInboundSpec, forwardTo
 
 	// Authentication (HTTP Webhook Auth or Userpass)
 	if inbound.AuthURL != "" {
+		httpAuth := map[string]interface{}{
+			"url": inbound.AuthURL,
+		}
+		if strings.HasPrefix(inbound.AuthURL, "https://") || strings.Contains(inbound.AuthURL, "127.0.0.1") || strings.Contains(inbound.AuthURL, "localhost") {
+			httpAuth["insecure"] = true
+		}
 		configObj["auth"] = map[string]interface{}{
 			"type": "http",
-			"http": map[string]interface{}{
-				"url": inbound.AuthURL,
-			},
+			"http": httpAuth,
 		}
 	} else {
 		authSet := false
 		for _, c := range inbound.Clients {
 			if c.Email == "http_webhook" || c.ID == "webhook" || strings.HasPrefix(c.Password, "http://") || strings.HasPrefix(c.Password, "https://") {
+				httpAuth := map[string]interface{}{
+					"url": c.Password,
+				}
+				if strings.HasPrefix(c.Password, "https://") || strings.Contains(c.Password, "127.0.0.1") || strings.Contains(c.Password, "localhost") {
+					httpAuth["insecure"] = true
+				}
 				configObj["auth"] = map[string]interface{}{
 					"type": "http",
-					"http": map[string]interface{}{
-						"url": c.Password,
-					},
+					"http": httpAuth,
 				}
 				authSet = true
 				break
@@ -103,10 +111,8 @@ func (sc *ServerCompiler) CompileServer(inbound ast.ServerInboundSpec, forwardTo
 				}
 			} else {
 				configObj["auth"] = map[string]interface{}{
-					"type": "password",
-					"password": map[string]interface{}{
-						"value": "default-secret",
-					},
+					"type":     "password",
+					"password": "default-secret",
 				}
 			}
 		}

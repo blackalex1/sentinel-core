@@ -146,6 +146,17 @@ func parseHysteria2(raw string) (*ast.ServerProfile, error) {
 		port = 443
 	}
 
+	var username, password string
+	if u.User != nil {
+		username = u.User.Username()
+		if p, ok := u.User.Password(); ok {
+			password = p
+		} else {
+			password = username
+			username = ""
+		}
+	}
+
 	q := u.Query()
 	portHopping := q.Get("mport")
 	if portHopping == "" {
@@ -153,6 +164,9 @@ func parseHysteria2(raw string) (*ast.ServerProfile, error) {
 	}
 	if portHopping == "" {
 		portHopping = q.Get("port_hopping")
+	}
+	if portHopping == "" {
+		portHopping = q.Get("hop")
 	}
 
 	var alpn []string
@@ -162,7 +176,8 @@ func parseHysteria2(raw string) (*ast.ServerProfile, error) {
 
 	profile := &ast.ServerProfile{
 		Protocol:      ast.ProtoHysteria2,
-		Password:      u.User.Username(),
+		Username:      username,
+		Password:      password,
 		Address:       u.Hostname(),
 		Port:          port,
 		Name:          u.Fragment,

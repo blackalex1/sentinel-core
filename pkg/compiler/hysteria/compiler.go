@@ -41,9 +41,16 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		serverAddr = fmt.Sprintf("%s:%s", adaptedNode.Address, adaptedNode.PortHopping)
 	}
 
+	authPass := adaptedNode.Password
+	if adaptedNode.Username != "" && adaptedNode.Password != "" {
+		authPass = adaptedNode.Username + ":" + adaptedNode.Password
+	} else if adaptedNode.Password == "" && adaptedNode.Username != "" {
+		authPass = adaptedNode.Username
+	}
+
 	configObj := map[string]interface{}{
 		"server": serverAddr,
-		"auth":   adaptedNode.Password,
+		"auth":   authPass,
 	}
 
 	// Bandwidth
