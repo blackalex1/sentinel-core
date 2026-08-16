@@ -43,37 +43,9 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		allWarnings = append(allWarnings, warnings...)
 
 		if len(adaptedNode.BackupOutbounds) > 0 {
-			primaryTag := adaptedNode.Name
-			if primaryTag == "" {
-				primaryTag = "proxy"
-			}
-			nodeCopy := *adaptedNode
-			nodeCopy.Name = primaryTag + "-primary"
-			primaryNodeObj, err := BuildSingBoxOutbound(&nodeCopy)
+			urltestOb, primaryNodeObj, err := BuildSingboxNodeFallback(adaptedNode)
 			if err != nil {
-				return "", nil, fmt.Errorf("failed to build sing-box primary outbound: %w", err)
-			}
-
-			probeURL := adaptedNode.HealthCheckURL
-			if probeURL == "" {
-				probeURL = "https://www.gstatic.com/generate_204"
-			}
-			probeInt := adaptedNode.HealthCheckInterval
-			if probeInt <= 0 {
-				probeInt = 15
-			}
-			toleranceVal := 0
-			if adaptedNode.FallbackStrategy == "load_balance" {
-				toleranceVal = 50
-			}
-
-			urltestOb := map[string]interface{}{
-				"type":      "urltest",
-				"tag":       primaryTag,
-				"outbounds": append([]string{primaryTag + "-primary"}, adaptedNode.BackupOutbounds...),
-				"url":       probeURL,
-				"interval":  fmt.Sprintf("%ds", probeInt),
-				"tolerance": toleranceVal,
+				return "", nil, err
 			}
 			primaryOutbounds = append(primaryOutbounds, urltestOb, primaryNodeObj)
 		} else {
@@ -109,73 +81,7 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 				continue
 			}
 
-			sMap := parseMapOrJSON(ob["settings"])
-			var validBackups []string
-			probeURL := "https://www.gstatic.com/generate_204"
-			probeInt := 15
-			fallbackStrat := "priority"
-
-			if sMap != nil {
-				if bkRaw, ok := sMap["backup_outbounds"].([]interface{}); ok {
-					for _, b := range bkRaw {
-						if bStr, ok := b.(string); ok && bStr != "" && bStr != tag {
-							validBackups = append(validBackups, bStr)
-						}
-					}
-				} else if bkRaw, ok := sMap["backup_outbounds"].([]string); ok {
-					for _, bStr := range bkRaw {
-						if bStr != "" && bStr != tag {
-							validBackups = append(validBackups, bStr)
-						}
-					}
-				}
-				if bkStr, ok := sMap["fallback_outbound"].(string); ok && bkStr != "" && bkStr != tag {
-					found := false
-					for _, vb := range validBackups {
-						if vb == bkStr {
-							found = true
-							break
-						}
-					}
-					if !found {
-						validBackups = append(validBackups, bkStr)
-					}
-				}
-				if u, ok := sMap["health_check_url"].(string); ok && u != "" {
-					probeURL = u
-				}
-				if i, ok := sMap["health_check_interval"].(float64); ok && i > 0 {
-					probeInt = int(i)
-				} else if i, ok := sMap["health_check_interval"].(int); ok && i > 0 {
-					probeInt = i
-				}
-				if s, ok := sMap["fallback_strategy"].(string); ok && s != "" {
-					fallbackStrat = s
-				}
-			}
-
-			if len(validBackups) > 0 {
-				primaryTag := tag + "-primary"
-				primaryObDict := make(map[string]interface{})
-				for k, v := range ob {
-					primaryObDict[k] = v
-				}
-				primaryObDict["tag"] = primaryTag
-				primaryCompiled := CompileRawOutboundToSingbox(primaryObDict)
-
-				toleranceVal := 0
-				if fallbackStrat == "load_balance" {
-					toleranceVal = 50
-				}
-
-				urltestOb := map[string]interface{}{
-					"type":      "urltest",
-					"tag":       tag,
-					"outbounds": append([]string{primaryTag}, validBackups...),
-					"url":       probeURL,
-					"interval":  fmt.Sprintf("%ds", probeInt),
-					"tolerance": toleranceVal,
-				}
+			if urltestOb, primaryCompiled, hasFallback := BuildSingboxRawFallback(ob); hasFallback {
 				outbounds = append(outbounds, urltestOb)
 				if primaryCompiled != nil {
 					outbounds = append(outbounds, primaryCompiled)

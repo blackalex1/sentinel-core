@@ -188,6 +188,9 @@ func BuildXrayInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 			if _, ok := settings["method"]; !ok {
 				settings["method"] = "2022-blake3-aes-128-gcm"
 			}
+			if net, ok := settings["network"].(string); !ok || net == "" {
+				settings["network"] = "tcp,udp"
+			}
 
 		case "socks":
 			if _, ok := settings["udp"]; !ok {
