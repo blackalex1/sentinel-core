@@ -153,6 +153,18 @@ func buildInboundTransport(sb *ast.ServerInboundSpec) map[string]interface{} {
 	return nil
 }
 
+// parseInboundNetwork normalizes network values for Sing-box ("tcp", "udp", or "" for both)
+func parseInboundNetwork(net string) string {
+	n := strings.ToLower(strings.TrimSpace(net))
+	if n == "tcp" {
+		return "tcp"
+	}
+	if n == "udp" {
+		return "udp"
+	}
+	return ""
+}
+
 // applyCommonInboundOptions applies sniffing, multiplex, and network settings
 func applyCommonInboundOptions(inbound map[string]interface{}, sb *ast.ServerInboundSpec) {
 	if sb.Sniffing != nil && len(sb.Sniffing) > 0 {
@@ -182,6 +194,11 @@ func applyCommonInboundOptions(inbound map[string]interface{}, sb *ast.ServerInb
 		}
 		if ut, ok := sb.RawSettings["udp_timeout"].(string); ok && ut != "" {
 			inbound["udp_timeout"] = ut
+		}
+		if net, ok := sb.RawSettings["network"].(string); ok && net != "" {
+			if parsedNet := parseInboundNetwork(net); parsedNet != "" {
+				inbound["network"] = parsedNet
+			}
 		}
 	}
 }

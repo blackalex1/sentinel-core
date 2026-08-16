@@ -585,3 +585,63 @@ func TestSingboxCompiler_AdditionalBranches(t *testing.T) {
 		t.Errorf("expected parsed handshake server_port 8443: %s", cfg)
 	}
 }
+
+func TestSingboxCompiler_ShadowsocksInbounds(t *testing.T) {
+	c := NewCompiler()
+
+	// 1. Legacy AEAD Shadowsocks (aes-256-gcm) with "tcp,udp" network
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreSingBox,
+		ServerInbounds: []ast.ServerInboundSpec{
+			{
+				Tag:      "ss-legacy-in",
+				Protocol: "shadowsocks",
+				Port:     20136,
+				RawSettings: map[string]interface{}{
+					"method":   "aes-256-gcm",
+					"password": "secret_password",
+					"network":  "tcp,udp",
+				},
+				Clients: []ast.ServerInboundClient{
+					{
+						Email:    "bot",
+						Password: "secret_password",
+					},
+				},
+			},
+			{
+				Tag:      "ss-2022-in",
+				Protocol: "shadowsocks",
+				Port:     20137,
+				RawSettings: map[string]interface{}{
+					"method":   "2022-blake3-aes-128-gcm",
+					"password": "server_psk_key",
+					"network":  "tcp",
+				},
+				Clients: []ast.ServerInboundClient{
+					{
+						Email:    "user1",
+						Password: "user1_key",
+					},
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile Shadowsocks inbounds: %v", err)
+	}
+
+	// For ss-legacy: "method": "aes-256-gcm", "password": "secret_password", NO "network": "tcp,udp"
+	if strings.Contains(cfg, `"network": "tcp,udp"`) {
+		t.Errorf("config must NOT contain 'network: tcp,udp', got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"method": "aes-256-gcm"`) {
+		t.Errorf("expected method aes-256-gcm, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"network": "tcp"`) {
+		t.Errorf("expected network tcp for ss-2022, got:\n%s", cfg)
+	}
+}
+
