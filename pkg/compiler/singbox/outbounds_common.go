@@ -59,10 +59,18 @@ func buildSingBoxTLS(node *ast.ServerProfile) map[string]interface{} {
 			"short_id":   node.ShortID,
 		}
 		tlsMap["reality"] = realityMap
-	}
 
-	// uTLS / Fingerprint
-	if node.Fingerprint != "" {
+		// Sing-box Reality client strictly requires uTLS enabled
+		fp := node.Fingerprint
+		if fp == "" {
+			fp = "chrome"
+		}
+		tlsMap["utls"] = map[string]interface{}{
+			"enabled":     true,
+			"fingerprint": fp,
+		}
+	} else if node.Fingerprint != "" {
+		// uTLS / Fingerprint for non-Reality TLS
 		tlsMap["utls"] = map[string]interface{}{
 			"enabled":     true,
 			"fingerprint": node.Fingerprint,
@@ -119,10 +127,11 @@ func buildSingBoxTransport(node *ast.ServerProfile) map[string]interface{} {
 	}
 }
 
-// parseBandwidth parses a bandwidth string (e.g. "100", "100 Mbps") into an integer in Mbps.
+// parseBandwidth parses a bandwidth string (e.g. "100", "100 Mbps", "200mb") into an integer in Mbps.
 func parseBandwidth(s string) int {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.TrimSuffix(s, "mbps")
+	s = strings.TrimSuffix(s, "mb")
 	s = strings.TrimSuffix(s, "m")
 	s = strings.TrimSpace(s)
 	val, err := strconv.Atoi(s)

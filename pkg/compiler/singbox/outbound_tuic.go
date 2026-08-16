@@ -15,6 +15,16 @@ func buildTUICOutbound(tag string, node *ast.ServerProfile) (map[string]interfac
 		"password":    node.Password,
 	}
 
+	if node.CongestionControl != "" {
+		out["congestion_controller"] = node.CongestionControl
+	}
+	if node.UDPRelayMode != "" {
+		out["udp_relay_mode"] = node.UDPRelayMode
+	}
+	if node.ZeroRTTHandshake {
+		out["zero_rtt_handshake"] = true
+	}
+
 	// TLS Settings
 	tlsMap := buildSingBoxTLS(node)
 	if tlsMap != nil {
