@@ -132,6 +132,31 @@ func SentinelGetCoresStatus() *C.char {
 	return C.CString(string(jsonBytes))
 }
 
+//export SentinelRegisterHysteriaPort
+func SentinelRegisterHysteriaPort(port C.int) *C.char {
+	p := int(port)
+	if p > 0 {
+		supervisor.GetController().RegisterHysteriaPort(p)
+	}
+	return C.CString(`{"success": true}`)
+}
+
+//export SentinelConfigureSupervisor
+func SentinelConfigureSupervisor(configJSON *C.char) *C.char {
+	raw := safeGoString(configJSON)
+	var cfg struct {
+		ClashAddr     string            `json:"clashAddr"`
+		HysteriaPorts []int             `json:"hysteriaPorts"`
+		LogPaths      map[string]string `json:"logPaths"`
+	}
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(errResp))
+	}
+	supervisor.GetController().Configure(cfg.ClashAddr, cfg.HysteriaPorts, cfg.LogPaths)
+	return C.CString(`{"success": true}`)
+}
+
 //export SentinelGetUnifiedTraffic
 func SentinelGetUnifiedTraffic() *C.char {
 	ctrl := supervisor.GetController()

@@ -1,7 +1,11 @@
 package supervisor
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -33,6 +37,21 @@ func GetController() *Controller {
 	return defaultController
 }
 
+// RegisterHysteriaPort adds a new Hysteria 2 admin port to monitor
+func (c *Controller) RegisterHysteriaPort(port int) {
+	if port <= 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, p := range c.hysteriaPorts {
+		if p == port {
+			return
+		}
+	}
+	c.hysteriaPorts = append(c.hysteriaPorts, port)
+}
+
 // Configure sets endpoints and log paths
 func (c *Controller) Configure(clashAddr string, hysteriaPorts []int, logPaths map[string]string) {
 	c.mu.Lock()
@@ -51,10 +70,58 @@ func (c *Controller) Configure(clashAddr string, hysteriaPorts []int, logPaths m
 	}
 }
 
+func (c *Controller) getActiveHysteriaPorts() []int {
+	c.mu.RLock()
+	ports := make([]int, len(c.hysteriaPorts))
+	copy(ports, c.hysteriaPorts)
+	c.mu.RUnlock()
+
+	portSet := make(map[int]bool)
+	for _, p := range ports {
+		if p > 0 {
+			portSet[p] = true
+		}
+	}
+
+	// Also scan for hysteria_*.json config files in common locations
+	searchDirs := []string{".", "bin", "config", "../bin", "../config"}
+	for _, dir := range searchDirs {
+		matches, err := filepath.Glob(filepath.Join(dir, "hysteria*.json"))
+		if err != nil {
+			continue
+		}
+		for _, m := range matches {
+			if data, err := os.ReadFile(m); err == nil {
+				var cfg struct {
+					TrafficStats struct {
+						Listen string `json:"listen"`
+					} `json:"trafficStats"`
+				}
+				if err := json.Unmarshal(data, &cfg); err == nil && cfg.TrafficStats.Listen != "" {
+					parts := strings.Split(cfg.TrafficStats.Listen, ":")
+					if len(parts) >= 2 {
+						var p int
+						if n, _ := fmt.Sscanf(parts[len(parts)-1], "%d", &p); n == 1 && p > 0 {
+							portSet[p] = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	var result []int
+	for p := range portSet {
+		result = append(result, p)
+	}
+	return result
+}
+
 // GetStatus returns the operational status of all core engines
 func (c *Controller) GetStatus() map[string]CoreStatus {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
+	clashAddr := c.clashAPIAddr
+	c.mu.RUnlock()
 
 	status := make(map[string]CoreStatus)
 	pm := GetProcessManager()
@@ -62,7 +129,7 @@ func (c *Controller) GetStatus() map[string]CoreStatus {
 	// Check Sing-box
 	sbRunning := pm.IsRunning("sing-box")
 	if !sbRunning {
-		if _, err := localHTTPClient.Get("http://" + c.clashAPIAddr + "/connections"); err == nil {
+		if _, err := localHTTPClient.Get("http://" + clashAddr + "/connections"); err == nil {
 			sbRunning = true
 		}
 	}
@@ -73,8 +140,9 @@ func (c *Controller) GetStatus() map[string]CoreStatus {
 
 	// Check Hysteria 2
 	hyRunning := pm.IsRunning("hysteria2")
+	hyPorts := c.getActiveHysteriaPorts()
 	if !hyRunning {
-		for _, port := range c.hysteriaPorts {
+		for _, port := range hyPorts {
 			if _, err := localHTTPClient.Get(fmt.Sprintf("http://127.0.0.1:%d/traffic", port)); err == nil {
 				hyRunning = true
 				break
@@ -100,9 +168,9 @@ func (c *Controller) GetStatus() map[string]CoreStatus {
 func (c *Controller) GetUnifiedTraffic() (map[string]ClientTraffic, error) {
 	c.mu.RLock()
 	clashAddr := c.clashAPIAddr
-	hyPorts := make([]int, len(c.hysteriaPorts))
-	copy(hyPorts, c.hysteriaPorts)
 	c.mu.RUnlock()
+
+	hyPorts := c.getActiveHysteriaPorts()
 
 	aggregated := make(map[string]ClientTraffic)
 
@@ -125,8 +193,33 @@ func (c *Controller) GetUnifiedTraffic() (map[string]ClientTraffic, error) {
 				if t.Online {
 					entry.Online = true
 				}
+				for _, ip := range t.ActiveIPs {
+					if !containsString(entry.ActiveIPs, ip) {
+						entry.ActiveIPs = append(entry.ActiveIPs, ip)
+					}
+				}
 				aggregated[email] = entry
 			}
+		}
+	}
+
+	// 3. Xray
+	if xrTraffic, err := FetchXrayTraffic(""); err == nil {
+		for email, t := range xrTraffic {
+			entry := aggregated[email]
+			entry.Email = email
+			entry.UpBytes += t.UpBytes
+			entry.DownBytes += t.DownBytes
+			entry.Connections += t.Connections
+			if t.Online {
+				entry.Online = true
+			}
+			for _, ip := range t.ActiveIPs {
+				if !containsString(entry.ActiveIPs, ip) {
+					entry.ActiveIPs = append(entry.ActiveIPs, ip)
+				}
+			}
+			aggregated[email] = entry
 		}
 	}
 
@@ -137,9 +230,9 @@ func (c *Controller) GetUnifiedTraffic() (map[string]ClientTraffic, error) {
 func (c *Controller) KickClient(email string) error {
 	c.mu.RLock()
 	clashAddr := c.clashAPIAddr
-	hyPorts := make([]int, len(c.hysteriaPorts))
-	copy(hyPorts, c.hysteriaPorts)
 	c.mu.RUnlock()
+
+	hyPorts := c.getActiveHysteriaPorts()
 
 	var wg sync.WaitGroup
 

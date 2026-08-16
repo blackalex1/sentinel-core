@@ -43,12 +43,25 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 
 	var data struct {
 		Connections []struct {
-			Download int64 `json:"download"`
-			Upload   int64 `json:"upload"`
+			ID       string `json:"id"`
+			Download int64  `json:"download"`
+			Upload   int64  `json:"upload"`
+			User     string `json:"user"`
+			Username string `json:"username"`
+			Email    string `json:"email"`
 			Metadata struct {
-				User       string `json:"user"`
-				SourceIP   string `json:"sourceIP"`
-				RemoteHost string `json:"host"`
+				User        string `json:"user"`
+				InboundUser string `json:"inboundUser"`
+				ClientUser  string `json:"clientUser"`
+				Username    string `json:"username"`
+				AuthUser    string `json:"auth_user"`
+				Name        string `json:"name"`
+				Email       string `json:"email"`
+				Client      string `json:"client"`
+				SourceIP    string `json:"sourceIP"`
+				Source_IP   string `json:"source_ip"`
+				ClientIP    string `json:"clientIP"`
+				RemoteHost  string `json:"host"`
 			} `json:"metadata"`
 		} `json:"connections"`
 	}
@@ -60,7 +73,38 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 	ipSetByUser := make(map[string]map[string]bool)
 
 	for _, conn := range data.Connections {
-		email := strings.TrimSpace(conn.Metadata.User)
+		email := conn.Metadata.User
+		if email == "" {
+			email = conn.Metadata.InboundUser
+		}
+		if email == "" {
+			email = conn.Metadata.ClientUser
+		}
+		if email == "" {
+			email = conn.Metadata.Username
+		}
+		if email == "" {
+			email = conn.Metadata.AuthUser
+		}
+		if email == "" {
+			email = conn.Metadata.Email
+		}
+		if email == "" {
+			email = conn.Metadata.Name
+		}
+		if email == "" {
+			email = conn.Metadata.Client
+		}
+		if email == "" {
+			email = conn.User
+		}
+		if email == "" {
+			email = conn.Username
+		}
+		if email == "" {
+			email = conn.Email
+		}
+		email = strings.TrimSpace(email)
 		if email == "" {
 			continue
 		}
@@ -72,11 +116,20 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		entry.Connections++
 		entry.Online = true
 
+		srcIP := conn.Metadata.SourceIP
+		if srcIP == "" {
+			srcIP = conn.Metadata.Source_IP
+		}
+		if srcIP == "" {
+			srcIP = conn.Metadata.ClientIP
+		}
+		srcIP = strings.TrimSpace(srcIP)
+
 		if ipSetByUser[email] == nil {
 			ipSetByUser[email] = make(map[string]bool)
 		}
-		if conn.Metadata.SourceIP != "" {
-			ipSetByUser[email][conn.Metadata.SourceIP] = true
+		if srcIP != "" {
+			ipSetByUser[email][srcIP] = true
 		}
 
 		result[email] = entry
@@ -111,8 +164,18 @@ func CloseSingBoxConnections(clashAddr string, email string) error {
 	var data struct {
 		Connections []struct {
 			ID       string `json:"id"`
+			User     string `json:"user"`
+			Username string `json:"username"`
+			Email    string `json:"email"`
 			Metadata struct {
-				User string `json:"user"`
+				User        string `json:"user"`
+				InboundUser string `json:"inboundUser"`
+				ClientUser  string `json:"clientUser"`
+				Username    string `json:"username"`
+				AuthUser    string `json:"auth_user"`
+				Name        string `json:"name"`
+				Email       string `json:"email"`
+				Client      string `json:"client"`
 			} `json:"metadata"`
 		} `json:"connections"`
 	}
@@ -122,7 +185,38 @@ func CloseSingBoxConnections(clashAddr string, email string) error {
 	}
 
 	for _, conn := range data.Connections {
-		if strings.EqualFold(conn.Metadata.User, email) {
+		cUser := conn.Metadata.User
+		if cUser == "" {
+			cUser = conn.Metadata.InboundUser
+		}
+		if cUser == "" {
+			cUser = conn.Metadata.ClientUser
+		}
+		if cUser == "" {
+			cUser = conn.Metadata.Username
+		}
+		if cUser == "" {
+			cUser = conn.Metadata.AuthUser
+		}
+		if cUser == "" {
+			cUser = conn.Metadata.Email
+		}
+		if cUser == "" {
+			cUser = conn.Metadata.Name
+		}
+		if cUser == "" {
+			cUser = conn.Metadata.Client
+		}
+		if cUser == "" {
+			cUser = conn.User
+		}
+		if cUser == "" {
+			cUser = conn.Username
+		}
+		if cUser == "" {
+			cUser = conn.Email
+		}
+		if strings.EqualFold(strings.TrimSpace(cUser), email) {
 			delURL := fmt.Sprintf("http://%s/connections/%s", clashAddr, conn.ID)
 			delReq, err := http.NewRequest(http.MethodDelete, delURL, nil)
 			if err == nil {
