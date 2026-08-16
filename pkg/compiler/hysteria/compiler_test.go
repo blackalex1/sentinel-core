@@ -141,8 +141,8 @@ func TestHysteriaServerCompiler_PortHopAndListenAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(cfg1, `"listen": ":443"`) {
-		t.Errorf("expected :443 listen, got:\n%s", cfg1)
+	if !strings.Contains(cfg1, `"listen": ":443-500"`) {
+		t.Errorf("expected :443-500 listen, got:\n%s", cfg1)
 	}
 
 	// 2. ListenAddress without PortHop
@@ -159,18 +159,18 @@ func TestHysteriaServerCompiler_PortHopAndListenAddress(t *testing.T) {
 		t.Errorf("expected 192.168.1.100:8443 listen, got:\n%s", cfg2)
 	}
 
-	// 3. PortHop not matching start port -> falls back to default :port
+	// 3. PortHop with custom range
 	ib3 := ast.ServerInboundSpec{
 		Port:     8443,
-		PortHop:  "443-500",
+		PortHop:  "20000-30000",
 		Protocol: "hysteria2",
 	}
 	cfg3, err := sc.CompileServer(ib3, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(cfg3, `"listen": ":8443"`) {
-		t.Errorf("expected :8443 listen, got:\n%s", cfg3)
+	if !strings.Contains(cfg3, `"listen": ":20000-30000"`) {
+		t.Errorf("expected :20000-30000 listen, got:\n%s", cfg3)
 	}
 }
 
@@ -381,23 +381,13 @@ func TestHysteriaServerCompiler_Masquerade(t *testing.T) {
 		t.Errorf("expected 502 Not Found masquerade, got:\n%s", cfgCustomStatus)
 	}
 
-	// 4. Default with MasqValue (proxy)
-	ibDefVal := ast.ServerInboundSpec{
-		Port:      443,
-		MasqValue: "https://news.ycombinator.com",
-	}
-	cfgDefVal, _ := sc.CompileServer(ibDefVal, 0)
-	if !strings.Contains(cfgDefVal, `"type": "proxy"`) || !strings.Contains(cfgDefVal, `"https://news.ycombinator.com"`) {
-		t.Errorf("expected default proxy masquerade with value, got:\n%s", cfgDefVal)
-	}
-
-	// 5. Default without MasqValue (404 string)
+	// 4. Default without MasqType -> masquerade MUST NOT be present
 	ibDefEmpty := ast.ServerInboundSpec{
 		Port: 443,
 	}
 	cfgDefEmpty, _ := sc.CompileServer(ibDefEmpty, 0)
-	if !strings.Contains(cfgDefEmpty, `"type": "string"`) || !strings.Contains(cfgDefEmpty, `"statusCode": 404`) {
-		t.Errorf("expected default 404 string masquerade, got:\n%s", cfgDefEmpty)
+	if strings.Contains(cfgDefEmpty, `"masquerade"`) {
+		t.Errorf("expected NO masquerade when unconfigured, got:\n%s", cfgDefEmpty)
 	}
 }
 
