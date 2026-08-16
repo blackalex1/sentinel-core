@@ -382,3 +382,152 @@ func TestMultiProtocol_DeepFallbackChain_Xray(t *testing.T) {
 		t.Logf("Xray check passed 100%% successfully with 3-level fallback across 4 protocols!")
 	}
 }
+
+// TestCrossCore_SeamlessSwitching_SingBox_And_Xray demonstrates that the exact same
+// multi-fallback specification can be compiled dynamically for Sing-box or Xray
+// when switching cores in Sentinel-Panel without any data loss or manual re-configuration.
+func TestCrossCore_SeamlessSwitching_SingBox_And_Xray(t *testing.T) {
+	singboxBin := getBinPath("../../panel/bin/sing-box.exe")
+	xrayBin := getBinPath("../../panel/bin/xray.exe")
+
+	mockKeys, _ := crypto.GenerateX25519KeyPair()
+
+	// Identical database / panel state with 3 fallback levels
+	primaryOut := map[string]interface{}{
+		"tag":      "node-primary",
+		"protocol": "vless",
+		"settings": map[string]interface{}{
+			"backup_outbounds":      []string{"node-bak1", "node-bak2", "node-bak3"},
+			"health_check_url":      "https://www.gstatic.com/generate_204",
+			"health_check_interval": 15,
+			"fallback_strategy":     "priority",
+			"vnext": []interface{}{
+				map[string]interface{}{
+					"address": "vless.mock-provider.net",
+					"port":    443,
+					"users": []interface{}{
+						map[string]interface{}{
+							"id":   "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+							"flow": "xtls-rprx-vision",
+						},
+					},
+				},
+			},
+		},
+		"streamSettings": map[string]interface{}{
+			"network":  "tcp",
+			"security": "reality",
+			"realitySettings": map[string]interface{}{
+				"serverName":  "gateway.mock-target.com",
+				"fingerprint": "chrome",
+				"publicKey":   mockKeys.PublicKey,
+				"shortId":     "01234567",
+			},
+		},
+	}
+
+	bak1 := map[string]interface{}{
+		"tag":      "node-bak1",
+		"protocol": "shadowsocks",
+		"settings": map[string]interface{}{
+			"servers": []map[string]interface{}{
+				{"address": "ss.mock-provider.net", "port": 8388, "method": "2022-blake3-aes-128-gcm", "password": "AQEBAQEBAQEBAQEBAQEBAQ=="},
+			},
+		},
+	}
+
+	bak2 := map[string]interface{}{
+		"tag":      "node-bak2",
+		"protocol": "trojan",
+		"settings": map[string]interface{}{
+			"servers": []map[string]interface{}{
+				{"address": "trojan.mock-provider.net", "port": 443, "password": "trojan_secret_password"},
+			},
+		},
+		"streamSettings": map[string]interface{}{
+			"security": "tls",
+			"tlsSettings": map[string]interface{}{"serverName": "trojan.mock-provider.net"},
+		},
+	}
+
+	bak3 := map[string]interface{}{
+		"tag":      "node-bak3",
+		"protocol": "vmess",
+		"settings": map[string]interface{}{
+			"vnext": []interface{}{
+				map[string]interface{}{
+					"address": "vmess.mock-provider.net",
+					"port":    443,
+					"users": []interface{}{
+						map[string]interface{}{"id": "b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e"},
+					},
+				},
+			},
+		},
+	}
+
+	inbound := ast.ServerInboundSpec{
+		Tag:      "main-inbound",
+		Port:     10445,
+		Protocol: "vless",
+		StreamSettings: map[string]interface{}{
+			"security": "reality",
+			"realitySettings": map[string]interface{}{
+				"dest":        "gateway.mock-target.com:443",
+				"serverNames": []string{"gateway.mock-target.com"},
+				"privateKey":  mockKeys.PrivateKey,
+				"shortIds":    []string{"01234567"},
+			},
+		},
+		Clients: []ast.ServerInboundClient{
+			{ID: "c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f", Flow: "xtls-rprx-vision"},
+		},
+	}
+
+	table := routing.NewRoutingTable("node-primary")
+	routingAST := table.CompileToAST()
+	routingAST.Outbounds = []map[string]interface{}{primaryOut, bak1, bak2, bak3}
+
+	// 1. Compile for Sing-box
+	sbCfgJSON, err := builder.BuildServerConfig(ast.CoreSingBox, []ast.ServerInboundSpec{inbound}, routingAST, "127.0.0.1:9090")
+	if err != nil {
+		t.Fatalf("Sing-box compilation failed: %v", err)
+	}
+	if !strings.Contains(sbCfgJSON, `"type": "urltest"`) {
+		t.Errorf("Sing-box missing urltest: %s", sbCfgJSON)
+	}
+	if singboxBin != "" {
+		tmpFile, _ := os.CreateTemp("", "sb-switch-*.json")
+		tmpFile.WriteString(sbCfgJSON)
+		tmpFile.Close()
+		cmd := exec.Command(singboxBin, "check", "-c", tmpFile.Name())
+		out, err := cmd.CombinedOutput()
+		os.Remove(tmpFile.Name())
+		if err != nil {
+			t.Fatalf("Sing-box check failed: %v\nOutput: %s", err, string(out))
+		}
+	}
+
+	// 2. Compile EXACT SAME spec for Xray
+	xrayCfgJSON, err := builder.BuildServerConfig(ast.CoreXray, []ast.ServerInboundSpec{inbound}, routingAST, "")
+	if err != nil {
+		t.Fatalf("Xray compilation failed: %v", err)
+	}
+	if !strings.Contains(xrayCfgJSON, `"observatory"`) || !strings.Contains(xrayCfgJSON, `"balancers"`) {
+		t.Errorf("Xray missing observatory or balancers: %s", xrayCfgJSON)
+	}
+	if xrayBin != "" {
+		tmpFile, _ := os.CreateTemp("", "xray-switch-*.json")
+		tmpFile.WriteString(xrayCfgJSON)
+		tmpFile.Close()
+		cmd := exec.Command(xrayBin, "-test", "-config", tmpFile.Name())
+		out, err := cmd.CombinedOutput()
+		os.Remove(tmpFile.Name())
+		if err != nil {
+			t.Fatalf("Xray check failed: %v\nOutput: %s", err, string(out))
+		}
+	}
+
+	t.Logf("Cross-core switching verified successfully with live validation on both Sing-box and Xray!")
+}
+

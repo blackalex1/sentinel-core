@@ -125,7 +125,7 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 						},
 					}
 				}
-			} else if proto == "vless" || proto == "vmess" {
+			} else if proto == "vless" {
 				if vnextList, ok := settingsMap["vnext"].([]interface{}); ok {
 					for _, vn := range vnextList {
 						if vnMap, ok := vn.(map[string]interface{}); ok {
@@ -135,6 +135,37 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 										"id":         "00000000-0000-0000-0000-000000000000",
 										"encryption": "none",
 									},
+								}
+							} else {
+								for _, u := range users {
+									if uMap, ok := u.(map[string]interface{}); ok {
+										if enc, ok := uMap["encryption"].(string); !ok || enc == "" {
+											uMap["encryption"] = "none"
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			} else if proto == "vmess" {
+				if vnextList, ok := settingsMap["vnext"].([]interface{}); ok {
+					for _, vn := range vnextList {
+						if vnMap, ok := vn.(map[string]interface{}); ok {
+							if users, ok := vnMap["users"].([]interface{}); !ok || len(users) == 0 {
+								vnMap["users"] = []map[string]interface{}{
+									{
+										"id":       "00000000-0000-0000-0000-000000000000",
+										"security": "auto",
+									},
+								}
+							} else {
+								for _, u := range users {
+									if uMap, ok := u.(map[string]interface{}); ok {
+										if sec, ok := uMap["security"].(string); !ok || sec == "" {
+											uMap["security"] = "auto"
+										}
+									}
 								}
 							}
 						}
