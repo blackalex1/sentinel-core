@@ -3,6 +3,7 @@ package supervisor
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -96,6 +97,39 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 	}
 
 	pm.processes[normName] = cmd
+
+	// Auto-register telemetry endpoints from config
+	if configPath != "" {
+		if data, err := os.ReadFile(configPath); err == nil {
+			if normName == "hysteria2" {
+				var hCfg struct {
+					TrafficStats struct {
+						Listen string `json:"listen"`
+					} `json:"trafficStats"`
+				}
+				if err := json.Unmarshal(data, &hCfg); err == nil && hCfg.TrafficStats.Listen != "" {
+					parts := strings.Split(hCfg.TrafficStats.Listen, ":")
+					if len(parts) >= 2 {
+						var p int
+						if n, _ := fmt.Sscanf(parts[len(parts)-1], "%d", &p); n == 1 && p > 0 {
+							GetController().RegisterHysteriaPort(p)
+						}
+					}
+				}
+			} else if normName == "sing-box" {
+				var sbCfg struct {
+					Experimental struct {
+						ClashAPI struct {
+							ExternalController string `json:"external_controller"`
+						} `json:"clash_api"`
+					} `json:"experimental"`
+				}
+				if err := json.Unmarshal(data, &sbCfg); err == nil && sbCfg.Experimental.ClashAPI.ExternalController != "" {
+					GetController().Configure(sbCfg.Experimental.ClashAPI.ExternalController, nil, nil)
+				}
+			}
+		}
+	}
 
 	// Stream stdout & stderr lines directly into in-memory broadcaster
 	if errOut == nil && stdoutPipe != nil {
