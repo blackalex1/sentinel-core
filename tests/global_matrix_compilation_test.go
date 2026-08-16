@@ -378,10 +378,10 @@ func TestGlobal_SingBox_AllInbounds_And_AllOutbounds_Compilation(t *testing.T) {
 		"tag":      "raw-hy2-hopping",
 		"protocol": "hysteria2",
 		"settings": map[string]interface{}{
-			"address":  "cybergrid.servequake.com",
-			"port":     "8443-20443",
-			"password": "mock_auth_secret",
-			"up_mbps":  100,
+			"address":   "mock-hy2.example.com",
+			"port":      "8443-20443",
+			"password":  "mock_auth_secret",
+			"up_mbps":   100,
 			"down_mbps": 200,
 			"obfs": map[string]interface{}{
 				"type": "salamander",
@@ -393,7 +393,7 @@ func TestGlobal_SingBox_AllInbounds_And_AllOutbounds_Compilation(t *testing.T) {
 		"streamSettings": map[string]interface{}{
 			"security": "tls",
 			"tlsSettings": map[string]interface{}{
-				"serverName":    "download.visualstudio.microsoft.com",
+				"serverName":    "mock-cdn.example.org",
 				"allowInsecure": true,
 			},
 		},

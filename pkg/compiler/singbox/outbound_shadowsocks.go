@@ -85,6 +85,28 @@ func compileRawShadowsocksOutbound(tag string, sMap, tsMap map[string]interface{
 					}
 				}
 			}
+		} else if serversRaw, ok := sMap["servers"].([]map[string]interface{}); ok && len(serversRaw) > 0 {
+			firstSrv := serversRaw[0]
+			if server == "" {
+				if addr, ok := firstSrv["address"].(string); ok {
+					server = addr
+				}
+			}
+			if portRaw == nil {
+				if p, ok := firstSrv["port"]; ok {
+					portRaw = p
+				}
+			}
+			if password == "" {
+				if pwd, ok := firstSrv["password"].(string); ok {
+					password = pwd
+				}
+			}
+			if method == "2022-blake3-aes-128-gcm" {
+				if m, ok := firstSrv["method"].(string); ok && m != "" {
+					method = m
+				}
+			}
 		}
 	}
 

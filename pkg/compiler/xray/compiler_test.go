@@ -613,3 +613,72 @@ func TestXrayCompiler_AdditionalBranches(t *testing.T) {
 		t.Errorf("expected my-user-id: %s", cfg)
 	}
 }
+
+func TestXrayCompiler_FallbackBalancer(t *testing.T) {
+	c := NewCompiler()
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreXray,
+		Routing: &ast.RoutingSpec{
+			Outbounds: []map[string]interface{}{
+				{
+					"tag":      "primary-out",
+					"protocol": "vless",
+					"settings": map[string]interface{}{
+						"fallback_outbound":     "backup-out",
+						"health_check_url":      "https://www.gstatic.com/generate_204",
+						"health_check_interval": 15,
+						"vnext": []interface{}{
+							map[string]interface{}{
+								"address": "1.1.1.1",
+								"port":    443,
+								"users": []interface{}{
+									map[string]interface{}{"id": "e99dc462-8409-4e45-bf28-665544332211"},
+								},
+							},
+						},
+					},
+				},
+				{
+					"tag":      "backup-out",
+					"protocol": "vless",
+					"settings": map[string]interface{}{
+						"vnext": []interface{}{
+							map[string]interface{}{
+								"address": "2.2.2.2",
+								"port":    443,
+								"users": []interface{}{
+									map[string]interface{}{"id": "e99dc462-8409-4e45-bf28-665544332222"},
+								},
+							},
+						},
+					},
+				},
+			},
+			Rules: []ast.RoutingRule{
+				{
+					Action:      "primary-out",
+					Domains:     []string{"domain:google.com"},
+					InboundTags: []string{"inbound-1"},
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile Xray fallback spec: %v", err)
+	}
+
+	if !strings.Contains(cfg, `"observatory"`) {
+		t.Errorf("expected observatory in Xray config, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"balancer-primary-out"`) {
+		t.Errorf("expected balancer-primary-out in config, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"fallbackTag": "backup-out"`) {
+		t.Errorf("expected fallbackTag backup-out in balancer, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"balancerTag": "balancer-primary-out"`) {
+		t.Errorf("expected rule outboundTag replaced by balancerTag, got:\n%s", cfg)
+	}
+}
