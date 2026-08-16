@@ -20,6 +20,13 @@ func buildVLESSInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 
 	// 1. Users
 	if len(sb.Clients) > 0 {
+		defaultFlow := ""
+		if sb.RawSettings != nil {
+			if f, ok := sb.RawSettings["flow"].(string); ok && f != "" {
+				defaultFlow = f
+			}
+		}
+
 		users := make([]map[string]interface{}, 0, len(sb.Clients))
 		for _, c := range sb.Clients {
 			uid := c.UUID
@@ -33,8 +40,12 @@ func buildVLESSInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 				"name": c.Email,
 				"uuid": uid,
 			}
-			if c.Flow != "" {
-				userMap["flow"] = c.Flow
+			flow := c.Flow
+			if flow == "" {
+				flow = defaultFlow
+			}
+			if flow != "" {
+				userMap["flow"] = flow
 			}
 			users = append(users, userMap)
 		}
