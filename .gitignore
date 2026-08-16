@@ -1,5 +1,8 @@
 # Binaries and compiled files
 bin/
+dist/
+sentinel-core
+sentinel-core.h
 *.exe
 *.exe~
 *.dll
@@ -29,6 +32,8 @@ sentinel_test_*
 Thumbs.db
 
 # Go test coverage
+coverage
+coverage/
 *.coverprofile
 coverage.out
 coverage.html

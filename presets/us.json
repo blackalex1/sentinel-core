@@ -4,7 +4,6 @@
   "description": "Все IP и сайты США",
   "defaultTarget": "block",
   "domains": [
-    "geosite:category-us-gov",
     "regexp:.*\\.us$"
   ],
   "ips": [

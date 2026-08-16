@@ -19,6 +19,13 @@
 * **Hardened Security & Cryptography (`pkg/crypto`)**:
   * Argon2id key derivation + ChaCha20-Poly1305 / AES-256-GCM AEAD encryption.
   * Tamper detection and encrypted DB row ingestion.
+* **Unified Security & IPS Subsystem (`pkg/security`)**:
+  * **Active Port Guard & IPS**: Sensitive port defense (SSH 22, RDP 3389, PVE 8006, DBs), port scan detection, self-protection process whitelist.
+  * **Rate Limiter & Anti-Flood**: Token-bucket client request limiter with automatic temporary IP isolation.
+  * **Kill-Switch & Leak Prevention**: Fail-safe network drops, DNS leak prevention, IPv6 leak blocker, RFC1918 LAN bypass.
+  * **Integrity & Secure Memory**: Ed25519/HMAC signature verification, SSRF and cloud metadata (`169.254.169.254`) blocking, runtime `Zeroize` memory wiping.
+  * **Threat Shield Filtering**: High-performance Bloom Filter & Trie matcher for malware, phishing, cryptominers, and ad networks.
+  * **Dynamic UI Settings Schema**: Ready-to-render UI metadata for Web Panel and Desktop/Mobile settings tabs (`ru`/`en`).
 * **Universal Communication Interfaces**:
   * **Native Go API** (Direct import).
   * **C-FFI Shared Library** (`cmd/cshared` for Flutter, Kotlin, Swift, C#).
@@ -30,7 +37,7 @@
 
 ```bash
 # Run full unit and integration test suite
-go test -v ./tests/...
+go test -v ./...
 
 # Build CLI binary
 go build -o bin/sentinel-core ./cmd/cli
@@ -50,6 +57,13 @@ sentinel-core parse --uri "vless://..."
 # Compile Sing-box client config with RU bypass preset
 sentinel-core build --uri "hy2://..." --core singbox --preset ru
 
+# Output security settings schema for Web Panel tab
+sentinel-core security schema --lang ru
+sentinel-core security schema --lang en
+
+# Output default security configuration JSON
+sentinel-core security default
+
 # Output dynamic configuration schema for UI modal
 sentinel-core schema --lang ru
 sentinel-core schema --lang en
@@ -57,3 +71,4 @@ sentinel-core schema --lang en
 # List all available atomic routing presets
 sentinel-core preset list
 ```
+

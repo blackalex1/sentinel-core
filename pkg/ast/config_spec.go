@@ -21,5 +21,6 @@ type ConfigSpec struct {
 	Routing       *RoutingSpec       `json:"routing,omitempty"`
 	DNS           *DNSSpec           `json:"dns,omitempty"`
 	LogLevel      string             `json:"logLevel,omitempty"` // "trace", "debug", "info", "warn", "error"
+	LogPath       string             `json:"logPath,omitempty"`
 	ClashAPIAddress string           `json:"clashApiAddress,omitempty"` // e.g. "127.0.0.1:9090"
 }
