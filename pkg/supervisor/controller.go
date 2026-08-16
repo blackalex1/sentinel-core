@@ -84,7 +84,14 @@ func (c *Controller) getActiveHysteriaPorts() []int {
 	}
 
 	// Also scan for hysteria_*.json config files in common locations
-	searchDirs := []string{".", "bin", "config", "../bin", "../config"}
+	searchDirs := []string{
+		".", "bin", "config", "../bin", "../config",
+		"backend/bin", "../backend/bin", "../../backend/bin",
+		"/opt/sentinel/backend/bin", "/app/backend/bin", "/var/lib/sentinel/bin",
+	}
+	if envBin := os.Getenv("SENTINEL_BIN_DIR"); envBin != "" {
+		searchDirs = append(searchDirs, envBin)
+	}
 	for _, dir := range searchDirs {
 		matches, err := filepath.Glob(filepath.Join(dir, "hysteria*.json"))
 		if err != nil {
