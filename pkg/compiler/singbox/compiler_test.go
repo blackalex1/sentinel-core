@@ -655,8 +655,8 @@ func TestSingboxCompiler_Hysteria2PortHoppingOutbound(t *testing.T) {
 					"tag":      "hy2-relay",
 					"protocol": "hysteria2",
 					"settings": map[string]interface{}{
-						"address":  "cybergrid.servequake.com",
-						"port":     "8443-20443",
+						"address":  "example.com",
+						"port":     "20000-30000",
 						"password": "secret_password_123",
 						"obfs": map[string]interface{}{
 							"type": "salamander",
@@ -668,7 +668,7 @@ func TestSingboxCompiler_Hysteria2PortHoppingOutbound(t *testing.T) {
 					"streamSettings": map[string]interface{}{
 						"security": "tls",
 						"tlsSettings": map[string]interface{}{
-							"serverName":    "download.visualstudio.microsoft.com",
+							"serverName":    "test.example.com",
 							"allowInsecure": true,
 						},
 					},
@@ -682,13 +682,13 @@ func TestSingboxCompiler_Hysteria2PortHoppingOutbound(t *testing.T) {
 		t.Fatalf("failed to compile Hysteria 2 outbound: %v", err)
 	}
 
-	if !strings.Contains(cfg, `"8443:20443"`) {
-		t.Errorf("expected server_ports with 8443:20443, got:\n%s", cfg)
+	if !strings.Contains(cfg, `"20000:30000"`) {
+		t.Errorf("expected server_ports with 20000:30000, got:\n%s", cfg)
 	}
 	if !strings.Contains(cfg, `"secret_password_123"`) {
 		t.Errorf("expected password secret_password_123, got:\n%s", cfg)
 	}
-	if !strings.Contains(cfg, `"download.visualstudio.microsoft.com"`) {
+	if !strings.Contains(cfg, `"test.example.com"`) {
 		t.Errorf("expected server_name, got:\n%s", cfg)
 	}
 	if !strings.Contains(cfg, `"salamander_secret"`) {

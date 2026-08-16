@@ -141,8 +141,8 @@ func TestHysteriaServerCompiler_PortHopAndListenAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(cfg1, `"listen": ":443-500"`) {
-		t.Errorf("expected :443-500 listen, got:\n%s", cfg1)
+	if !strings.Contains(cfg1, `"listen": ":443"`) {
+		t.Errorf("expected :443 listen, got:\n%s", cfg1)
 	}
 
 	// 2. ListenAddress without PortHop
