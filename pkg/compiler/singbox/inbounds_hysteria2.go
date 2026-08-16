@@ -1,6 +1,7 @@
 package singbox
 
 import (
+	"strings"
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 )
 
@@ -66,7 +67,11 @@ func buildHysteria2Inbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 		if sb.MasqType == "file" {
 			masqMap["dir"] = sb.MasqValue
 		} else if sb.MasqType == "proxy" {
-			masqMap["url"] = sb.MasqValue
+			urlVal := strings.TrimSpace(sb.MasqValue)
+			if urlVal != "" && !strings.HasPrefix(urlVal, "http://") && !strings.HasPrefix(urlVal, "https://") {
+				urlVal = "https://" + urlVal
+			}
+			masqMap["url"] = urlVal
 		} else if sb.MasqType == "string" {
 			masqMap["content"] = sb.MasqValue
 		}

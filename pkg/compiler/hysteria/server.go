@@ -153,7 +153,7 @@ func (sc *ServerCompiler) CompileServer(inbound ast.ServerInboundSpec, forwardTo
 		masqMap["file"] = map[string]interface{}{"dir": inbound.MasqValue}
 	case "proxy":
 		masqMap["type"] = "proxy"
-		masqMap["proxy"] = map[string]interface{}{"url": inbound.MasqValue, "rewriteHost": true}
+		masqMap["proxy"] = map[string]interface{}{"url": normalizeMasqURL(inbound.MasqValue), "rewriteHost": true}
 	case "string", "status", "drop":
 		statusCode := 404
 		if inbound.MasqStatusCode > 0 {
@@ -171,9 +171,9 @@ func (sc *ServerCompiler) CompileServer(inbound ast.ServerInboundSpec, forwardTo
 			"content":    content,
 		}
 	default:
-		if inbound.MasqValue != "" {
+		if inbound.MasqValue != "" && inbound.ObfsPassword == "" {
 			masqMap["type"] = "proxy"
-			masqMap["proxy"] = map[string]interface{}{"url": inbound.MasqValue, "rewriteHost": true}
+			masqMap["proxy"] = map[string]interface{}{"url": normalizeMasqURL(inbound.MasqValue), "rewriteHost": true}
 		} else {
 			masqMap["type"] = "string"
 			masqMap["string"] = map[string]interface{}{
@@ -215,3 +215,15 @@ func (sc *ServerCompiler) CompileServer(inbound ast.ServerInboundSpec, forwardTo
 
 	return string(jsonBytes), nil
 }
+
+func normalizeMasqURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
+		return "https://" + raw
+	}
+	return raw
+}
+
