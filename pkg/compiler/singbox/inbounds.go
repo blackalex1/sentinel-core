@@ -230,6 +230,39 @@ func BuildSingBoxInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 			}
 		}
 
+		// Shadowsocks server parameters
+		if sb.Protocol == "shadowsocks" || strings.ToLower(sb.Protocol) == "shadowsocks" {
+			method := ""
+			if sb.RawSettings != nil {
+				if m, ok := sb.RawSettings["method"].(string); ok && m != "" {
+					method = m
+				} else if c, ok := sb.RawSettings["cipher"].(string); ok && c != "" {
+					method = c
+				}
+			}
+			if method == "" && sb.Security != "" && sb.Security != "none" {
+				method = sb.Security
+			}
+			if method == "" {
+				method = "2022-blake3-aes-128-gcm"
+			}
+			serverIn["method"] = method
+
+			if sb.RawSettings != nil {
+				if pwd, ok := sb.RawSettings["password"].(string); ok && pwd != "" {
+					serverIn["password"] = pwd
+				}
+				if net, ok := sb.RawSettings["network"].(string); ok && net != "" {
+					serverIn["network"] = net
+				}
+			}
+			if _, hasPwd := serverIn["password"]; !hasPwd && len(sb.Clients) > 0 {
+				if !strings.HasPrefix(method, "2022-") {
+					serverIn["password"] = sb.Clients[0].Password
+				}
+			}
+		}
+
 		// Hysteria 2 server parameters
 		if sb.Protocol == ast.ProtoHysteria2 {
 			if sb.ObfsPassword != "" {
