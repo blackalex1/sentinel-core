@@ -77,6 +77,27 @@ func buildShadowsocksInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 				})
 			}
 			inbound["users"] = users
+		} else if sb.RawSettings != nil {
+			if rawClients, ok := sb.RawSettings["clients"].([]interface{}); ok && len(rawClients) > 0 {
+				users := make([]map[string]interface{}, 0, len(rawClients))
+				for _, rc := range rawClients {
+					if rcMap, ok := rc.(map[string]interface{}); ok {
+						pwd, _ := rcMap["password"].(string)
+						if pwd == "" {
+							pwd, _ = rcMap["id"].(string)
+						}
+						if pwd == "" {
+							pwd, _ = rcMap["uuid"].(string)
+						}
+						email, _ := rcMap["email"].(string)
+						users = append(users, map[string]interface{}{
+							"name":     email,
+							"password": pwd,
+						})
+					}
+				}
+				inbound["users"] = users
+			}
 		}
 	} else {
 		// Legacy AEAD (single password per port)
@@ -87,6 +108,20 @@ func buildShadowsocksInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 			}
 			if serverPassword == "" {
 				serverPassword = sb.Clients[0].ID
+			}
+		}
+		if serverPassword == "" && sb.RawSettings != nil {
+			if rawClients, ok := sb.RawSettings["clients"].([]interface{}); ok && len(rawClients) > 0 {
+				if rcMap, ok := rawClients[0].(map[string]interface{}); ok {
+					pwd, _ := rcMap["password"].(string)
+					if pwd == "" {
+						pwd, _ = rcMap["id"].(string)
+					}
+					if pwd == "" {
+						pwd, _ = rcMap["uuid"].(string)
+					}
+					serverPassword = pwd
+				}
 			}
 		}
 		if serverPassword != "" {

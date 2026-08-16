@@ -125,7 +125,22 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 						},
 					}
 				}
-			} else if proto == "vless" {
+			}
+
+			var streamSettingsMap map[string]interface{}
+			if ss, ok := ob["streamSettings"].(map[string]interface{}); ok {
+				streamSettingsMap = ss
+			} else if ssStr, ok := ob["stream_settings"].(string); ok && ssStr != "" {
+				_ = json.Unmarshal([]byte(ssStr), &streamSettingsMap)
+			}
+
+			if proto == "vless" {
+				secVal := ""
+				if streamSettingsMap != nil {
+					if s, ok := streamSettingsMap["security"].(string); ok {
+						secVal = s
+					}
+				}
 				if vnextList, ok := settingsMap["vnext"].([]interface{}); ok {
 					for _, vn := range vnextList {
 						if vnMap, ok := vn.(map[string]interface{}); ok {
@@ -141,6 +156,10 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 									if uMap, ok := u.(map[string]interface{}); ok {
 										if enc, ok := uMap["encryption"].(string); !ok || enc == "" {
 											uMap["encryption"] = "none"
+										}
+										// Flow xtls-rprx-vision requires TLS or Reality transport
+										if secVal != "tls" && secVal != "reality" {
+											delete(uMap, "flow")
 										}
 									}
 								}
@@ -173,11 +192,10 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 				}
 			}
 
-			var streamSettingsMap map[string]interface{}
-			if ss, ok := ob["streamSettings"].(map[string]interface{}); ok {
-				streamSettingsMap = ss
-			} else if ssStr, ok := ob["stream_settings"].(string); ok && ssStr != "" {
-				_ = json.Unmarshal([]byte(ssStr), &streamSettingsMap)
+			if proto == "socks" && streamSettingsMap != nil {
+				if net, ok := streamSettingsMap["network"].(string); ok && net == "hysteria" {
+					streamSettingsMap = nil
+				}
 			}
 
 			xrayOb := map[string]interface{}{
