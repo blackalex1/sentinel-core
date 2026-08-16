@@ -65,7 +65,16 @@ jobs:
           
           echo "TAG_NAME=${RAW_VER}" >> $GITHUB_OUTPUT
           echo "VERSION=${CLEAN_VER}" >> $GITHUB_OUTPUT
-          echo "Publishing release: tag=${RAW_VER}, version=${CLEAN_VER}"
+
+          if [[ "$RAW_VER" =~ (beta|alpha|rc|dev|pre) ]]; then
+            echo "IS_PRERELEASE=true" >> $GITHUB_OUTPUT
+            echo "MAKE_LATEST=false" >> $GITHUB_OUTPUT
+            echo "Publishing PRE-RELEASE: tag=${RAW_VER}, version=${CLEAN_VER}"
+          else
+            echo "IS_PRERELEASE=false" >> $GITHUB_OUTPUT
+            echo "MAKE_LATEST=true" >> $GITHUB_OUTPUT
+            echo "Publishing STABLE RELEASE: tag=${RAW_VER}, version=${CLEAN_VER}"
+          fi
 
       - name: Cross-Compile CLI Binaries (Linux, Windows, macOS)
         run: |
@@ -131,9 +140,9 @@ jobs:
         with:
           tag_name: ${{ steps.vars.outputs.TAG_NAME }}
           name: Sentinel-Core ${{ steps.vars.outputs.TAG_NAME }}
-          make_latest: true
+          make_latest: ${{ steps.vars.outputs.MAKE_LATEST }}
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.vars.outputs.IS_PRERELEASE == 'true' }}
           generate_release_notes: true
           files: |
             dist/sentinel-core-linux-amd64
