@@ -16,25 +16,39 @@ func buildHysteria2Outbound(tag string, node *ast.ServerProfile) (map[string]int
 	}
 
 	if node.PortHopping != "" {
-		parts := strings.Split(node.PortHopping, ",")
-		var ports []string
-		for _, p := range parts {
-			trimmed := strings.TrimSpace(p)
-			if trimmed != "" {
-				// Normalize 40000-50000 into 40000:50000
-				normalized := strings.ReplaceAll(trimmed, "-", ":")
-				ports = append(ports, normalized)
-			}
-		}
-		if len(ports) > 0 {
-			out["server_ports"] = ports
-			hopInterval := "30s"
-			if node.Extra != nil {
-				if val, ok := node.Extra["hop_interval"].(string); ok && val != "" {
-					hopInterval = val
+		if strings.Contains(node.PortHopping, "-") || strings.Contains(node.PortHopping, ",") || strings.Contains(node.PortHopping, ":") {
+			parts := strings.Split(node.PortHopping, ",")
+			var ports []string
+			for _, p := range parts {
+				trimmed := strings.TrimSpace(p)
+				if trimmed != "" {
+					// Normalize 40000-50000 into 40000:50000
+					normalized := strings.ReplaceAll(trimmed, "-", ":")
+					ports = append(ports, normalized)
 				}
 			}
-			out["hop_interval"] = hopInterval
+			if len(ports) > 0 {
+				out["server_ports"] = ports
+				hopInterval := "30s"
+				if node.Extra != nil {
+					if val, ok := node.Extra["hop_interval"].(string); ok && val != "" {
+						hopInterval = val
+					}
+				}
+				out["hop_interval"] = hopInterval
+			}
+		} else {
+			var pInt int
+			for _, c := range strings.TrimSpace(node.PortHopping) {
+				if c >= '0' && c <= '9' {
+					pInt = pInt*10 + int(c-'0')
+				}
+			}
+			if pInt > 0 {
+				out["server_port"] = pInt
+			} else {
+				out["server_port"] = node.Port
+			}
 		}
 	} else {
 		out["server_port"] = node.Port

@@ -171,7 +171,7 @@ func TestSingboxCompiler_BuildSingBoxOutbound_Protocols(t *testing.T) {
 		SNI:               "tuic.example.com",
 	}
 	obTuic, err := BuildSingBoxOutbound(tuicNode)
-	if err != nil || obTuic["type"] != "tuic" || obTuic["congestion_controller"] != "bbr" || obTuic["zero_rtt_handshake"] != true {
+	if err != nil || obTuic["type"] != "tuic" || obTuic["congestion_control"] != "bbr" || obTuic["zero_rtt_handshake"] != true {
 		t.Errorf("unexpected tuic outbound: %+v", obTuic)
 	}
 

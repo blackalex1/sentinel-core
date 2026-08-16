@@ -2,7 +2,46 @@ package singbox
 
 import (
 	"strings"
+
+	"github.com/blackalex1/sentinel-core/pkg/ast"
 )
+
+// buildSocksOutbound compiles an ast.ServerProfile into a Sing-box SOCKS outbound object.
+func buildSocksOutbound(tag string, node *ast.ServerProfile) (map[string]interface{}, error) {
+	out := map[string]interface{}{
+		"type":        "socks",
+		"tag":         tag,
+		"server":      node.Address,
+		"server_port": node.Port,
+	}
+	if node.Username != "" {
+		out["username"] = node.Username
+	}
+	if node.Password != "" {
+		out["password"] = node.Password
+	}
+	return out, nil
+}
+
+// buildHTTPOutbound compiles an ast.ServerProfile into a Sing-box HTTP outbound object.
+func buildHTTPOutbound(tag string, node *ast.ServerProfile) (map[string]interface{}, error) {
+	out := map[string]interface{}{
+		"type":        "http",
+		"tag":         tag,
+		"server":      node.Address,
+		"server_port": node.Port,
+	}
+	if node.Username != "" {
+		out["username"] = node.Username
+	}
+	if node.Password != "" {
+		out["password"] = node.Password
+	}
+	if tlsMap := buildSingBoxTLS(node); tlsMap != nil {
+		out["tls"] = tlsMap
+	}
+	return out, nil
+}
 
 // compileRawSocksHttpOutbound compiles raw dictionaries into a Sing-box SOCKS or HTTP outbound object.
 func compileRawSocksHttpOutbound(tag, proto string, sMap, tsMap map[string]interface{}) map[string]interface{} {
