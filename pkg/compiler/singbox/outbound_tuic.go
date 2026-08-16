@@ -16,7 +16,7 @@ func buildTUICOutbound(tag string, node *ast.ServerProfile) (map[string]interfac
 	}
 
 	if node.CongestionControl != "" {
-		out["congestion_controller"] = node.CongestionControl
+		out["congestion_control"] = node.CongestionControl
 	}
 	if node.UDPRelayMode != "" {
 		out["udp_relay_mode"] = node.UDPRelayMode

@@ -36,6 +36,10 @@ func BuildSingBoxOutbound(node *ast.ServerProfile) (map[string]interface{}, erro
 		return buildVMessOutbound(tag, node)
 	case ast.ProtoWireGuard:
 		return buildWireGuardOutbound(tag, node)
+	case ast.ProtoSocks:
+		return buildSocksOutbound(tag, node)
+	case ast.ProtoHTTP:
+		return buildHTTPOutbound(tag, node)
 	case ast.ProtoDirect:
 		return map[string]interface{}{"type": "direct", "tag": tag}, nil
 	case ast.ProtoBlock:
