@@ -26,7 +26,7 @@ func buildWireGuardOutbound(tag string, node *ast.ServerProfile) (map[string]int
 	}
 
 	if len(node.LocalAddress) > 0 {
-		out["local_address"] = node.LocalAddress
+		out["address"] = node.LocalAddress
 	}
 
 	if node.MTU > 0 {
@@ -79,10 +79,10 @@ func compileRawWireguardOutbound(tag string, sMap, tsMap map[string]interface{})
 			wgOb["pre_shared_key"] = psk
 		}
 
-		if la, ok := sMap["local_address"]; ok {
-			wgOb["local_address"] = la
-		} else if la, ok := sMap["address"].([]interface{}); ok {
-			wgOb["local_address"] = la
+		if la, ok := sMap["address"].([]interface{}); ok {
+			wgOb["address"] = la
+		} else if la, ok := sMap["local_address"]; ok {
+			wgOb["address"] = la
 		}
 
 		if mtu, ok := sMap["mtu"]; ok {
