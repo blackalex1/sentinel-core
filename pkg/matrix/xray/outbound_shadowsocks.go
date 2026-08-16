@@ -53,7 +53,7 @@ func GetOutboundShadowsocksCapability(lang string) types.ProtocolCapability {
 							{
 								ID:          "ob-port",
 								TargetField: "port",
-								Type:        "number",
+								Type:        "text",
 								Label:       i18n.T(loc, "UI_FIELD_PORT"),
 								Default:     8388,
 								GridColumn:  "col-4",

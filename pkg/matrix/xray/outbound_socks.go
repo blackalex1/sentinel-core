@@ -52,7 +52,7 @@ func GetOutboundSocksCapability(lang string) types.ProtocolCapability {
 							{
 								ID:          "ob-port",
 								TargetField: "port",
-								Type:        "number",
+								Type:        "text",
 								Label:       i18n.T(loc, "UI_FIELD_PORT"),
 								Default:     1080,
 								GridColumn:  "col-4",

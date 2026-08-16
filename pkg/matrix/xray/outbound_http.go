@@ -52,7 +52,7 @@ func GetOutboundHTTPCapability(lang string) types.ProtocolCapability {
 							{
 								ID:          "ob-port",
 								TargetField: "port",
-								Type:        "number",
+								Type:        "text",
 								Label:       i18n.T(loc, "UI_FIELD_PORT"),
 								Default:     8080,
 								GridColumn:  "col-4",
