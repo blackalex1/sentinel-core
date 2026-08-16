@@ -67,7 +67,7 @@ jobs:
           echo "VERSION=${CLEAN_VER}" >> $GITHUB_OUTPUT
           echo "Publishing release: tag=${RAW_VER}, version=${CLEAN_VER}"
 
-      - name: Cross-Compile CLI Binaries (Linux, Windows, macOS, Android)
+      - name: Cross-Compile CLI Binaries (Linux, Windows, macOS)
         run: |
           mkdir -p dist
           LDFLAGS="-s -w -X main.Version=${{ steps.vars.outputs.VERSION }}"
@@ -84,13 +84,10 @@ jobs:
           CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-darwin-amd64 ./cmd/cli
           CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-darwin-arm64 ./cmd/cli
 
-          # Android standalone CLI (arm64, arm, x86_64)
-          CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-android-arm64 ./cmd/cli
-          CGO_ENABLED=0 GOOS=android GOARCH=arm go build -ldflags="$LDFLAGS" -o dist/sentinel-core-android-arm ./cmd/cli
-          CGO_ENABLED=0 GOOS=android GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-android-x86_64 ./cmd/cli
-
       - name: Cross-Compile C-Shared FFI / JNI Libraries (Linux, Windows, Android)
         run: |
+          LDFLAGS="-s -w -X main.Version=${{ steps.vars.outputs.VERSION }}"
+
           # Linux amd64 shared library & header
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-linux-amd64.so ./cmd/cshared
           cp dist/libsentinel-core-linux-amd64.h dist/sentinel-core.h 2>/dev/null || true
@@ -101,7 +98,7 @@ jobs:
           # Windows amd64 DLL
           CC=x86_64-w64-mingw32-gcc CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/sentinel-core-windows-amd64.dll ./cmd/cshared
 
-          # Locate Android NDK for Android .so compilation
+          # Locate Android NDK for Android compilation
           if [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ]; then
             NDK="$ANDROID_NDK_ROOT"
           elif [ -n "$ANDROID_NDK_LATEST_HOME" ] && [ -d "$ANDROID_NDK_LATEST_HOME" ]; then
@@ -114,16 +111,17 @@ jobs:
             echo "Found Android NDK at $NDK"
             TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
-            # Android arm64-v8a
+            # Android C-Shared Libraries (.so)
             CC="$TOOLCHAIN/aarch64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-android-arm64.so ./cmd/cshared || true
-
-            # Android armeabi-v7a
             CC="$TOOLCHAIN/armv7a-linux-androideabi24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-android-arm.so ./cmd/cshared || true
-
-            # Android x86_64
             CC="$TOOLCHAIN/x86_64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-android-x86_64.so ./cmd/cshared || true
+
+            # Android CLI Binaries
+            CC="$TOOLCHAIN/aarch64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-android-arm64 ./cmd/cli || true
+            CC="$TOOLCHAIN/armv7a-linux-androideabi24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm go build -ldflags="$LDFLAGS" -o dist/sentinel-core-android-arm ./cmd/cli || true
+            CC="$TOOLCHAIN/x86_64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-android-x86_64 ./cmd/cli || true
           else
-            echo "Android NDK not found on runner, skipping C-shared android .so"
+            echo "Android NDK not found on runner, skipping Android builds"
           fi
 
           ls -lh dist/
@@ -144,14 +142,10 @@ jobs:
             dist/sentinel-core-windows-arm64.exe
             dist/sentinel-core-darwin-amd64
             dist/sentinel-core-darwin-arm64
-            dist/sentinel-core-android-arm64
-            dist/sentinel-core-android-arm
-            dist/sentinel-core-android-x86_64
+            dist/sentinel-core-android*
             dist/libsentinel-core-linux-amd64.so
             dist/libsentinel-core-linux-arm64.so
-            dist/libsentinel-core-android-arm64.so
-            dist/libsentinel-core-android-arm.so
-            dist/libsentinel-core-android-x86_64.so
+            dist/libsentinel-core-android*
             dist/sentinel-core-windows-amd64.dll
             dist/sentinel-core.h
         env:
