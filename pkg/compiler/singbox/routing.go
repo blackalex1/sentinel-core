@@ -16,11 +16,13 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 	rules := make([]map[string]interface{}, 0)
 	ruleSetMap := make(map[string]map[string]interface{})
 
-	// Add DNS hijacking rule (modern Sing-box 1.11+ format)
-	rules = append(rules, map[string]interface{}{
-		"protocol": "dns",
-		"action":   "hijack-dns",
-	})
+	// Add DNS hijacking rule for client TUN mode
+	if spec.ClientInbound != nil {
+		rules = append(rules, map[string]interface{}{
+			"protocol": "dns",
+			"action":   "hijack-dns",
+		})
+	}
 
 	// User defined routing rules
 	if spec.Routing != nil {
@@ -30,6 +32,9 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 				outbound = r.OutboundTag
 			} else if r.Action == ast.ActionProxy {
 				outbound = "proxy"
+			}
+			if outbound == "blocked" {
+				outbound = "block"
 			}
 
 			ruleMap := map[string]interface{}{
@@ -62,9 +67,11 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 					} else if strings.HasPrefix(d, "regex:") {
 						regexList = append(regexList, strings.TrimPrefix(d, "regex:"))
 					} else if strings.HasPrefix(d, "domain:") {
-						suffixDomains = append(suffixDomains, strings.TrimPrefix(d, "domain:"))
+						exactDomains = append(exactDomains, strings.TrimPrefix(d, "domain:"))
 					} else if strings.HasPrefix(d, "full:") {
 						exactDomains = append(exactDomains, strings.TrimPrefix(d, "full:"))
+					} else if strings.HasPrefix(d, "suffix:") {
+						suffixDomains = append(suffixDomains, strings.TrimPrefix(d, "suffix:"))
 					} else if strings.HasPrefix(d, "keyword:") {
 						keywordList = append(keywordList, strings.TrimPrefix(d, "keyword:"))
 					} else {
@@ -155,6 +162,9 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 				}
 			}
 
+			if len(r.Users) > 0 {
+				ruleMap["user"] = r.Users
+			}
 			if len(r.PackageUIDs) > 0 {
 				ruleMap["user_id"] = r.PackageUIDs
 			}
@@ -164,6 +174,13 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 
 			rules = append(rules, ruleMap)
 		}
+	}
+
+	if spec.ClashAPIAddress != "" {
+		rules = append(rules, map[string]interface{}{
+			"clash_mode": "Direct",
+			"outbound":   "direct",
+		})
 	}
 
 	route["rules"] = rules

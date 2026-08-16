@@ -86,9 +86,10 @@ func (t *RoutingTable) CompileToAST() *ast.RoutingSpec {
 			outboundTag = "proxy"
 		}
 
-		// Sanitize domain and IP lists
+		// Sanitize domain, IP, and port lists
 		cleanDomains := CleanDomainList(row.Domains)
 		cleanIPs := CleanIPList(row.IPs)
+		cleanPorts := CleanPortList(row.Ports)
 
 		astRule := ast.RoutingRule{
 			Action:       action,
@@ -97,7 +98,7 @@ func (t *RoutingTable) CompileToAST() *ast.RoutingSpec {
 			Domains:      cleanDomains,
 			IPs:          cleanIPs,
 			Protocols:    row.Protocols,
-			Ports:        row.Ports,
+			Ports:        cleanPorts,
 			ProcessNames: row.ProcessNames,
 			PackageUIDs:  row.PackageUIDs,
 		}

@@ -1,6 +1,8 @@
 package singbox
 
 import (
+	"fmt"
+	"strings"
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 )
 
@@ -91,13 +93,16 @@ func BuildSingBoxInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 
 	// 2. Server Inbounds (for Sentinel-Panel)
 	for _, sb := range spec.ServerInbounds {
+		listenAddr := sb.ListenAddress
+		if listenAddr == "" {
+			listenAddr = "::"
+		}
+
 		serverIn := map[string]interface{}{
-			"type":                       sb.Protocol,
-			"tag":                        sb.Tag,
-			"listen":                     sb.ListenAddress,
-			"listen_port":                sb.Port,
-			"sniff":                      true,
-			"sniff_override_destination": true,
+			"type":        sb.Protocol,
+			"tag":         sb.Tag,
+			"listen":      listenAddr,
+			"listen_port": sb.Port,
 		}
 
 		// Add server users / clients
@@ -107,14 +112,28 @@ func BuildSingBoxInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 				userMap := map[string]interface{}{
 					"name": c.Email,
 				}
-				if c.UUID != "" {
-					userMap["uuid"] = c.UUID
-				}
-				if c.Password != "" {
-					userMap["password"] = c.Password
-				}
-				if c.Flow != "" {
-					userMap["flow"] = c.Flow
+				protoLower := strings.ToLower(sb.Protocol)
+				if protoLower == "vless" || protoLower == "vmess" {
+					uid := c.UUID
+					if uid == "" {
+						uid = c.ID
+					}
+					if uid == "" {
+						uid = c.Password
+					}
+					userMap["uuid"] = uid
+					if c.Flow != "" && protoLower == "vless" {
+						userMap["flow"] = c.Flow
+					}
+				} else {
+					pwd := c.Password
+					if pwd == "" {
+						pwd = c.UUID
+					}
+					if pwd == "" {
+						pwd = c.ID
+					}
+					userMap["password"] = pwd
 				}
 				users = append(users, userMap)
 			}
@@ -122,26 +141,82 @@ func BuildSingBoxInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 		}
 
 		// Server TLS / Reality
-		if sb.Security == ast.SecurityReality {
+		sec := sb.Security
+		if sec == "" && sb.StreamSettings != nil {
+			if s, ok := sb.StreamSettings["security"].(string); ok {
+				sec = s
+			}
+		}
+
+		if sec == ast.SecurityReality || sec == "reality" {
+			privateKey := sb.PrivateKey
+			serverName := sb.SNI
+			dest := "example.com:443"
+			shortIDs := sb.ShortIDs
+			if sb.StreamSettings != nil {
+				if rs, ok := sb.StreamSettings["realitySettings"].(map[string]interface{}); ok {
+					if pk, ok := rs["privateKey"].(string); ok && pk != "" {
+						privateKey = pk
+					}
+					if d, ok := rs["dest"].(string); ok && d != "" {
+						dest = d
+					}
+					if sns, ok := rs["serverNames"].([]interface{}); ok && len(sns) > 0 {
+						if sn, ok := sns[0].(string); ok && sn != "" {
+							serverName = sn
+						}
+					}
+					if sids, ok := rs["shortIds"].([]interface{}); ok {
+						for _, sid := range sids {
+							if s, ok := sid.(string); ok {
+								shortIDs = append(shortIDs, s)
+							}
+						}
+					}
+				}
+			}
+			destHost := serverName
+			destPort := 443
+			if strings.Contains(dest, ":") {
+				parts := strings.Split(dest, ":")
+				destHost = parts[0]
+				fmt.Sscanf(parts[1], "%d", &destPort)
+			}
 			serverIn["tls"] = map[string]interface{}{
 				"enabled":     true,
-				"server_name": sb.SNI,
+				"server_name": serverName,
 				"reality": map[string]interface{}{
 					"enabled":     true,
-					"private_key": sb.PrivateKey,
-					"short_id":    sb.ShortIDs,
+					"private_key": privateKey,
+					"short_id":    shortIDs,
 					"handshake": map[string]interface{}{
-						"server":      sb.SNI,
-						"server_port": 443,
+						"server":      destHost,
+						"server_port": destPort,
 					},
 				},
 			}
-		} else if sb.Security == ast.SecurityTLS {
+		} else if sec == ast.SecurityTLS || sec == "tls" {
+			certPath := sb.CertPath
+			keyPath := sb.KeyPath
+			serverName := sb.SNI
+			if sb.StreamSettings != nil {
+				if ts, ok := sb.StreamSettings["tlsSettings"].(map[string]interface{}); ok {
+					if sn, ok := ts["serverName"].(string); ok && sn != "" {
+						serverName = sn
+					}
+					if cp, ok := ts["certificateFile"].(string); ok && cp != "" {
+						certPath = cp
+					}
+					if kp, ok := ts["keyFile"].(string); ok && kp != "" {
+						keyPath = kp
+					}
+				}
+			}
 			serverIn["tls"] = map[string]interface{}{
 				"enabled":          true,
-				"server_name":      sb.SNI,
-				"certificate_path": sb.CertPath,
-				"key_path":         sb.KeyPath,
+				"server_name":      serverName,
+				"certificate_path": certPath,
+				"key_path":         keyPath,
 			}
 		}
 

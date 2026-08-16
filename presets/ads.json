@@ -4,7 +4,6 @@
   "description": "AdBlock geosite категории",
   "defaultTarget": "block",
   "domains": [
-    "geosite:category-ads-all",
-    "geosite:adaway"
+    "geosite:category-ads-all"
   ]
 }

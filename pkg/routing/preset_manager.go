@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"github.com/blackalex1/sentinel-core/pkg/ast"
@@ -14,6 +15,7 @@ import (
 // Preset represents a self-contained routing rule set loaded dynamically from JSON
 type Preset struct {
 	ID            string           `json:"id"`
+	Type          string           `json:"type,omitempty"` // "quick_rule" (atomic filter) or "template" (full preset configuration)
 	Name          string           `json:"name"`
 	Description   string           `json:"description"`
 	DefaultTarget string           `json:"defaultTarget"` // Default target action: "direct", "block", "proxy"
@@ -152,7 +154,7 @@ func (pm *PresetManager) GetPreset(id string) (*Preset, error) {
 	return nil, fmt.Errorf("preset '%s' not found", id)
 }
 
-// ListPresets returns a list of all registered presets
+// ListPresets returns a list of all registered presets sorted deterministically by ID
 func (pm *PresetManager) ListPresets() []*Preset {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
@@ -160,6 +162,9 @@ func (pm *PresetManager) ListPresets() []*Preset {
 	for _, p := range pm.presets {
 		list = append(list, p)
 	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].ID < list[j].ID
+	})
 	return list
 }
 

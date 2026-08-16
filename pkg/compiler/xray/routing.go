@@ -27,14 +27,26 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 				"outboundTag": tag,
 			}
 
+			hasField := false
 			if len(r.Domains) > 0 {
-				ruleMap["domain"] = r.Domains
+				var cleanDomains []string
+				for _, d := range r.Domains {
+					if d == "geosite:ru" {
+						cleanDomains = append(cleanDomains, "geosite:category-ru")
+					} else {
+						cleanDomains = append(cleanDomains, d)
+					}
+				}
+				ruleMap["domain"] = cleanDomains
+				hasField = true
 			}
 			if len(r.IPs) > 0 {
 				ruleMap["ip"] = r.IPs
+				hasField = true
 			}
 			if len(r.Ports) > 0 {
 				ruleMap["port"] = strings.Join(r.Ports, ",")
+				hasField = true
 			}
 			if len(r.Protocols) > 0 {
 				var networks []string
@@ -49,19 +61,28 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 				}
 				if len(networks) > 0 {
 					ruleMap["network"] = strings.Join(networks, ",")
+					hasField = true
 				}
 				if len(appProtocols) > 0 {
 					ruleMap["protocol"] = appProtocols
+					hasField = true
 				}
 			}
-			if len(r.PackageUIDs) > 0 {
+			if len(r.Users) > 0 {
+				ruleMap["user"] = r.Users
+				hasField = true
+			} else if len(r.PackageUIDs) > 0 {
 				ruleMap["user"] = r.PackageUIDs
+				hasField = true
 			}
 			if len(r.InboundTags) > 0 {
 				ruleMap["inboundTag"] = r.InboundTags
+				hasField = true
 			}
 
-			rules = append(rules, ruleMap)
+			if hasField || r.OutboundTag != "" || r.Action != "" {
+				rules = append(rules, ruleMap)
+			}
 		}
 	}
 

@@ -3,6 +3,8 @@ package tests
 import (
 	"testing"
 	"github.com/blackalex1/sentinel-core/pkg/i18n"
+	"github.com/blackalex1/sentinel-core/pkg/matrix"
+	"github.com/blackalex1/sentinel-core/pkg/routing"
 )
 
 func TestI18n_RussianAndEnglish(t *testing.T) {
@@ -18,6 +20,69 @@ func TestI18n_RussianAndEnglish(t *testing.T) {
 	expectedEn := "Port 10808 (SOCKS5) is already occupied by another application"
 	if enMsg != expectedEn {
 		t.Errorf("EN translation mismatch:\nGot:  %s\nWant: %s", enMsg, expectedEn)
+	}
+}
+
+func TestI18n_PresetTranslations(t *testing.T) {
+	presetsEn := routing.GetAvailablePresetsLocalized("en")
+	if len(presetsEn) == 0 {
+		t.Fatalf("expected non-empty presets list in EN")
+	}
+
+	foundRuPresetInEn := false
+	foundAdsPresetInEn := false
+	for _, p := range presetsEn {
+		if p.ID == "ru" {
+			foundRuPresetInEn = true
+			if p.Name != "Russian Websites (RU)" {
+				t.Errorf("expected localized RU preset name in English, got: %s", p.Name)
+			}
+		}
+		if p.ID == "ads" {
+			foundAdsPresetInEn = true
+			if p.Name != "Ads and Trackers" {
+				t.Errorf("expected localized Ads preset name in English, got: %s", p.Name)
+			}
+		}
+	}
+
+	if !foundRuPresetInEn || !foundAdsPresetInEn {
+		t.Errorf("missing expected presets in localized EN list")
+	}
+
+	presetsRu := routing.GetAvailablePresetsLocalized("ru")
+	for _, p := range presetsRu {
+		if p.ID == "ru" && p.Name != "Сайты России (RU)" {
+			t.Errorf("expected localized RU preset name in Russian, got: %s", p.Name)
+		}
+		if p.ID == "ads" && p.Name != "Реклама и трекеры" {
+			t.Errorf("expected localized Ads preset name in Russian, got: %s", p.Name)
+		}
+	}
+}
+
+func TestI18n_SchemaLocalization(t *testing.T) {
+	schemaEn := matrix.GetConfigurationSchema("en")
+	if schemaEn.Language != "en" {
+		t.Errorf("expected language 'en', got: %s", schemaEn.Language)
+	}
+	if len(schemaEn.Presets) == 0 {
+		t.Fatalf("expected non-empty presets in EN schema")
+	}
+	for _, p := range schemaEn.Presets {
+		if p.ID == "ru" && p.Name != "Russian Websites (RU)" {
+			t.Errorf("expected English preset name in schema, got: %s", p.Name)
+		}
+	}
+
+	schemaRu := matrix.GetConfigurationSchema("ru")
+	if schemaRu.Language != "ru" {
+		t.Errorf("expected language 'ru', got: %s", schemaRu.Language)
+	}
+	for _, p := range schemaRu.Presets {
+		if p.ID == "ru" && p.Name != "Сайты России (RU)" {
+			t.Errorf("expected Russian preset name in schema, got: %s", p.Name)
+		}
 	}
 }
 

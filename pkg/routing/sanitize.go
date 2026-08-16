@@ -1,8 +1,10 @@
 package routing
 
 import (
+	"fmt"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -66,7 +68,7 @@ func SanitizeIP(raw string) string {
 		return s
 	}
 	if strings.HasPrefix(s, "ip:") {
-		return strings.TrimPrefix(s, "ip:")
+		s = strings.TrimPrefix(s, "ip:")
 	}
 
 	// Strip port if IP:port
@@ -93,7 +95,37 @@ func SanitizeIP(raw string) string {
 	return s
 }
 
-// CleanStringList splits by comma/newline/space and sanitizes all domains
+// SanitizePort cleans and validates a single port or port range string (e.g., "443", "1000-2000", "1000:2000").
+func SanitizePort(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+
+	// Normalize range separator (e.g. 1000:2000 -> 1000-2000)
+	if strings.Contains(s, ":") {
+		s = strings.ReplaceAll(s, ":", "-")
+	}
+
+	if strings.Contains(s, "-") {
+		parts := strings.SplitN(s, "-", 2)
+		start, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+		end, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err1 == nil && err2 == nil && start > 0 && start <= 65535 && end > 0 && end <= 65535 && start <= end {
+			return fmt.Sprintf("%d-%d", start, end)
+		}
+		return ""
+	}
+
+	port, err := strconv.Atoi(s)
+	if err == nil && port > 0 && port <= 65535 {
+		return strconv.Itoa(port)
+	}
+
+	return ""
+}
+
+// CleanDomainList splits by comma/newline/space and sanitizes all domains
 func CleanDomainList(items []string) []string {
 	var result []string
 	seen := make(map[string]bool)
@@ -125,6 +157,26 @@ func CleanIPList(items []string) []string {
 		})
 		for _, p := range parts {
 			cleaned := SanitizeIP(p)
+			if cleaned != "" && !seen[cleaned] {
+				seen[cleaned] = true
+				result = append(result, cleaned)
+			}
+		}
+	}
+	return result
+}
+
+// CleanPortList splits and sanitizes port and port-range definitions
+func CleanPortList(items []string) []string {
+	var result []string
+	seen := make(map[string]bool)
+
+	for _, item := range items {
+		parts := strings.FieldsFunc(item, func(r rune) bool {
+			return r == ',' || r == '\n' || r == '\r' || r == ';' || r == ' '
+		})
+		for _, p := range parts {
+			cleaned := SanitizePort(p)
 			if cleaned != "" && !seen[cleaned] {
 				seen[cleaned] = true
 				result = append(result, cleaned)

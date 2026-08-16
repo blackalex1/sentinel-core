@@ -41,6 +41,11 @@ func BuildXrayOutbound(node *ast.ServerProfile) (map[string]interface{}, error) 
 }
 
 func buildXrayVLESSOutbound(tag string, node *ast.ServerProfile) (map[string]interface{}, error) {
+	enc := "none"
+	if node.Encryption != "" {
+		enc = node.Encryption
+	}
+
 	vnext := []map[string]interface{}{
 		{
 			"address": node.Address,
@@ -48,7 +53,7 @@ func buildXrayVLESSOutbound(tag string, node *ast.ServerProfile) (map[string]int
 			"users": []map[string]interface{}{
 				{
 					"id":         node.UUID,
-					"encryption": "none",
+					"encryption": enc,
 					"flow":       node.Flow,
 				},
 			},
@@ -187,11 +192,6 @@ func buildXrayStreamSettings(node *ast.ServerProfile) map[string]interface{} {
 	fp := node.Fingerprint
 	if fp == "" {
 		fp = "chrome"
-	}
-
-	// Post-Quantum Kyber768 support in Xray
-	if node.PostQuantum && fp == "chrome" {
-		fp = "chrome_auto" // Triggers modern Kyber PQ TLS negotiation in Xray
 	}
 
 	if security == "reality" {

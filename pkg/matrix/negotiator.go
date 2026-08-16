@@ -21,6 +21,16 @@ func NewNegotiator() *Negotiator {
 	return &Negotiator{}
 }
 
+// AutoNegotiate is a convenience function that executes negotiation using a default Negotiator.
+func AutoNegotiate(
+	node *ast.ServerProfile,
+	targetCore ast.TargetCore,
+	version string,
+	strictMode bool,
+) (*ast.ServerProfile, []NegotiationWarning, error) {
+	return NewNegotiator().Negotiate(node, targetCore, version, strictMode)
+}
+
 // Negotiate checks compatibility and performs graceful feature adaptation or strict failure.
 func (n *Negotiator) Negotiate(
 	node *ast.ServerProfile,
@@ -43,14 +53,15 @@ func (n *Negotiator) Negotiate(
 	// Make a shallow copy of the node for adaptations
 	adaptedNode := *node
 
-	// 2. Negotiate Post-Quantum Cryptography (X25519Kyber768)
-	if node.PostQuantum {
+	// 2. Negotiate Post-Quantum Cryptography & VLESS Encryption (ML-KEM / Kyber768 / vlessenc)
+	if node.PostQuantum || (node.Encryption != "" && node.Encryption != "none") {
 		if !caps.IsFeatureSupported(FeaturePostQuantumTLS) {
 			if strictMode {
 				return nil, nil, errors.New(i18n.TGlobal("ERR_PQ_STRICT_MODE", node.Name, targetCore, version))
 			}
-			// Graceful fallback: disable PQ flag and use standard X25519 Reality / TLS
+			// Graceful fallback: disable PQ flag and strip VLESS encryption for non-supporting cores
 			adaptedNode.PostQuantum = false
+			adaptedNode.Encryption = ""
 			warnings = append(warnings, NegotiationWarning{
 				Feature: FeaturePostQuantumTLS,
 				Message: i18n.TGlobal("PQ_DOWNGRADED_SINGBOX", targetCore),

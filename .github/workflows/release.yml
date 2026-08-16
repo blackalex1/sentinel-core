@@ -1,0 +1,123 @@
+name: Release Sentinel-Core Engine
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  # 1. Strict test suite execution with Go race detector
+  test:
+    name: 🧪 Run Unit & Integration Tests (Go Race Detector)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Run Full Test Suite
+        run: go test -v -race ./...
+
+  # 2. Multi-platform cross-compilation and automated release publishing
+  build-and-release:
+    name: 🚀 Cross-Compile & Publish Release
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Install cross-compilers for C-Shared FFI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-mingw-w64-x86-64
+
+      - name: Determine Release Version
+        id: vars
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            RAW_VER="${{ github.event.inputs.version }}"
+          else
+            RAW_VER="${GITHUB_REF#refs/tags/}"
+          fi
+          
+          # Clean version (strip leading v for binary version metadata)
+          CLEAN_VER="${RAW_VER#v}"
+          
+          echo "TAG_NAME=${RAW_VER}" >> $GITHUB_OUTPUT
+          echo "VERSION=${CLEAN_VER}" >> $GITHUB_OUTPUT
+          echo "Publishing release: tag=${RAW_VER}, version=${CLEAN_VER}"
+
+      - name: Cross-Compile CLI Binaries
+        run: |
+          mkdir -p dist
+          LDFLAGS="-s -w -X main.Version=${{ steps.vars.outputs.VERSION }}"
+
+          # Linux (amd64, arm64)
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-linux-amd64 ./cmd/cli
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-linux-arm64 ./cmd/cli
+
+          # Windows (amd64, arm64)
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-windows-amd64.exe ./cmd/cli
+          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-windows-arm64.exe ./cmd/cli
+
+          # macOS (amd64, arm64)
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-darwin-amd64 ./cmd/cli
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/sentinel-core-darwin-arm64 ./cmd/cli
+
+      - name: Cross-Compile C-Shared FFI Libraries
+        run: |
+          # Linux amd64 shared library & header
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-linux-amd64.so ./cmd/cshared
+          cp dist/libsentinel-core-linux-amd64.h dist/sentinel-core.h 2>/dev/null || true
+
+          # Linux arm64 shared library
+          CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-linux-arm64.so ./cmd/cshared
+
+          # Windows amd64 DLL
+          CC=x86_64-w64-mingw32-gcc CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/sentinel-core-windows-amd64.dll ./cmd/cshared
+
+          ls -lh dist/
+
+      - name: Create / Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.TAG_NAME }}
+          name: Sentinel-Core ${{ steps.vars.outputs.TAG_NAME }}
+          make_latest: true
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/sentinel-core-linux-amd64
+            dist/sentinel-core-linux-arm64
+            dist/sentinel-core-windows-amd64.exe
+            dist/sentinel-core-windows-arm64.exe
+            dist/sentinel-core-darwin-amd64
+            dist/sentinel-core-darwin-arm64
+            dist/libsentinel-core-linux-amd64.so
+            dist/libsentinel-core-linux-arm64.so
+            dist/sentinel-core-windows-amd64.dll
+            dist/sentinel-core.h
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

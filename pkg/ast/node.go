@@ -73,9 +73,10 @@ type ServerProfile struct {
 	// Post-Quantum Cryptography flag (Kyber768 / ML-KEM)
 	PostQuantum bool `json:"postQuantum,omitempty"`
 
-	// Flow & Mux
-	Flow string `json:"flow,omitempty"` // e.g. "xtls-rprx-vision"
-	Mux  bool   `json:"mux,omitempty"`
+	// Flow & Mux & VLESS Encryption
+	Flow       string `json:"flow,omitempty"` // e.g. "xtls-rprx-vision"
+	Encryption string `json:"encryption,omitempty"` // e.g. "mlkem768x25519plus.native.0rtt..."
+	Mux        bool   `json:"mux,omitempty"`
 
 	// Transport layer parameters
 	Path        string            `json:"path,omitempty"`

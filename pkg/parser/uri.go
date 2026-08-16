@@ -29,6 +29,14 @@ func ParseURI(rawURI string) (*ast.ServerProfile, error) {
 		return parseShadowsocks(trimmed)
 	} else if strings.HasPrefix(trimmed, "tuic://") {
 		return parseTUIC(trimmed)
+	} else if strings.HasPrefix(trimmed, "shadowtls://") {
+		return parseShadowTLS(trimmed)
+	} else if strings.HasPrefix(trimmed, "wireguard://") || strings.HasPrefix(trimmed, "wg://") {
+		return parseWireGuard(trimmed)
+	} else if strings.HasPrefix(trimmed, "socks5://") || strings.HasPrefix(trimmed, "socks://") {
+		return parseSocks(trimmed)
+	} else if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return parseHTTP(trimmed)
 	}
 
 	return nil, fmt.Errorf("unsupported or unrecognized URI scheme: %s", trimmed)
@@ -46,6 +54,11 @@ func parseVLESS(raw string) (*ast.ServerProfile, error) {
 	}
 
 	q := u.Query()
+	var alpn []string
+	if alpnStr := q.Get("alpn"); alpnStr != "" {
+		alpn = strings.Split(alpnStr, ",")
+	}
+
 	profile := &ast.ServerProfile{
 		Protocol:    ast.ProtoVLESS,
 		UUID:        u.User.Username(),
@@ -55,15 +68,19 @@ func parseVLESS(raw string) (*ast.ServerProfile, error) {
 		Transport:   q.Get("type"),
 		Security:    q.Get("security"),
 		Flow:        q.Get("flow"),
+		Encryption:  q.Get("encryption"),
 		SNI:         q.Get("sni"),
 		Fingerprint: q.Get("fp"),
 		PublicKey:   q.Get("pbk"),
 		ShortID:     q.Get("sid"),
 		SpiderX:     q.Get("spx"),
 		Path:        q.Get("path"),
+		Host:        q.Get("host"),
 		ServiceName: q.Get("serviceName"),
+		ALPN:        alpn,
 		Insecure:    q.Get("allowInsecure") == "1" || q.Get("insecure") == "1",
-		PostQuantum: q.Get("pq") == "1" || q.Get("post_quantum") == "true",
+		PostQuantum: q.Get("pq") == "1" || q.Get("post_quantum") == "true" || q.Get("post_quantum") == "1" || strings.HasPrefix(q.Get("encryption"), "mlkem"),
+		Mux:         q.Get("mux") == "1" || q.Get("mux") == "true",
 	}
 
 	if profile.Name == "" {
@@ -85,6 +102,11 @@ func parseTrojan(raw string) (*ast.ServerProfile, error) {
 	}
 
 	q := u.Query()
+	var alpn []string
+	if alpnStr := q.Get("alpn"); alpnStr != "" {
+		alpn = strings.Split(alpnStr, ",")
+	}
+
 	profile := &ast.ServerProfile{
 		Protocol:    ast.ProtoTrojan,
 		Password:    u.User.Username(),
@@ -96,7 +118,9 @@ func parseTrojan(raw string) (*ast.ServerProfile, error) {
 		SNI:         q.Get("sni"),
 		Fingerprint: q.Get("fp"),
 		Path:        q.Get("path"),
+		Host:        q.Get("host"),
 		ServiceName: q.Get("serviceName"),
+		ALPN:        alpn,
 		Insecure:    q.Get("allowInsecure") == "1" || q.Get("insecure") == "1",
 	}
 
@@ -131,6 +155,11 @@ func parseHysteria2(raw string) (*ast.ServerProfile, error) {
 		portHopping = q.Get("port_hopping")
 	}
 
+	var alpn []string
+	if alpnStr := q.Get("alpn"); alpnStr != "" {
+		alpn = strings.Split(alpnStr, ",")
+	}
+
 	profile := &ast.ServerProfile{
 		Protocol:      ast.ProtoHysteria2,
 		Password:      u.User.Username(),
@@ -138,12 +167,13 @@ func parseHysteria2(raw string) (*ast.ServerProfile, error) {
 		Port:          port,
 		Name:          u.Fragment,
 		SNI:           q.Get("sni"),
-		Insecure:      q.Get("insecure") == "1",
+		Insecure:      q.Get("insecure") == "1" || q.Get("allowInsecure") == "1",
 		ObfsType:      q.Get("obfs"),
 		ObfsPassword:  q.Get("obfs-password"),
 		PortHopping:   portHopping,
 		BandwidthUp:   q.Get("up"),
 		BandwidthDown: q.Get("down"),
+		ALPN:          alpn,
 	}
 
 	if profile.Name == "" {
@@ -209,6 +239,10 @@ func parseShadowsocks(raw string) (*ast.ServerProfile, error) {
 		}
 	}
 
+	if host == "" || port <= 0 {
+		return nil, fmt.Errorf("invalid shadowsocks configuration")
+	}
+
 	profile := &ast.ServerProfile{
 		Protocol: ast.ProtoShadowsocks,
 		Cipher:   method,
@@ -260,6 +294,11 @@ func parseVMess(raw string) (*ast.ServerProfile, error) {
 		port, _ = strconv.Atoi(p)
 	}
 
+	var alpn []string
+	if v.ALPN != "" {
+		alpn = strings.Split(v.ALPN, ",")
+	}
+
 	profile := &ast.ServerProfile{
 		Protocol:    ast.ProtoVMess,
 		Name:        v.PS,
@@ -271,6 +310,7 @@ func parseVMess(raw string) (*ast.ServerProfile, error) {
 		Host:        v.Host,
 		SNI:         v.SNI,
 		Fingerprint: v.FP,
+		ALPN:        alpn,
 	}
 	if v.TLS == "tls" {
 		profile.Security = ast.SecurityTLS
@@ -289,12 +329,20 @@ func parseTUIC(raw string) (*ast.ServerProfile, error) {
 		return nil, fmt.Errorf("failed to parse tuic URI: %w", err)
 	}
 
-	port, _ := strconv.Atoi(u.Port())
+	port, err := strconv.Atoi(u.Port())
+	if err != nil || u.Hostname() == "" {
+		return nil, fmt.Errorf("invalid host or port in tuic URI")
+	}
 	q := u.Query()
 
 	password := ""
 	if pass, ok := u.User.Password(); ok {
 		password = pass
+	}
+
+	var alpn []string
+	if alpnStr := q.Get("alpn"); alpnStr != "" {
+		alpn = strings.Split(alpnStr, ",")
 	}
 
 	profile := &ast.ServerProfile{
@@ -307,12 +355,246 @@ func parseTUIC(raw string) (*ast.ServerProfile, error) {
 		SNI:               q.Get("sni"),
 		CongestionControl: q.Get("congestion_control"),
 		UDPRelayMode:      q.Get("udp_relay_mode"),
-		Insecure:          q.Get("allow_insecure") == "1",
-		ALPN:              strings.Split(q.Get("alpn"), ","),
+		Insecure:          q.Get("allow_insecure") == "1" || q.Get("insecure") == "1",
+		ZeroRTTHandshake:  q.Get("zero_rtt") == "1" || q.Get("zero_rtt_handshake") == "1",
+		ALPN:              alpn,
 	}
 
 	if profile.Name == "" {
 		profile.Name = fmt.Sprintf("TUIC-%s:%d", profile.Address, profile.Port)
+	}
+	profile.Normalize()
+	return profile, nil
+}
+
+func parseShadowTLS(raw string) (*ast.ServerProfile, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse shadowtls URI: %w", err)
+	}
+
+	port, err := strconv.Atoi(u.Port())
+	if err != nil || u.Hostname() == "" {
+		return nil, fmt.Errorf("invalid host or port in shadowtls URI: %w", err)
+	}
+
+	q := u.Query()
+	version := 3
+	if vStr := q.Get("v"); vStr != "" {
+		if v, err := strconv.Atoi(vStr); err == nil {
+			version = v
+		}
+	} else if vStr := q.Get("version"); vStr != "" {
+		if v, err := strconv.Atoi(vStr); err == nil {
+			version = v
+		}
+	}
+
+	sni := q.Get("sni")
+	if sni == "" {
+		sni = q.Get("host")
+	}
+
+	password := ""
+	if u.User != nil {
+		password = u.User.Username()
+		if pass, ok := u.User.Password(); ok && pass != "" {
+			password = pass
+		}
+	}
+	if password == "" {
+		password = q.Get("password")
+	}
+
+	profile := &ast.ServerProfile{
+		Protocol:          ast.ProtoShadowTLS,
+		Password:          password,
+		ShadowTLSPassword: password,
+		Address:           u.Hostname(),
+		Port:              port,
+		Name:              u.Fragment,
+		Security:          ast.SecurityShadowTLS,
+		ShadowTLSSNI:      sni,
+		SNI:               sni,
+		ShadowTLSVersion:  version,
+	}
+
+	if profile.Name == "" {
+		profile.Name = fmt.Sprintf("ShadowTLS-%s:%d", profile.Address, profile.Port)
+	}
+	profile.Normalize()
+	return profile, nil
+}
+
+func parseWireGuard(raw string) (*ast.ServerProfile, error) {
+	clean := raw
+	if strings.HasPrefix(clean, "wg://") {
+		clean = "wireguard://" + strings.TrimPrefix(clean, "wg://")
+	}
+	u, err := url.Parse(clean)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse wireguard URI: %w", err)
+	}
+
+	port, err := strconv.Atoi(u.Port())
+	if err != nil || u.Hostname() == "" {
+		return nil, fmt.Errorf("invalid host or port in wireguard URI: %w", err)
+	}
+
+	q := u.Query()
+	privKey := ""
+	if u.User != nil {
+		privKey = u.User.Username()
+	}
+	if privKey == "" {
+		privKey = q.Get("privatekey")
+	}
+
+	peerPub := q.Get("publickey")
+	if peerPub == "" {
+		peerPub = q.Get("peer_public_key")
+	}
+	if peerPub == "" {
+		peerPub = q.Get("peer_pub")
+	}
+
+	psk := q.Get("presharedkey")
+	if psk == "" {
+		psk = q.Get("psk")
+	}
+
+	ipStr := q.Get("ip")
+	if ipStr == "" {
+		ipStr = q.Get("address")
+	}
+	if ipStr == "" {
+		ipStr = q.Get("local_address")
+	}
+
+	var localAddrs []string
+	if ipStr != "" {
+		for _, addr := range strings.Split(ipStr, ",") {
+			trimmed := strings.TrimSpace(addr)
+			if trimmed != "" {
+				localAddrs = append(localAddrs, trimmed)
+			}
+		}
+	}
+
+	mtu, _ := strconv.Atoi(q.Get("mtu"))
+
+	var reserved []int
+	if resStr := q.Get("reserved"); resStr != "" {
+		for _, r := range strings.Split(resStr, ",") {
+			if num, err := strconv.Atoi(strings.TrimSpace(r)); err == nil {
+				reserved = append(reserved, num)
+			}
+		}
+	}
+
+	profile := &ast.ServerProfile{
+		Protocol:      ast.ProtoWireGuard,
+		Address:       u.Hostname(),
+		Port:          port,
+		Name:          u.Fragment,
+		PrivateKey:    privKey,
+		PeerPublicKey: peerPub,
+		PreSharedKey:  psk,
+		LocalAddress:  localAddrs,
+		MTU:           mtu,
+		ReservedBytes: reserved,
+	}
+
+	if profile.Name == "" {
+		profile.Name = fmt.Sprintf("WG-%s:%d", profile.Address, profile.Port)
+	}
+	profile.Normalize()
+	return profile, nil
+}
+
+func parseSocks(raw string) (*ast.ServerProfile, error) {
+	clean := raw
+	if strings.HasPrefix(clean, "socks5://") {
+		clean = "socks://" + strings.TrimPrefix(clean, "socks5://")
+	}
+	u, err := url.Parse(clean)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse socks URI: %w", err)
+	}
+
+	port, err := strconv.Atoi(u.Port())
+	if err != nil || u.Hostname() == "" {
+		return nil, fmt.Errorf("invalid host or port in socks URI: %w", err)
+	}
+
+	user := ""
+	pass := ""
+	if u.User != nil {
+		user = u.User.Username()
+		pass, _ = u.User.Password()
+	}
+
+	profile := &ast.ServerProfile{
+		Protocol: ast.ProtoSocks,
+		Username: user,
+		Password: pass,
+		Address:  u.Hostname(),
+		Port:     port,
+		Name:     u.Fragment,
+	}
+
+	if profile.Name == "" {
+		profile.Name = fmt.Sprintf("Socks-%s:%d", profile.Address, profile.Port)
+	}
+	profile.Normalize()
+	return profile, nil
+}
+
+func parseHTTP(raw string) (*ast.ServerProfile, error) {
+	isTLS := strings.HasPrefix(raw, "https://")
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse http proxy URI: %w", err)
+	}
+
+	if u.Hostname() == "" {
+		return nil, fmt.Errorf("missing host in http proxy URI")
+	}
+
+	port := 80
+	if isTLS {
+		port = 443
+	}
+	if u.Port() != "" {
+		p, err := strconv.Atoi(u.Port())
+		if err != nil || p <= 0 || p > 65535 {
+			return nil, fmt.Errorf("invalid port in http proxy URI: %s", u.Port())
+		}
+		port = p
+	}
+
+	user := ""
+	pass := ""
+	if u.User != nil {
+		user = u.User.Username()
+		pass, _ = u.User.Password()
+	}
+
+	profile := &ast.ServerProfile{
+		Protocol: ast.ProtoHTTP,
+		Username: user,
+		Password: pass,
+		Address:  u.Hostname(),
+		Port:     port,
+		Name:     u.Fragment,
+	}
+	if isTLS {
+		profile.Security = ast.SecurityTLS
+		profile.SNI = u.Hostname()
+	}
+
+	if profile.Name == "" {
+		profile.Name = fmt.Sprintf("HTTP-%s:%d", profile.Address, profile.Port)
 	}
 	profile.Normalize()
 	return profile, nil

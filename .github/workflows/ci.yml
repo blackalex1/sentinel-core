@@ -1,0 +1,36 @@
+name: CI Automated Tests
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - develop
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  test:
+    name: 🧪 Go Race Tests & Compilation Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Run Tests with Race Detector
+        run: go test -v -race ./...
+
+      - name: Verify CLI Compilation
+        run: go build -v -o /dev/null ./cmd/cli
+
+      - name: Verify C-Shared Compilation
+        run: go build -buildmode=c-shared -v -o /dev/null ./cmd/cshared
