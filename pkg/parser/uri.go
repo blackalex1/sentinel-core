@@ -174,21 +174,68 @@ func parseHysteria2(raw string) (*ast.ServerProfile, error) {
 		alpn = strings.Split(alpnStr, ",")
 	}
 
+	pinSHA256 := q.Get("pinSHA256")
+	if pinSHA256 == "" {
+		pinSHA256 = q.Get("pin_sha256")
+	}
+	if pinSHA256 == "" {
+		pinSHA256 = q.Get("pin-sha256")
+	}
+	if pinSHA256 == "" {
+		pinSHA256 = q.Get("pinnedPeerCertSha256")
+	}
+	if pinSHA256 == "" {
+		pinSHA256 = q.Get("pinned_peer_cert_sha256")
+	}
+	if pinSHA256 == "" {
+		pinSHA256 = q.Get("ca-sha256")
+	}
+
+	obfsType := q.Get("obfs")
+	if obfsType == "" {
+		obfsType = q.Get("obfs-type")
+	}
+	if obfsType == "" {
+		obfsType = q.Get("obfs_type")
+	}
+
+	obfsPassword := q.Get("obfs-password")
+	if obfsPassword == "" {
+		obfsPassword = q.Get("obfs_password")
+	}
+	if obfsPassword == "" {
+		obfsPassword = q.Get("obfsPassword")
+	}
+	if obfsPassword == "" {
+		obfsPassword = q.Get("obfs-pass")
+	}
+	if obfsPassword == "" {
+		obfsPassword = q.Get("obfspass")
+	}
+	if obfsPassword == "" {
+		obfsPassword = q.Get("obfs_pass")
+	}
+
+	insecureVal := q.Get("insecure")
+	allowInsecVal := q.Get("allowInsecure")
+	isInsecure := insecureVal == "1" || insecureVal == "true" || allowInsecVal == "1" || allowInsecVal == "true"
+
 	profile := &ast.ServerProfile{
-		Protocol:      ast.ProtoHysteria2,
-		Username:      username,
-		Password:      password,
-		Address:       u.Hostname(),
-		Port:          port,
-		Name:          u.Fragment,
-		SNI:           q.Get("sni"),
-		Insecure:      q.Get("insecure") == "1" || q.Get("allowInsecure") == "1",
-		ObfsType:      q.Get("obfs"),
-		ObfsPassword:  q.Get("obfs-password"),
-		PortHopping:   portHopping,
-		BandwidthUp:   q.Get("up"),
-		BandwidthDown: q.Get("down"),
-		ALPN:          alpn,
+		Protocol:             ast.ProtoHysteria2,
+		Username:             username,
+		Password:             password,
+		Address:              u.Hostname(),
+		Port:                 port,
+		Name:                 u.Fragment,
+		SNI:                  q.Get("sni"),
+		Insecure:             isInsecure,
+		PinnedPeerCertSha256: pinSHA256,
+		ObfsType:             obfsType,
+		ObfsPassword:         obfsPassword,
+		PortHopping:          portHopping,
+		BandwidthUp:          q.Get("up"),
+		BandwidthDown:        q.Get("down"),
+		ALPN:                 alpn,
 	}
 
 	if profile.Name == "" {

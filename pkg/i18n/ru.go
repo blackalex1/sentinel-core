@@ -233,6 +233,7 @@ var ruTranslations = map[string]string{
 	"UI_FIELD_GRPC_SERVICE_NAME": "Имя службы gRPC (ServiceName)",
 	"UI_FIELD_SECURITY":          "Шифрование / Безопасность",
 	"UI_OPT_NO_ENCRYPTION":       "Без шифрования",
+	"UI_OPT_NONE":                "Отсутствует (Без обфускации)",
 	"UI_FIELD_SNI":               "SNI (Имя сервера)",
 	"UI_FIELD_FINGERPRINT":       "Fingerprint (Отпечаток браузера)",
 	"UI_FIELD_REALITY_PBK":       "Reality Public Key (Публичный ключ)",

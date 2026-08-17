@@ -126,6 +126,9 @@ func generateHysteria2(p *ast.ServerProfile) (string, error) {
 	if p.BandwidthDown != "" {
 		q.Set("down", p.BandwidthDown)
 	}
+	if p.PinnedPeerCertSha256 != "" {
+		q.Set("pinSHA256", p.PinnedPeerCertSha256)
+	}
 	if len(p.ALPN) > 0 {
 		q.Set("alpn", strings.Join(p.ALPN, ","))
 	}
