@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,18 @@ func CheckHysteriaStatus(adminPort int) bool {
 	return false
 }
 
+var (
+	hyTrafficMu         sync.RWMutex
+	hyCumulativeTraffic = make(map[int]map[string]*ClientTraffic)
+)
+
+// ResetHysteriaCumulativeTraffic clears the in-memory cumulative traffic map.
+func ResetHysteriaCumulativeTraffic() {
+	hyTrafficMu.Lock()
+	defer hyTrafficMu.Unlock()
+	hyCumulativeTraffic = make(map[int]map[string]*ClientTraffic)
+}
+
 // FetchHysteriaTraffic queries a Hysteria 2 admin API endpoint (/traffic and /online).
 func FetchHysteriaTraffic(adminPort int) (map[string]ClientTraffic, error) {
 	result := make(map[string]ClientTraffic)
@@ -29,7 +42,7 @@ func FetchHysteriaTraffic(adminPort int) (map[string]ClientTraffic, error) {
 		return result, nil
 	}
 
-	// 1. Fetch /traffic
+	// 1. Fetch /traffic (Hysteria resets its internal counters on read, so we accumulate them per port)
 	trafficURL := fmt.Sprintf("http://127.0.0.1:%d/traffic", adminPort)
 	resp, err := localHTTPClient.Get(trafficURL)
 	if err == nil && resp.StatusCode == http.StatusOK {
@@ -39,32 +52,60 @@ func FetchHysteriaTraffic(adminPort int) (map[string]ClientTraffic, error) {
 			Tx int64 `json:"tx"`
 			Rx int64 `json:"rx"`
 		}
-		if err := json.Unmarshal(body, &rawTraffic); err == nil {
-			for email, t := range rawTraffic {
-				result[email] = ClientTraffic{
-					Email:     email,
-					DownBytes: t.Tx,
-					UpBytes:   t.Rx,
-					Online:    false,
-				}
+		if err := json.Unmarshal(body, &rawTraffic); err == nil && len(rawTraffic) > 0 {
+			hyTrafficMu.Lock()
+			portMap, exists := hyCumulativeTraffic[adminPort]
+			if !exists {
+				portMap = make(map[string]*ClientTraffic)
+				hyCumulativeTraffic[adminPort] = portMap
 			}
+			for email, t := range rawTraffic {
+				ct, exists := portMap[email]
+				if !exists {
+					ct = &ClientTraffic{Email: email}
+					portMap[email] = ct
+				}
+				ct.DownBytes += t.Tx
+				ct.UpBytes += t.Rx
+			}
+			hyTrafficMu.Unlock()
 		}
 	}
 
 	// 2. Fetch /online
 	onlineURL := fmt.Sprintf("http://127.0.0.1:%d/online", adminPort)
+	rawOnline := make(map[string]int)
 	respOnline, err := localHTTPClient.Get(onlineURL)
 	if err == nil && respOnline.StatusCode == http.StatusOK {
 		defer respOnline.Body.Close()
 		body, _ := io.ReadAll(respOnline.Body)
-		var rawOnline map[string]int
-		if err := json.Unmarshal(body, &rawOnline); err == nil {
-			for email, count := range rawOnline {
-				entry := result[email]
-				entry.Email = email
-				entry.Connections = count
-				entry.Online = count > 0
-				result[email] = entry
+		_ = json.Unmarshal(body, &rawOnline)
+	}
+
+	// Build result snapshot merging cumulative bytes with live online status
+	hyTrafficMu.RLock()
+	if portMap, exists := hyCumulativeTraffic[adminPort]; exists {
+		for email, ct := range portMap {
+			connCount := rawOnline[email]
+			result[email] = ClientTraffic{
+				Email:       email,
+				DownBytes:   ct.DownBytes,
+				UpBytes:     ct.UpBytes,
+				Connections: connCount,
+				Online:      connCount > 0,
+			}
+		}
+	}
+	hyTrafficMu.RUnlock()
+
+	for email, count := range rawOnline {
+		if _, exists := result[email]; !exists {
+			result[email] = ClientTraffic{
+				Email:       email,
+				DownBytes:   0,
+				UpBytes:     0,
+				Connections: count,
+				Online:      count > 0,
 			}
 		}
 	}

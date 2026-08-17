@@ -1,8 +1,14 @@
 package supervisor
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
 // CheckXrayStatus checks if the Xray-core process is active.
@@ -10,11 +16,99 @@ func CheckXrayStatus() bool {
 	return GetProcessManager().IsRunning("xray")
 }
 
-// FetchXrayTraffic queries Xray-core stats (via in-memory log aggregation and stats).
+func findXrayBinary() string {
+	pm := GetProcessManager()
+	if p := pm.GetBinaryPath("xray"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+
+	searchPaths := []string{
+		"bin/xray.exe", "bin/xray",
+		"backend/bin/xray.exe", "backend/bin/xray",
+		"../bin/xray.exe", "../bin/xray",
+		"../../bin/xray.exe", "../../bin/xray",
+		"/usr/local/bin/xray", "/usr/bin/xray",
+	}
+	if envBin := os.Getenv("SENTINEL_BIN_DIR"); envBin != "" {
+		searchPaths = append([]string{filepath.Join(envBin, "xray.exe"), filepath.Join(envBin, "xray")}, searchPaths...)
+	}
+
+	for _, sp := range searchPaths {
+		if _, err := os.Stat(sp); err == nil {
+			if abs, err := filepath.Abs(sp); err == nil {
+				return abs
+			}
+			return sp
+		}
+	}
+	return "xray"
+}
+
+// QueryXrayStats queries Xray-core stats gRPC API via CLI tool.
+func QueryXrayStats(statsAddr string) (map[string]ClientTraffic, error) {
+	result := make(map[string]ClientTraffic)
+	if statsAddr == "" {
+		statsAddr = "127.0.0.1:10085"
+	}
+
+	xrayBin := findXrayBinary()
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, xrayBin, "api", "statsquery", "--server="+statsAddr)
+	out, err := cmd.Output()
+	if err != nil {
+		return result, err
+	}
+
+	var data struct {
+		Stat []struct {
+			Name  string `json:"name"`
+			Value int64  `json:"value"`
+		} `json:"stat"`
+	}
+
+	if err := json.Unmarshal(out, &data); err != nil {
+		return result, err
+	}
+
+	for _, item := range data.Stat {
+		parts := strings.Split(item.Name, ">>>")
+		if len(parts) >= 4 && parts[0] == "user" {
+			email := parts[1]
+			direction := parts[3]
+
+			entry := result[email]
+			entry.Email = email
+			if direction == "uplink" {
+				entry.UpBytes = item.Value
+			} else if direction == "downlink" {
+				entry.DownBytes = item.Value
+			}
+			result[email] = entry
+		}
+	}
+
+	return result, nil
+}
+
+// FetchXrayTraffic queries Xray-core stats (via stats API and in-memory log aggregation).
 func FetchXrayTraffic(statsAddr string) (map[string]ClientTraffic, error) {
 	result := make(map[string]ClientTraffic)
 
-	// Scan recent in-memory log buffer for Xray connections
+	// 1. Fetch exact bytes from Xray Stats API if available
+	if statsAddr == "" {
+		statsAddr = "127.0.0.1:10085"
+	}
+	if stats, err := QueryXrayStats(statsAddr); err == nil {
+		for email, t := range stats {
+			result[email] = t
+		}
+	}
+
+	// 2. Scan recent in-memory log buffer for Xray connections & IPs
 	lines := defaultBroadcaster.GetHistory("xray", 500)
 	if len(lines) == 0 {
 		return result, nil
@@ -70,7 +164,9 @@ func FetchXrayTraffic(statsAddr string) (map[string]ClientTraffic, error) {
 	for email, ips := range ipSetByUser {
 		entry := result[email]
 		for ip := range ips {
-			entry.ActiveIPs = append(entry.ActiveIPs, ip)
+			if !containsString(entry.ActiveIPs, ip) {
+				entry.ActiveIPs = append(entry.ActiveIPs, ip)
+			}
 		}
 		result[email] = entry
 	}
