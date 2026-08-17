@@ -72,6 +72,9 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 	if adaptedNode.SNI != "" {
 		tlsMap["sni"] = adaptedNode.SNI
 	}
+	if adaptedNode.PinnedPeerCertSha256 != "" {
+		tlsMap["pinSHA256"] = adaptedNode.PinnedPeerCertSha256
+	}
 	configObj["tls"] = tlsMap
 
 	// Obfuscation (Salamander)
