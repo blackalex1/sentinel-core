@@ -47,6 +47,10 @@ func buildSingBoxTLS(node *ast.ServerProfile) map[string]interface{} {
 		tlsMap["server_name"] = node.SNI
 	}
 
+	if node.PinnedPeerCertSha256 != "" {
+		tlsMap["pinned_peer_certificate_sha256"] = node.PinnedPeerCertSha256
+	}
+
 	if len(node.ALPN) > 0 {
 		tlsMap["alpn"] = node.ALPN
 	}
