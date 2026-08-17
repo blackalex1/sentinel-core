@@ -39,7 +39,7 @@ func buildSingBoxTLS(node *ast.ServerProfile) map[string]interface{} {
 		"enabled": true,
 	}
 
-	if node.Insecure || node.PinnedPeerCertSha256 != "" {
+	if node.Insecure {
 		tlsMap["insecure"] = true
 	}
 
