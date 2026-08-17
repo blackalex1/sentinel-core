@@ -6,8 +6,23 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
+
+var (
+	sbTrafficMu      sync.RWMutex
+	sbUserCumulative = make(map[string]map[string]*ClientTraffic) // clashAddr -> email -> *ClientTraffic
+	sbLastConnStats  = make(map[string][2]int64)                  // connID -> [upload, download]
+)
+
+// ResetSingBoxCumulativeTraffic clears in-memory cumulative traffic for Sing-box.
+func ResetSingBoxCumulativeTraffic() {
+	sbTrafficMu.Lock()
+	defer sbTrafficMu.Unlock()
+	sbUserCumulative = make(map[string]map[string]*ClientTraffic)
+	sbLastConnStats = make(map[string][2]int64)
+}
 
 // CheckSingBoxStatus checks if Sing-box Clash API is responding.
 func CheckSingBoxStatus(clashAddr string) bool {
@@ -32,6 +47,18 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 	url := fmt.Sprintf("http://%s/connections", clashAddr)
 	resp, err := localHTTPClient.Get(url)
 	if err != nil || resp.StatusCode != http.StatusOK {
+		sbTrafficMu.RLock()
+		if addrMap, exists := sbUserCumulative[clashAddr]; exists {
+			for email, ct := range addrMap {
+				result[email] = ClientTraffic{
+					Email:     email,
+					DownBytes: ct.DownBytes,
+					UpBytes:   ct.UpBytes,
+					Online:    false,
+				}
+			}
+		}
+		sbTrafficMu.RUnlock()
 		return result, err
 	}
 	defer resp.Body.Close()
@@ -71,8 +98,22 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 	}
 
 	ipSetByUser := make(map[string]map[string]bool)
+	liveUsers := make(map[string]int)
+	activeConnIDs := make(map[string]bool)
+
+	sbTrafficMu.Lock()
+	addrMap, exists := sbUserCumulative[clashAddr]
+	if !exists {
+		addrMap = make(map[string]*ClientTraffic)
+		sbUserCumulative[clashAddr] = addrMap
+	}
 
 	for _, conn := range data.Connections {
+		connID := conn.ID
+		if connID != "" {
+			activeConnIDs[connID] = true
+		}
+
 		email := conn.Metadata.User
 		if email == "" {
 			email = conn.Metadata.InboundUser
@@ -109,12 +150,32 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 			continue
 		}
 
-		entry := result[email]
-		entry.Email = email
-		entry.DownBytes += conn.Download
-		entry.UpBytes += conn.Upload
-		entry.Connections++
-		entry.Online = true
+		liveUsers[email]++
+
+		prev := sbLastConnStats[connID]
+		prevUp, prevDown := prev[0], prev[1]
+
+		var deltaUp, deltaDown int64
+		if conn.Upload >= prevUp {
+			deltaUp = conn.Upload - prevUp
+		} else {
+			deltaUp = conn.Upload
+		}
+		if conn.Download >= prevDown {
+			deltaDown = conn.Download - prevDown
+		} else {
+			deltaDown = conn.Download
+		}
+
+		sbLastConnStats[connID] = [2]int64{conn.Upload, conn.Download}
+
+		ct, ctExists := addrMap[email]
+		if !ctExists {
+			ct = &ClientTraffic{Email: email}
+			addrMap[email] = ct
+		}
+		ct.UpBytes += deltaUp
+		ct.DownBytes += deltaDown
 
 		srcIP := conn.Metadata.SourceIP
 		if srcIP == "" {
@@ -131,14 +192,34 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		if srcIP != "" {
 			ipSetByUser[email][srcIP] = true
 		}
-
-		result[email] = entry
 	}
+
+	// Clean up stale closed connection IDs from memory
+	for cID := range sbLastConnStats {
+		if !activeConnIDs[cID] {
+			delete(sbLastConnStats, cID)
+		}
+	}
+
+	// Snapshot all known Sing-box users (cumulative + live status)
+	for email, ct := range addrMap {
+		connCount := liveUsers[email]
+		result[email] = ClientTraffic{
+			Email:       email,
+			DownBytes:   ct.DownBytes,
+			UpBytes:     ct.UpBytes,
+			Connections: connCount,
+			Online:      connCount > 0,
+		}
+	}
+	sbTrafficMu.Unlock()
 
 	for email, ips := range ipSetByUser {
 		entry := result[email]
 		for ip := range ips {
-			entry.ActiveIPs = append(entry.ActiveIPs, ip)
+			if !containsString(entry.ActiveIPs, ip) {
+				entry.ActiveIPs = append(entry.ActiveIPs, ip)
+			}
 		}
 		result[email] = entry
 	}
