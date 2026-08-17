@@ -233,6 +233,7 @@ var enTranslations = map[string]string{
 	"UI_FIELD_GRPC_SERVICE_NAME": "gRPC Service Name",
 	"UI_FIELD_SECURITY":          "Security / TLS",
 	"UI_OPT_NO_ENCRYPTION":       "None (Plain)",
+	"UI_OPT_NONE":                "None (No obfuscation)",
 	"UI_FIELD_SNI":               "SNI (Server Name)",
 	"UI_FIELD_FINGERPRINT":       "Browser Fingerprint",
 	"UI_FIELD_REALITY_PBK":       "Reality Public Key",

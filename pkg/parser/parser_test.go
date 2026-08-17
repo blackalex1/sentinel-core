@@ -209,6 +209,31 @@ func TestParseAndGenerate_Hysteria2_Comprehensive(t *testing.T) {
 		t.Errorf("unexpected default name: %s", p4.Name)
 	}
 
+	// Test mock URI with pinSHA256 and salamander obfs
+	mockRaw := "hysteria2://mock_user:mock_secret_pass@mock-node.example.org:443?sni=mock-sni.example.org&pinSHA256=abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789&insecure=1&up=100&down=100&obfs=salamander&obfs-password=mock_obfs_pass&hop=20000-30000&mport=20000-30000&ports=20000-30000#Mock-Hy2-Outbound"
+	pMock, err := ParseURI(mockRaw)
+	if err != nil {
+		t.Fatalf("failed to parse mock hy2 URI: %v", err)
+	}
+	if pMock.Username != "mock_user" || pMock.Password != "mock_secret_pass" || pMock.Address != "mock-node.example.org" || pMock.Port != 443 {
+		t.Errorf("unexpected mock profile credentials/address: %+v", pMock)
+	}
+	if pMock.SNI != "mock-sni.example.org" || !pMock.Insecure {
+		t.Errorf("unexpected mock SNI/insecure: %+v", pMock)
+	}
+	if pMock.PinnedPeerCertSha256 != "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789" {
+		t.Errorf("expected pinned cert SHA256, got: %s", pMock.PinnedPeerCertSha256)
+	}
+	if pMock.ObfsType != "salamander" || pMock.ObfsPassword != "mock_obfs_pass" {
+		t.Errorf("unexpected mock obfs: type=%s, pass=%s", pMock.ObfsType, pMock.ObfsPassword)
+	}
+	if pMock.PortHopping != "20000-30000" || pMock.BandwidthUp != "100" || pMock.BandwidthDown != "100" {
+		t.Errorf("unexpected mock port hopping / bandwidth: %+v", pMock)
+	}
+	if pMock.Name != "Mock-Hy2-Outbound" {
+		t.Errorf("unexpected mock name: %s", pMock.Name)
+	}
+
 	// Generation
 	gen, err := GenerateURI(p1)
 	if err != nil {

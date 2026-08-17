@@ -91,11 +91,12 @@ type ServerProfile struct {
 	ShadowTLSSNI     string `json:"shadowTlsSni,omitempty"`
 
 	// Hysteria 2 specific parameters
-	BandwidthUp   string `json:"bandwidthUp,omitempty"`
-	BandwidthDown string `json:"bandwidthDown,omitempty"`
-	ObfsType      string `json:"obfsType,omitempty"` // e.g. "salamander"
-	ObfsPassword  string `json:"obfsPassword,omitempty"`
-	PortHopping   string `json:"portHopping,omitempty"` // e.g. "20000-40000" or "443,1000-2000"
+	BandwidthUp          string `json:"bandwidthUp,omitempty"`
+	BandwidthDown        string `json:"bandwidthDown,omitempty"`
+	ObfsType             string `json:"obfsType,omitempty"` // e.g. "salamander"
+	ObfsPassword         string `json:"obfsPassword,omitempty"`
+	PortHopping          string `json:"portHopping,omitempty"` // e.g. "20000-40000" or "443,1000-2000"
+	PinnedPeerCertSha256 string `json:"pinnedPeerCertSha256,omitempty"` // e.g. SHA256 pin for Hysteria 2
 
 	// TUIC specific parameters
 	CongestionControl string `json:"congestionControl,omitempty"` // bbr, cubic, new_reno
