@@ -65,10 +65,16 @@ func ExtractSingboxFallbackSettings(sMap map[string]interface{}, tag string) ([]
 // CalculateSingboxTolerance determines tolerance in ms according to strategy.
 func CalculateSingboxTolerance(strategy string) int {
 	strategy = strings.ToLower(strings.TrimSpace(strategy))
+	if strategy == "priority" || strategy == "primary" || strategy == "fallback" || strategy == "" {
+		return 300
+	}
+	if strategy == "least_ping" {
+		return 0
+	}
 	if strategy == "load_balance" || strategy == "round_robin" || strategy == "random" {
 		return 50
 	}
-	return 0
+	return 300
 }
 
 // BuildSingboxFallbackGroup constructs an urltest outbound group and renamed primary node.
