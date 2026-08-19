@@ -24,6 +24,52 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 		})
 	}
 
+	// Add sniffing rule action for TUN or inbounds with sniffing enabled (Sing-box 1.11+ migration)
+	var sniffingInbounds []string
+	if spec.ClientInbound != nil && (spec.ClientInbound.Mode == ast.InboundModeDesktopTun || spec.ClientInbound.Mode == ast.InboundModeMobileVpn) {
+		sniffingInbounds = append(sniffingInbounds, "tun-in")
+	}
+	for _, sb := range spec.ServerInbounds {
+		if sb.Sniffing != nil {
+			if enabled, ok := sb.Sniffing["enabled"].(bool); ok && enabled {
+				tag := sb.Tag
+				if tag == "" {
+					tag = fmt.Sprintf("inbound-%d", sb.Port)
+				}
+				sniffingInbounds = append(sniffingInbounds, tag)
+			}
+		}
+	}
+
+	if len(sniffingInbounds) > 0 {
+		sniffRule := map[string]interface{}{
+			"action": "sniff",
+		}
+		if len(sniffingInbounds) == 1 {
+			sniffRule["inbound"] = sniffingInbounds[0]
+		} else {
+			sniffRule["inbound"] = sniffingInbounds
+		}
+		rules = append(rules, sniffRule)
+	}
+
+	// Add resolve rule actions for domain_strategy if specified on server inbounds
+	for _, sb := range spec.ServerInbounds {
+		if sb.RawSettings != nil {
+			if ds, ok := sb.RawSettings["domain_strategy"].(string); ok && ds != "" {
+				tag := sb.Tag
+				if tag == "" {
+					tag = fmt.Sprintf("inbound-%d", sb.Port)
+				}
+				rules = append(rules, map[string]interface{}{
+					"inbound":  tag,
+					"action":   "resolve",
+					"strategy": ds,
+				})
+			}
+		}
+	}
+
 	// User defined routing rules
 	if spec.Routing != nil {
 		for _, r := range spec.Routing.Rules {

@@ -68,16 +68,14 @@ func BuildSingBoxInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 			}
 
 			tunIn := map[string]interface{}{
-				"type":                     "tun",
-				"tag":                      "tun-in",
-				"interface_name":           ifname,
-				"inet4_address":            endpoint,
-				"auto_route":               true,
-				"strict_route":             cb.StrictRoute,
-				"stack":                    stack,
-				"mtu":                      mtu,
-				"sniff":                    true,
-				"sniff_override_destination": false,
+				"type":           "tun",
+				"tag":            "tun-in",
+				"interface_name": ifname,
+				"inet4_address":  endpoint,
+				"auto_route":     true,
+				"strict_route":   cb.StrictRoute,
+				"stack":          stack,
+				"mtu":            mtu,
 			}
 
 			if len(cb.IncludePackages) > 0 {

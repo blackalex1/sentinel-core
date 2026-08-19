@@ -165,17 +165,8 @@ func parseInboundNetwork(net string) string {
 	return ""
 }
 
-// applyCommonInboundOptions applies sniffing, multiplex, and network settings
+// applyCommonInboundOptions applies multiplex and network settings (sniffing is handled via route rule actions)
 func applyCommonInboundOptions(inbound map[string]interface{}, sb *ast.ServerInboundSpec) {
-	if sb.Sniffing != nil && len(sb.Sniffing) > 0 {
-		if enabled, ok := sb.Sniffing["enabled"].(bool); ok {
-			inbound["sniff"] = enabled
-		}
-		if override, ok := sb.Sniffing["routeOnly"].(bool); ok {
-			inbound["sniff_override_destination"] = !override
-		}
-	}
-
 	if sb.Multiplex {
 		inbound["multiplex"] = map[string]interface{}{
 			"enabled": true,
@@ -183,9 +174,6 @@ func applyCommonInboundOptions(inbound map[string]interface{}, sb *ast.ServerInb
 	}
 
 	if sb.RawSettings != nil {
-		if ds, ok := sb.RawSettings["domain_strategy"].(string); ok && ds != "" {
-			inbound["domain_strategy"] = ds
-		}
 		if tfo, ok := sb.RawSettings["tcp_fast_open"].(bool); ok {
 			inbound["tcp_fast_open"] = tfo
 		}
