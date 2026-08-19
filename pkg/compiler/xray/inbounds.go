@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/blackalex1/sentinel-core/pkg/ast"
+	"github.com/blackalex1/sentinel-core/pkg/platform/android"
+	"github.com/blackalex1/sentinel-core/pkg/platform/desktop"
 )
 
 // BuildXrayInbounds creates inbounds for Xray-core via modular per-protocol builders.
@@ -67,6 +69,73 @@ func BuildXrayInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 					"destOverride": []string{"http", "tls", "quic", "fakedns"},
 				},
 			})
+		}
+
+		// TUN Inbound (Strictly delegated to corresponding platform package)
+		if cb.Mode == ast.InboundModeMobileVpn {
+			inbounds = append(inbounds, android.BuildXrayAndroidTunInbound(cb))
+		} else if cb.Mode == ast.InboundModeDesktopTun {
+			inbounds = append(inbounds, desktop.BuildXrayDesktopTunInbound(cb))
+		}
+
+		// LAN / Hotspot Sharing Inbounds (HTTP & SOCKS)
+		if cb.LanSharingEnabled {
+			lanAddr := cb.LanListenAddress
+			if lanAddr == "" {
+				lanAddr = "0.0.0.0"
+			}
+
+			if cb.LanHTTPPort > 0 {
+				httpSettings := map[string]interface{}{
+					"allowTransparent": false,
+				}
+				if cb.LanAuthEnabled && cb.LanUsername != "" {
+					httpSettings["accounts"] = []map[string]interface{}{
+						{
+							"user": cb.LanUsername,
+							"pass": cb.LanPassword,
+						},
+					}
+				}
+				inbounds = append(inbounds, map[string]interface{}{
+					"tag":      "lan-http-in",
+					"port":     cb.LanHTTPPort,
+					"listen":   lanAddr,
+					"protocol": "http",
+					"settings": httpSettings,
+					"sniffing": map[string]interface{}{
+						"enabled":      true,
+						"destOverride": []string{"http", "tls", "quic"},
+					},
+				})
+			}
+
+			if cb.LanSocksPort > 0 {
+				socksSettings := map[string]interface{}{
+					"udp":  true,
+					"auth": "noauth",
+				}
+				if cb.LanAuthEnabled && cb.LanUsername != "" {
+					socksSettings["auth"] = "password"
+					socksSettings["accounts"] = []map[string]interface{}{
+						{
+							"user": cb.LanUsername,
+							"pass": cb.LanPassword,
+						},
+					}
+				}
+				inbounds = append(inbounds, map[string]interface{}{
+					"tag":      "lan-socks-in",
+					"port":     cb.LanSocksPort,
+					"listen":   lanAddr,
+					"protocol": "socks",
+					"settings": socksSettings,
+					"sniffing": map[string]interface{}{
+						"enabled":      true,
+						"destOverride": []string{"http", "tls", "quic"},
+					},
+				})
+			}
 		}
 	}
 
