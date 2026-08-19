@@ -9,8 +9,8 @@ import (
 
 var exitFunc = os.Exit
 
-// Version can be set at compile time via -ldflags="-X main.Version=1.x.x"
-var Version = "1.0.0"
+// Version can be set at compile time via -ldflags="-X main.Version=1.0.0"
+var Version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
