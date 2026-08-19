@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/blackalex1/sentinel-core/pkg/ast"
+	"github.com/blackalex1/sentinel-core/pkg/platform/android"
+	"github.com/blackalex1/sentinel-core/pkg/platform/desktop"
 )
 
 // BuildSingBoxInbounds generates inbounds based on the spec
@@ -47,45 +49,55 @@ func BuildSingBoxInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 			})
 		}
 
-		// TUN Inbound (Wintun for Windows or VpnService for Android)
-		if cb.Mode == ast.InboundModeDesktopTun || cb.Mode == ast.InboundModeMobileVpn {
-			ifname := cb.TunInterfaceName
-			if ifname == "" {
-				ifname = "sentinel-tun"
-			}
-			stack := cb.TunStack
-			if stack == "" {
-				stack = "mixed"
-			}
-			mtu := cb.MTU
-			if mtu <= 0 {
-				mtu = 9000
+		// TUN Inbound (Strictly delegated to corresponding platform package)
+		if cb.Mode == ast.InboundModeMobileVpn {
+			inbounds = append(inbounds, android.BuildSingBoxAndroidTunInbound(cb))
+		} else if cb.Mode == ast.InboundModeDesktopTun {
+			inbounds = append(inbounds, desktop.BuildSingBoxDesktopTunInbound(cb))
+		}
+
+		// LAN / Hotspot Sharing Inbounds (HTTP & SOCKS)
+		if cb.LanSharingEnabled {
+			lanAddr := cb.LanListenAddress
+			if lanAddr == "" {
+				lanAddr = "0.0.0.0"
 			}
 
-			endpoint := cb.EndpointIP
-			if endpoint == "" {
-				endpoint = "172.19.0.1/30"
+			if cb.LanHTTPPort > 0 {
+				httpIn := map[string]interface{}{
+					"type":        "http",
+					"tag":         "lan-http-in",
+					"listen":      lanAddr,
+					"listen_port": cb.LanHTTPPort,
+				}
+				if cb.LanAuthEnabled && cb.LanUsername != "" {
+					httpIn["users"] = []map[string]interface{}{
+						{
+							"username": cb.LanUsername,
+							"password": cb.LanPassword,
+						},
+					}
+				}
+				inbounds = append(inbounds, httpIn)
 			}
 
-			tunIn := map[string]interface{}{
-				"type":           "tun",
-				"tag":            "tun-in",
-				"interface_name": ifname,
-				"inet4_address":  endpoint,
-				"auto_route":     true,
-				"strict_route":   cb.StrictRoute,
-				"stack":          stack,
-				"mtu":            mtu,
+			if cb.LanSocksPort > 0 {
+				socksIn := map[string]interface{}{
+					"type":        "socks",
+					"tag":         "lan-socks-in",
+					"listen":      lanAddr,
+					"listen_port": cb.LanSocksPort,
+				}
+				if cb.LanAuthEnabled && cb.LanUsername != "" {
+					socksIn["users"] = []map[string]interface{}{
+						{
+							"username": cb.LanUsername,
+							"password": cb.LanPassword,
+						},
+					}
+				}
+				inbounds = append(inbounds, socksIn)
 			}
-
-			if len(cb.IncludePackages) > 0 {
-				tunIn["include_package"] = cb.IncludePackages
-			}
-			if len(cb.ExcludePackages) > 0 {
-				tunIn["exclude_package"] = cb.ExcludePackages
-			}
-
-			inbounds = append(inbounds, tunIn)
 		}
 	}
 

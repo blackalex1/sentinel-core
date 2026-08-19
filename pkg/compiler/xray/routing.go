@@ -15,7 +15,11 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 			if r.OutboundTag != "" {
 				tag = r.OutboundTag
 			} else if r.Action == ast.ActionProxy {
-				tag = "proxy"
+				if spec.ServerNode != nil && spec.ServerNode.Name != "" {
+					tag = spec.ServerNode.Name
+				} else {
+					tag = "proxy"
+				}
 			} else if r.Action == ast.ActionDirect {
 				tag = "direct"
 			} else if r.Action == ast.ActionBlock {

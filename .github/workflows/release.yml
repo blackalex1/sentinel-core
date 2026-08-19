@@ -172,14 +172,14 @@ jobs:
             echo "Found Android NDK at $NDK"
             TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
-            # Android C-Shared Libraries (.so)
-            build_cshared "Android arm64 .so" env CC="$TOOLCHAIN/aarch64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-android-arm64.so ./cmd/cshared &
+            # Android C-Shared Libraries (.so) with 16 KB page size alignment (Android 15+ compatible)
+            build_cshared "Android arm64 .so" env CC="$TOOLCHAIN/aarch64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm64 go build -buildmode=c-shared -ldflags="-s -w -extldflags '-Wl,-z,max-page-size=16384'" -o dist/libsentinel-core-android-arm64.so ./cmd/cshared &
             pids+=($!)
 
-            build_cshared "Android armv7 .so" env CC="$TOOLCHAIN/armv7a-linux-androideabi24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-android-arm.so ./cmd/cshared &
+            build_cshared "Android armv7 .so" env CC="$TOOLCHAIN/armv7a-linux-androideabi24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm go build -buildmode=c-shared -ldflags="-s -w -extldflags '-Wl,-z,max-page-size=16384'" -o dist/libsentinel-core-android-arm.so ./cmd/cshared &
             pids+=($!)
 
-            build_cshared "Android x86_64 .so" env CC="$TOOLCHAIN/x86_64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-android-x86_64.so ./cmd/cshared &
+            build_cshared "Android x86_64 .so" env CC="$TOOLCHAIN/x86_64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w -extldflags '-Wl,-z,max-page-size=16384'" -o dist/libsentinel-core-android-x86_64.so ./cmd/cshared &
             pids+=($!)
 
             # Android CLI Binaries

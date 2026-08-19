@@ -33,6 +33,15 @@ type ClientInboundSpec struct {
 	Inet6Address     string   `json:"inet6Address,omitempty"`
 	IncludePackages  []string `json:"includePackages,omitempty"`
 	ExcludePackages  []string `json:"excludePackages,omitempty"`
+
+	// LAN / Hotspot Sharing (Tethering)
+	LanSharingEnabled bool   `json:"lanSharingEnabled,omitempty"`
+	LanListenAddress  string `json:"lanListenAddress,omitempty"` // default "0.0.0.0"
+	LanHTTPPort       int    `json:"lanHttpPort,omitempty"`
+	LanSocksPort      int    `json:"lanSocksPort,omitempty"`
+	LanAuthEnabled    bool   `json:"lanAuthEnabled,omitempty"`
+	LanUsername       string `json:"lanUsername,omitempty"`
+	LanPassword       string `json:"lanPassword,omitempty"`
 }
 
 // ServerInboundClient represents an authenticated user on the server

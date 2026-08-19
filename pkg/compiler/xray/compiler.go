@@ -304,8 +304,27 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 	}
 
 	// 5. Build DNS
+	var dnsServers []string
+	if spec.DNS != nil && len(spec.DNS.Servers) > 0 {
+		for _, s := range spec.DNS.Servers {
+			if s != "" {
+				dnsServers = append(dnsServers, s)
+			}
+		}
+	} else if spec.DNS != nil && spec.DNS.RemoteServer != "" {
+		dnsServers = append(dnsServers, spec.DNS.RemoteServer)
+	}
+
+	if len(dnsServers) == 0 {
+		dnsServers = []string{"https://dns.google/dns-query", "8.8.8.8"}
+	}
+	if spec.DNS != nil && spec.DNS.DirectServer != "" {
+		dnsServers = append(dnsServers, spec.DNS.DirectServer)
+	}
+	dnsServers = append(dnsServers, "localhost")
+
 	dnsConfig := map[string]interface{}{
-		"servers": []string{"https://1.1.1.1/dns-query", "8.8.8.8", "localhost"},
+		"servers": dnsServers,
 	}
 
 	// 6. Log

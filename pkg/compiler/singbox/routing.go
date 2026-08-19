@@ -77,7 +77,11 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 			if r.OutboundTag != "" {
 				outbound = r.OutboundTag
 			} else if r.Action == ast.ActionProxy {
-				outbound = "proxy"
+				if spec.ServerNode != nil && spec.ServerNode.Name != "" {
+					outbound = spec.ServerNode.Name
+				} else {
+					outbound = "proxy"
+				}
 			}
 			if outbound == "blocked" {
 				outbound = "block"
