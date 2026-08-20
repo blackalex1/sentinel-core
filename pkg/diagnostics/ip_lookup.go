@@ -140,14 +140,20 @@ var defaultIPEndpoints = []ipEndpoint{
 }
 
 // GetPublicIP concurrently probes trusted endpoints through an optional SOCKS5 proxy and returns the fastest valid result
-func GetPublicIP(socksPort int, timeout time.Duration) (*PublicIPInfo, error) {
+func GetPublicIP(socksPort int, authUser, authPass string, timeout time.Duration) (*PublicIPInfo, error) {
 	if timeout <= 0 {
 		timeout = 3500 * time.Millisecond
 	}
 
 	var transport *http.Transport
 	if socksPort > 0 {
-		proxyURL, err := url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", socksPort))
+		var proxyURL *url.URL
+		var err error
+		if authUser != "" {
+			proxyURL, err = url.Parse(fmt.Sprintf("socks5://%s:%s@127.0.0.1:%d", url.QueryEscape(authUser), url.QueryEscape(authPass), socksPort))
+		} else {
+			proxyURL, err = url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", socksPort))
+		}
 		if err != nil {
 			return nil, fmt.Errorf("invalid socks5 proxy URL: %w", err)
 		}

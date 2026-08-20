@@ -39,7 +39,7 @@ func TestBatchPing(t *testing.T) {
 }
 
 func TestPingThroughProxyInvalidPort(t *testing.T) {
-	res := PingThroughProxy(-1, "http://example.com", 500*time.Millisecond)
+	res := PingThroughProxy(-1, "", "", "http://example.com", 500*time.Millisecond)
 	if res.Success {
 		t.Errorf("expected failure on invalid port, got success")
 	}
