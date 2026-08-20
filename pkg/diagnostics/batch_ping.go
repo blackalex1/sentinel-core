@@ -75,7 +75,7 @@ func BatchPing(targets []PingTarget, timeout time.Duration, concurrency int) []B
 }
 
 // PingThroughProxy measures real end-to-end RTT through a local SOCKS5 proxy to a test URL (e.g. Cloudflare generate_204)
-func PingThroughProxy(socksPort int, targetURL string, timeout time.Duration) ProxyPingResult {
+func PingThroughProxy(socksPort int, authUser, authPass, targetURL string, timeout time.Duration) ProxyPingResult {
 	if socksPort <= 0 {
 		return ProxyPingResult{Success: false, Error: "invalid socks port"}
 	}
@@ -86,7 +86,13 @@ func PingThroughProxy(socksPort int, targetURL string, timeout time.Duration) Pr
 		timeout = 3000 * time.Millisecond
 	}
 
-	proxyURL, err := url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", socksPort))
+	var proxyURL *url.URL
+	var err error
+	if authUser != "" {
+		proxyURL, err = url.Parse(fmt.Sprintf("socks5://%s:%s@127.0.0.1:%d", url.QueryEscape(authUser), url.QueryEscape(authPass), socksPort))
+	} else {
+		proxyURL, err = url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", socksPort))
+	}
 	if err != nil {
 		return ProxyPingResult{Success: false, Error: fmt.Sprintf("invalid proxy url: %v", err)}
 	}

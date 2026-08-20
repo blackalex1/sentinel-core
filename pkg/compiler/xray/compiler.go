@@ -28,6 +28,74 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 
 	var allWarnings []matrix.NegotiationWarning
 
+	// 0. If RawJSONConfig is provided (e.g. native subscription config with full outbounds, routing rules, and balancers)
+	rawJSON := spec.RawJSONConfig
+	if rawJSON == "" && spec.ServerNode != nil {
+		rawJSON = spec.ServerNode.RawJSONConfig
+	}
+
+	if rawJSON != "" {
+		var rawConfig map[string]interface{}
+		if err := json.Unmarshal([]byte(rawJSON), &rawConfig); err == nil && len(rawConfig) > 0 {
+			// Inject our built inbounds (mobile VPN tun-in and local socks-in)
+			inbounds := BuildXrayInbounds(spec)
+			rawConfig["inbounds"] = inbounds
+
+			// Ensure log config
+			logLevel := spec.LogLevel
+			if logLevel == "" {
+				logLevel = "debug"
+			}
+			rawConfig["log"] = map[string]interface{}{
+				"loglevel": logLevel,
+			}
+
+			// Prepend custom threat/app blocks to routing rules if specified
+			if spec.Routing != nil {
+				var prependRules []map[string]interface{}
+				for _, r := range spec.Routing.Rules {
+					if r.Action == ast.ActionBlock {
+						ruleMap := map[string]interface{}{
+							"type":        "field",
+							"outboundTag": "block",
+						}
+						if len(r.IPs) > 0 {
+							ruleMap["ip"] = r.IPs
+						}
+						if len(r.Domains) > 0 {
+							ruleMap["domain"] = r.Domains
+						}
+						if len(r.Ports) > 0 {
+							ruleMap["port"] = strings.Join(r.Ports, ",")
+						}
+						if len(r.PackageUIDs) > 0 {
+							ruleMap["user"] = r.PackageUIDs
+						}
+						prependRules = append(prependRules, ruleMap)
+					}
+				}
+				if len(prependRules) > 0 {
+					if routingMap, ok := rawConfig["routing"].(map[string]interface{}); ok {
+						if existingRules, ok := routingMap["rules"].([]interface{}); ok {
+							var merged []interface{}
+							for _, pr := range prependRules {
+								merged = append(merged, pr)
+							}
+							merged = append(merged, existingRules...)
+							routingMap["rules"] = merged
+						}
+					}
+				}
+			}
+
+			formatted, err := json.MarshalIndent(rawConfig, "", "  ")
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to format raw xray json config: %w", err)
+			}
+			return string(formatted), allWarnings, nil
+		}
+	}
+
 	// 1. Negotiate active server node features
 	var primaryOutbound map[string]interface{}
 	if spec.ServerNode != nil {

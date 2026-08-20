@@ -1,0 +1,9 @@
+{
+  "id": "lan",
+  "name": "Локальная сеть (LAN)",
+  "description": "Маршрутизация всех частных IP адресов (192.168.x.x, 10.x.x.x, 172.16.x.x)",
+  "defaultTarget": "direct",
+  "ips": [
+    "geoip:private"
+  ]
+}

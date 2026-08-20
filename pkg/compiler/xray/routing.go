@@ -1,6 +1,7 @@
 package xray
 
 import (
+	"net"
 	"strings"
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 )
@@ -8,6 +9,20 @@ import (
 // BuildXrayRouting creates the routing block for Xray-core
 func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 	rules := make([]map[string]interface{}, 0)
+
+	// 0. Ensure direct connection to server IP/host to prevent routing loopbacks
+	if spec.ServerNode != nil && spec.ServerNode.Address != "" {
+		srvRule := map[string]interface{}{
+			"type":        "field",
+			"outboundTag": "direct",
+		}
+		if net.ParseIP(spec.ServerNode.Address) != nil {
+			srvRule["ip"] = []string{spec.ServerNode.Address}
+		} else {
+			srvRule["domain"] = []string{spec.ServerNode.Address}
+		}
+		rules = append(rules, srvRule)
+	}
 
 	if spec.Routing != nil {
 		for _, r := range spec.Routing.Rules {
