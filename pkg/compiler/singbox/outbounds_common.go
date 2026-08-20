@@ -51,8 +51,8 @@ func buildSingBoxTLS(node *ast.ServerProfile) map[string]interface{} {
 		tlsMap["alpn"] = node.ALPN
 	}
 
-	// Reality specific
-	if node.Security == ast.SecurityReality {
+	// Reality specific (requires valid public key)
+	if node.Security == ast.SecurityReality && node.PublicKey != "" {
 		realityMap := map[string]interface{}{
 			"enabled":    true,
 			"public_key": node.PublicKey,
@@ -197,18 +197,25 @@ func applyRawTLSAndTransport(out, sMap, tsMap map[string]interface{}, defaultSer
 		}
 
 		if realitySettings != nil || security == "reality" {
-			realityMap := map[string]interface{}{
-				"enabled": true,
-			}
+			var pk, sid string
 			if realitySettings != nil {
-				if pk, ok := realitySettings["publicKey"].(string); ok {
-					realityMap["public_key"] = pk
+				if k, ok := realitySettings["publicKey"].(string); ok {
+					pk = k
 				}
-				if sid, ok := realitySettings["shortId"].(string); ok {
+				if s, ok := realitySettings["shortId"].(string); ok {
+					sid = s
+				}
+			}
+			if pk != "" {
+				realityMap := map[string]interface{}{
+					"enabled":    true,
+					"public_key": pk,
+				}
+				if sid != "" {
 					realityMap["short_id"] = sid
 				}
+				tlsMap["reality"] = realityMap
 			}
-			tlsMap["reality"] = realityMap
 		}
 
 		var fp string

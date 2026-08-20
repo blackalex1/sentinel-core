@@ -93,19 +93,20 @@ func BuildSingBoxDesktopTunInbound(cb *ast.ClientInboundSpec) map[string]interfa
 		endpoint = DefaultDesktopEndpointIP
 	}
 
+	addressList := []string{endpoint}
+	if cb.Inet6Address != "" {
+		addressList = append(addressList, cb.Inet6Address)
+	}
+
 	tunIn := map[string]interface{}{
 		"type":           "tun",
 		"tag":            "tun-in",
 		"interface_name": ifname,
-		"inet4_address":  endpoint,
+		"address":        addressList,
 		"auto_route":     cb.AutoRoute,
 		"strict_route":   cb.StrictRoute,
 		"stack":          stack,
 		"mtu":            mtu,
-	}
-
-	if cb.Inet6Address != "" {
-		tunIn["inet6_address"] = cb.Inet6Address
 	}
 
 	if len(cb.IncludePackages) > 0 {
