@@ -60,9 +60,5 @@
     "keyword:browserleaks",
     "keyword:whoer",
     "keyword:ipleak"
-  ],
-  "ips": [
-    "1.1.1.1/32",
-    "1.0.0.1/32"
   ]
 }

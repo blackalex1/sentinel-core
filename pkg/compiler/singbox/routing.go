@@ -87,22 +87,59 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 				outbound = "block"
 			}
 
-			ruleMap := map[string]interface{}{
-				"outbound": outbound,
+			createBaseRule := func() map[string]interface{} {
+				base := map[string]interface{}{
+					"outbound": outbound,
+				}
+				if len(r.InboundTags) > 0 {
+					base["inbound"] = r.InboundTags
+				}
+				if len(r.Ports) > 0 {
+					base["port"] = r.Ports
+				}
+				if len(r.Protocols) > 0 {
+					var networks []string
+					var appProtocols []string
+					for _, p := range r.Protocols {
+						pLower := strings.ToLower(p)
+						if pLower == "tcp" || pLower == "udp" {
+							networks = append(networks, pLower)
+						} else {
+							appProtocols = append(appProtocols, pLower)
+						}
+					}
+					if len(networks) > 0 {
+						base["network"] = networks
+					}
+					if len(appProtocols) > 0 {
+						base["protocol"] = appProtocols
+					}
+				}
+				if len(r.Users) > 0 {
+					base["user"] = r.Users
+				}
+				if len(r.PackageUIDs) > 0 {
+					base["user_id"] = r.PackageUIDs
+				}
+				if len(r.ProcessNames) > 0 {
+					base["process_name"] = r.ProcessNames
+				}
+				return base
 			}
 
-			var activeRuleSets []string
+			var domainRuleSets []string
+			var ipRuleSets []string
+
+			var regexList []string
+			var suffixDomains []string
+			var exactDomains []string
+			var keywordList []string
 
 			if len(r.Domains) > 0 {
-				var regexList []string
-				var suffixDomains []string
-				var exactDomains []string
-				var keywordList []string
-
 				for _, d := range r.Domains {
 					if strings.HasPrefix(d, "geosite:") {
 						tag := "geosite-" + strings.TrimPrefix(d, "geosite:")
-						activeRuleSets = append(activeRuleSets, tag)
+						domainRuleSets = append(domainRuleSets, tag)
 						if _, exists := ruleSetMap[tag]; !exists {
 							ruleSetMap[tag] = map[string]interface{}{
 								"tag":             tag,
@@ -128,23 +165,10 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 						suffixDomains = append(suffixDomains, d)
 					}
 				}
-
-				if len(regexList) > 0 {
-					ruleMap["domain_regex"] = regexList
-				}
-				if len(suffixDomains) > 0 {
-					ruleMap["domain_suffix"] = suffixDomains
-				}
-				if len(exactDomains) > 0 {
-					ruleMap["domain"] = exactDomains
-				}
-				if len(keywordList) > 0 {
-					ruleMap["domain_keyword"] = keywordList
-				}
 			}
 
+			var rawIPs []string
 			if len(r.IPs) > 0 {
-				var rawIPs []string
 				for _, ip := range r.IPs {
 					if strings.HasPrefix(ip, "geoip:") {
 						country := strings.TrimPrefix(ip, "geoip:")
@@ -159,7 +183,7 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 							)
 						} else {
 							tag := "geoip-" + country
-							activeRuleSets = append(activeRuleSets, tag)
+							ipRuleSets = append(ipRuleSets, tag)
 							if _, exists := ruleSetMap[tag]; !exists {
 								ruleSetMap[tag] = map[string]interface{}{
 									"tag":             tag,
@@ -176,53 +200,72 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 						rawIPs = append(rawIPs, ip)
 					}
 				}
+			}
+
+			hasDomainMatchers := len(regexList) > 0 || len(suffixDomains) > 0 || len(exactDomains) > 0 || len(keywordList) > 0 || len(domainRuleSets) > 0
+			hasIPMatchers := len(rawIPs) > 0 || len(ipRuleSets) > 0
+
+			if hasDomainMatchers && hasIPMatchers {
+				// Split into two rules so domains and IPs match independently
+				dRule := createBaseRule()
+				if len(regexList) > 0 {
+					dRule["domain_regex"] = regexList
+				}
+				if len(suffixDomains) > 0 {
+					dRule["domain_suffix"] = suffixDomains
+				}
+				if len(exactDomains) > 0 {
+					dRule["domain"] = exactDomains
+				}
+				if len(keywordList) > 0 {
+					dRule["domain_keyword"] = keywordList
+				}
+				if len(domainRuleSets) > 0 {
+					dRule["rule_set"] = domainRuleSets
+				}
+				rules = append(rules, dRule)
+
+				iRule := createBaseRule()
 				if len(rawIPs) > 0 {
-					ruleMap["ip_cidr"] = rawIPs
+					iRule["ip_cidr"] = rawIPs
+				}
+				if len(ipRuleSets) > 0 {
+					iRule["rule_set"] = ipRuleSets
+				}
+				rules = append(rules, iRule)
+			} else if hasDomainMatchers {
+				dRule := createBaseRule()
+				if len(regexList) > 0 {
+					dRule["domain_regex"] = regexList
+				}
+				if len(suffixDomains) > 0 {
+					dRule["domain_suffix"] = suffixDomains
+				}
+				if len(exactDomains) > 0 {
+					dRule["domain"] = exactDomains
+				}
+				if len(keywordList) > 0 {
+					dRule["domain_keyword"] = keywordList
+				}
+				if len(domainRuleSets) > 0 {
+					dRule["rule_set"] = domainRuleSets
+				}
+				rules = append(rules, dRule)
+			} else if hasIPMatchers {
+				iRule := createBaseRule()
+				if len(rawIPs) > 0 {
+					iRule["ip_cidr"] = rawIPs
+				}
+				if len(ipRuleSets) > 0 {
+					iRule["rule_set"] = ipRuleSets
+				}
+				rules = append(rules, iRule)
+			} else {
+				baseRule := createBaseRule()
+				if len(baseRule) > 1 || r.OutboundTag != "" || r.Action != "" {
+					rules = append(rules, baseRule)
 				}
 			}
-
-			if len(activeRuleSets) > 0 {
-				ruleMap["rule_set"] = activeRuleSets
-			}
-
-			if len(r.InboundTags) > 0 {
-				ruleMap["inbound"] = r.InboundTags
-			}
-
-			if len(r.Ports) > 0 {
-				ruleMap["port"] = r.Ports
-			}
-
-			if len(r.Protocols) > 0 {
-				var networks []string
-				var appProtocols []string
-				for _, p := range r.Protocols {
-					pLower := strings.ToLower(p)
-					if pLower == "tcp" || pLower == "udp" {
-						networks = append(networks, pLower)
-					} else {
-						appProtocols = append(appProtocols, pLower)
-					}
-				}
-				if len(networks) > 0 {
-					ruleMap["network"] = networks
-				}
-				if len(appProtocols) > 0 {
-					ruleMap["protocol"] = appProtocols
-				}
-			}
-
-			if len(r.Users) > 0 {
-				ruleMap["user"] = r.Users
-			}
-			if len(r.PackageUIDs) > 0 {
-				ruleMap["user_id"] = r.PackageUIDs
-			}
-			if len(r.ProcessNames) > 0 {
-				ruleMap["process_name"] = r.ProcessNames
-			}
-
-			rules = append(rules, ruleMap)
 		}
 	}
 

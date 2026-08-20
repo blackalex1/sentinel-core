@@ -26,14 +26,45 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 				tag = "block"
 			}
 
-			ruleMap := map[string]interface{}{
-				"type":        "field",
-				"outboundTag": tag,
+			createBaseRule := func() map[string]interface{} {
+				ruleMap := map[string]interface{}{
+					"type":        "field",
+					"outboundTag": tag,
+				}
+				if len(r.Ports) > 0 {
+					ruleMap["port"] = strings.Join(r.Ports, ",")
+				}
+				if len(r.Protocols) > 0 {
+					var networks []string
+					var appProtocols []string
+					for _, p := range r.Protocols {
+						pLower := strings.ToLower(p)
+						if pLower == "tcp" || pLower == "udp" {
+							networks = append(networks, pLower)
+						} else {
+							appProtocols = append(appProtocols, pLower)
+						}
+					}
+					if len(networks) > 0 {
+						ruleMap["network"] = strings.Join(networks, ",")
+					}
+					if len(appProtocols) > 0 {
+						ruleMap["protocol"] = appProtocols
+					}
+				}
+				if len(r.Users) > 0 {
+					ruleMap["user"] = r.Users
+				} else if len(r.PackageUIDs) > 0 {
+					ruleMap["user"] = r.PackageUIDs
+				}
+				if len(r.InboundTags) > 0 {
+					ruleMap["inboundTag"] = r.InboundTags
+				}
+				return ruleMap
 			}
 
-			hasField := false
+			var cleanDomains []string
 			if len(r.Domains) > 0 {
-				var cleanDomains []string
 				for _, d := range r.Domains {
 					if d == "geosite:ru" {
 						cleanDomains = append(cleanDomains, "geosite:category-ru")
@@ -41,51 +72,32 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 						cleanDomains = append(cleanDomains, d)
 					}
 				}
-				ruleMap["domain"] = cleanDomains
-				hasField = true
-			}
-			if len(r.IPs) > 0 {
-				ruleMap["ip"] = r.IPs
-				hasField = true
-			}
-			if len(r.Ports) > 0 {
-				ruleMap["port"] = strings.Join(r.Ports, ",")
-				hasField = true
-			}
-			if len(r.Protocols) > 0 {
-				var networks []string
-				var appProtocols []string
-				for _, p := range r.Protocols {
-					pLower := strings.ToLower(p)
-					if pLower == "tcp" || pLower == "udp" {
-						networks = append(networks, pLower)
-					} else {
-						appProtocols = append(appProtocols, pLower)
-					}
-				}
-				if len(networks) > 0 {
-					ruleMap["network"] = strings.Join(networks, ",")
-					hasField = true
-				}
-				if len(appProtocols) > 0 {
-					ruleMap["protocol"] = appProtocols
-					hasField = true
-				}
-			}
-			if len(r.Users) > 0 {
-				ruleMap["user"] = r.Users
-				hasField = true
-			} else if len(r.PackageUIDs) > 0 {
-				ruleMap["user"] = r.PackageUIDs
-				hasField = true
-			}
-			if len(r.InboundTags) > 0 {
-				ruleMap["inboundTag"] = r.InboundTags
-				hasField = true
 			}
 
-			if hasField || r.OutboundTag != "" || r.Action != "" {
-				rules = append(rules, ruleMap)
+			hasDomains := len(cleanDomains) > 0
+			hasIPs := len(r.IPs) > 0
+
+			if hasDomains && hasIPs {
+				domainRule := createBaseRule()
+				domainRule["domain"] = cleanDomains
+				rules = append(rules, domainRule)
+
+				ipRule := createBaseRule()
+				ipRule["ip"] = r.IPs
+				rules = append(rules, ipRule)
+			} else if hasDomains {
+				domainRule := createBaseRule()
+				domainRule["domain"] = cleanDomains
+				rules = append(rules, domainRule)
+			} else if hasIPs {
+				ipRule := createBaseRule()
+				ipRule["ip"] = r.IPs
+				rules = append(rules, ipRule)
+			} else {
+				baseRule := createBaseRule()
+				if len(baseRule) > 2 || r.OutboundTag != "" || r.Action != "" {
+					rules = append(rules, baseRule)
+				}
 			}
 		}
 	}

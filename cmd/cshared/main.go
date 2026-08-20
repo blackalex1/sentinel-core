@@ -584,6 +584,98 @@ func SentinelAndroidClearThreats() *C.char {
 	return C.CString(`{"success": true}`)
 }
 
+//export SentinelBatchPing
+func SentinelBatchPing(targetsJSON *C.char, timeoutMs C.int) *C.char {
+	goJSON := safeGoString(targetsJSON)
+	var targets []diagnostics.PingTarget
+	if err := json.Unmarshal([]byte(goJSON), &targets); err != nil {
+		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(errResp))
+	}
+	timeout := time.Duration(timeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 2500 * time.Millisecond
+	}
+	res := diagnostics.BatchPing(targets, timeout, 16)
+	respBytes, _ := json.Marshal(res)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelProxyPing
+func SentinelProxyPing(socksPort C.int, targetURL *C.char, timeoutMs C.int) *C.char {
+	port := int(socksPort)
+	urlStr := safeGoString(targetURL)
+	timeout := time.Duration(timeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 3000 * time.Millisecond
+	}
+	res := diagnostics.PingThroughProxy(port, urlStr, timeout)
+	respBytes, _ := json.Marshal(res)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelGetPublicIP
+func SentinelGetPublicIP(socksPort C.int, timeoutMs C.int) *C.char {
+	port := int(socksPort)
+	timeout := time.Duration(timeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 3500 * time.Millisecond
+	}
+	info, err := diagnostics.GetPublicIP(port, timeout)
+	if err != nil {
+		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(errResp))
+	}
+	respBytes, _ := json.Marshal(info)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelOptimizeRules
+func SentinelOptimizeRules(rulesJSON *C.char) *C.char {
+	goJSON := safeGoString(rulesJSON)
+	var rules []routing.RoutingRuleRow
+	if err := json.Unmarshal([]byte(goJSON), &rules); err != nil {
+		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(errResp))
+	}
+	opt := routing.OptimizeRules(rules)
+	respBytes, _ := json.Marshal(opt)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelAndroidPushLog
+func SentinelAndroidPushLog(logJSON *C.char) *C.char {
+	goJSON := safeGoString(logJSON)
+	var entry androidSec.AndroidLogEntry
+	if err := json.Unmarshal([]byte(goJSON), &entry); err != nil {
+		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(errResp))
+	}
+	androidSec.GetGlobalLogBuffer().Push(entry)
+	return C.CString(`{"success": true}`)
+}
+
+//export SentinelAndroidGetLogs
+func SentinelAndroidGetLogs(limit C.int, offset C.int, portFilter C.int, query *C.char) *C.char {
+	q := safeGoString(query)
+	logs := androidSec.GetGlobalLogBuffer().GetLogs(int(limit), int(offset), int(portFilter), q)
+	respBytes, _ := json.Marshal(logs)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelAndroidGetLogStats
+func SentinelAndroidGetLogStats() *C.char {
+	stats := androidSec.GetGlobalLogBuffer().GetStats()
+	respBytes, _ := json.Marshal(stats)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelAndroidClearLogs
+func SentinelAndroidClearLogs() *C.char {
+	androidSec.GetGlobalLogBuffer().Clear()
+	return C.CString(`{"success": true}`)
+}
+
 func hexDecode(s string) ([]byte, error) {
 	s = strings.TrimPrefix(s, "0x")
 	s = strings.ReplaceAll(s, " ", "")

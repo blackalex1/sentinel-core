@@ -76,7 +76,7 @@ func handleBuild() {
 		mode := routing.ModeSmartRule
 		if !*smart {
 			mode = routing.ModeGlobalProxy
-			enabledPresets = []string{"global_proxy"}
+			enabledPresets = []string{}
 		}
 		policy := &routing.RoutingPolicy{
 			Mode:           mode,

@@ -1,8 +1,0 @@
-{
-  "id": "direct_all",
-  "type": "template",
-  "name": "Прямое подключение",
-  "description": "Прямой доступ для всего трафика (без проксирования)",
-  "defaultTarget": "direct",
-  "rules": []
-}
