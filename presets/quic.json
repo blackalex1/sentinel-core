@@ -1,0 +1,12 @@
+{
+  "id": "quic",
+  "name": "Блокировка QUIC (UDP 443)",
+  "description": "Блокировка протокола QUIC (HTTP/3) для защиты от троттлинга и обхода XTLS",
+  "defaultTarget": "block",
+  "protocols": [
+    "udp"
+  ],
+  "ports": [
+    "443"
+  ]
+}

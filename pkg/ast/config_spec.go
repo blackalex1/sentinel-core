@@ -25,4 +25,5 @@ type ConfigSpec struct {
 	AccessLog       string             `json:"accessLog,omitempty"`
 	ErrorLog        string             `json:"errorLog,omitempty"`
 	ClashAPIAddress string             `json:"clashApiAddress,omitempty"` // e.g. "127.0.0.1:9090"
+	RawJSONConfig   string             `json:"rawJsonConfig,omitempty"`   // Full original JSON config from subscription provider
 }

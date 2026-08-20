@@ -119,6 +119,9 @@ type ServerProfile struct {
 
 	// Dynamic extra parameters
 	Extra map[string]interface{} `json:"extra,omitempty"`
+
+	// Original full raw JSON configuration (from subscription provider)
+	RawJSONConfig string `json:"rawJsonConfig,omitempty"`
 }
 
 // Normalize sanitizes and standardizes all string fields in the profile.

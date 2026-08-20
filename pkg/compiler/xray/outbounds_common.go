@@ -62,6 +62,9 @@ func buildXrayStreamSettings(node *ast.ServerProfile) map[string]interface{} {
 		if len(node.ALPN) > 0 {
 			tlsSettings["alpn"] = node.ALPN
 		}
+		if node.PinnedPeerCertSha256 != "" {
+			tlsSettings["pinnedPeerCertSha256"] = node.PinnedPeerCertSha256
+		}
 		if node.PostQuantum {
 			tlsSettings["curves"] = []string{"X25519Kyber768Draft00", "X25519"}
 		}
@@ -75,10 +78,13 @@ func buildXrayStreamSettings(node *ast.ServerProfile) map[string]interface{} {
 		if serviceName == "" {
 			serviceName = node.Path
 		}
-		stream["grpcSettings"] = map[string]interface{}{
+		grpcSettings := map[string]interface{}{
 			"serviceName": serviceName,
-			"multiMode":   true,
 		}
+		if node.Host != "" {
+			grpcSettings["authority"] = node.Host
+		}
+		stream["grpcSettings"] = grpcSettings
 	case "ws":
 		wsSettings := map[string]interface{}{
 			"path": node.Path,

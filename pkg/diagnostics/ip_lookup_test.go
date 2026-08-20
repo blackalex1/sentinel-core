@@ -38,7 +38,7 @@ func TestGetPublicIPWithMockServer(t *testing.T) {
 		},
 	}
 
-	info, err := GetPublicIP(0, 1*time.Second)
+	info, err := GetPublicIP(0, "", "", 1*time.Second)
 	if err != nil {
 		t.Fatalf("GetPublicIP failed: %v", err)
 	}

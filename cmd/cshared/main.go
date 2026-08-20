@@ -23,11 +23,18 @@ import (
 	"github.com/blackalex1/sentinel-core/pkg/supervisor"
 )
 
+var Version = "dev"
+
 func safeGoString(s *C.char) string {
 	if s == nil {
 		return ""
 	}
 	return C.GoString(s)
+}
+
+//export SentinelGetEngineVersion
+func SentinelGetEngineVersion() *C.char {
+	return C.CString(Version)
 }
 
 //export SentinelBuildConfig
@@ -602,26 +609,30 @@ func SentinelBatchPing(targetsJSON *C.char, timeoutMs C.int) *C.char {
 }
 
 //export SentinelProxyPing
-func SentinelProxyPing(socksPort C.int, targetURL *C.char, timeoutMs C.int) *C.char {
+func SentinelProxyPing(socksPort C.int, authUser *C.char, authPass *C.char, targetURL *C.char, timeoutMs C.int) *C.char {
 	port := int(socksPort)
+	user := safeGoString(authUser)
+	pass := safeGoString(authPass)
 	urlStr := safeGoString(targetURL)
 	timeout := time.Duration(timeoutMs) * time.Millisecond
 	if timeout <= 0 {
 		timeout = 3000 * time.Millisecond
 	}
-	res := diagnostics.PingThroughProxy(port, urlStr, timeout)
+	res := diagnostics.PingThroughProxy(port, user, pass, urlStr, timeout)
 	respBytes, _ := json.Marshal(res)
 	return C.CString(string(respBytes))
 }
 
 //export SentinelGetPublicIP
-func SentinelGetPublicIP(socksPort C.int, timeoutMs C.int) *C.char {
+func SentinelGetPublicIP(socksPort C.int, authUser *C.char, authPass *C.char, timeoutMs C.int) *C.char {
 	port := int(socksPort)
+	user := safeGoString(authUser)
+	pass := safeGoString(authPass)
 	timeout := time.Duration(timeoutMs) * time.Millisecond
 	if timeout <= 0 {
 		timeout = 3500 * time.Millisecond
 	}
-	info, err := diagnostics.GetPublicIP(port, timeout)
+	info, err := diagnostics.GetPublicIP(port, user, pass, timeout)
 	if err != nil {
 		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
 		return C.CString(string(errResp))
