@@ -121,6 +121,64 @@ var defaultIPEndpoints = []ipEndpoint{
 		},
 	},
 	{
+		URL:    "https://api4.my-ip.io/v2/ip.json",
+		IsJSON: true,
+		Parser: func(body []byte) (*PublicIPInfo, error) {
+			var resp struct {
+				Success bool   `json:"success"`
+				IP      string `json:"ip"`
+				Country struct {
+					Name string `json:"name"`
+					Code string `json:"code"`
+				} `json:"country"`
+				City string `json:"city"`
+				ASN  struct {
+					Name string `json:"name"`
+				} `json:"asn"`
+			}
+			if err := json.Unmarshal(body, &resp); err != nil {
+				return nil, err
+			}
+			if resp.IP == "" {
+				return nil, fmt.Errorf("empty IP from my-ip.io")
+			}
+			return &PublicIPInfo{
+				IP:          resp.IP,
+				Country:     resp.Country.Name,
+				CountryCode: resp.Country.Code,
+				City:        resp.City,
+				Org:         resp.ASN.Name,
+			}, nil
+		},
+	},
+	{
+		URL:    "https://ipinfo.io/json",
+		IsJSON: true,
+		Parser: func(body []byte) (*PublicIPInfo, error) {
+			var resp struct {
+				IP      string `json:"ip"`
+				City    string `json:"city"`
+				Region  string `json:"region"`
+				Country string `json:"country"`
+				Org     string `json:"org"`
+			}
+			if err := json.Unmarshal(body, &resp); err != nil {
+				return nil, err
+			}
+			if resp.IP == "" {
+				return nil, fmt.Errorf("empty IP from ipinfo.io")
+			}
+			return &PublicIPInfo{
+				IP:          resp.IP,
+				City:        resp.City,
+				Region:      resp.Region,
+				Country:     resp.Country,
+				CountryCode: resp.Country,
+				Org:         resp.Org,
+			}, nil
+		},
+	},
+	{
 		URL:    "https://checkip.amazonaws.com",
 		IsJSON: false,
 		Parser: func(body []byte) (*PublicIPInfo, error) {

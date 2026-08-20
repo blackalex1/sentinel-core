@@ -173,12 +173,16 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 	}
 
 	if spec.ServerNode != nil {
+		detourTag := "proxy"
+		if spec.ServerNode.Name != "" {
+			detourTag = spec.ServerNode.Name
+		}
 		servers = append(servers, map[string]interface{}{
 			"tag":         "dns-remote",
 			"type":        "https",
 			"server":      remoteDNS,
 			"server_port": 443,
-			"detour":      "proxy",
+			"detour":      detourTag,
 		})
 	}
 

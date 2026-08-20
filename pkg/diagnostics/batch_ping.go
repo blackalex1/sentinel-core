@@ -74,10 +74,10 @@ func BatchPing(targets []PingTarget, timeout time.Duration, concurrency int) []B
 	return results
 }
 
-// PingThroughProxy measures real end-to-end RTT through a local SOCKS5 proxy to a test URL (e.g. Cloudflare generate_204)
+// PingThroughProxy measures real end-to-end RTT through a local SOCKS5 proxy (or direct if socksPort == 0) to a test URL (e.g. Cloudflare generate_204)
 func PingThroughProxy(socksPort int, authUser, authPass, targetURL string, timeout time.Duration) ProxyPingResult {
-	if socksPort <= 0 {
-		return ProxyPingResult{Success: false, Error: "invalid socks port"}
+	if socksPort < 0 || socksPort > 65535 {
+		return ProxyPingResult{Success: false, Error: fmt.Sprintf("invalid proxy port: %d", socksPort)}
 	}
 	if targetURL == "" {
 		targetURL = "http://cp.cloudflare.com/generate_204"
@@ -86,25 +86,37 @@ func PingThroughProxy(socksPort int, authUser, authPass, targetURL string, timeo
 		timeout = 3000 * time.Millisecond
 	}
 
-	var proxyURL *url.URL
-	var err error
-	if authUser != "" {
-		proxyURL, err = url.Parse(fmt.Sprintf("socks5://%s:%s@127.0.0.1:%d", url.QueryEscape(authUser), url.QueryEscape(authPass), socksPort))
-	} else {
-		proxyURL, err = url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", socksPort))
-	}
-	if err != nil {
-		return ProxyPingResult{Success: false, Error: fmt.Sprintf("invalid proxy url: %v", err)}
-	}
+	var transport *http.Transport
+	if socksPort > 0 {
+		var proxyURL *url.URL
+		var err error
+		if authUser != "" {
+			proxyURL, err = url.Parse(fmt.Sprintf("socks5://%s:%s@127.0.0.1:%d", url.QueryEscape(authUser), url.QueryEscape(authPass), socksPort))
+		} else {
+			proxyURL, err = url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", socksPort))
+		}
+		if err != nil {
+			return ProxyPingResult{Success: false, Error: fmt.Sprintf("invalid proxy url: %v", err)}
+		}
 
-	transport := &http.Transport{
-		Proxy: http.ProxyURL(proxyURL),
-		DialContext: (&net.Dialer{
-			Timeout:   timeout,
-			KeepAlive: -1,
-		}).DialContext,
-		DisableKeepAlives:     true,
-		ResponseHeaderTimeout: timeout,
+		transport = &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+			DialContext: (&net.Dialer{
+				Timeout:   timeout,
+				KeepAlive: -1,
+			}).DialContext,
+			DisableKeepAlives:     true,
+			ResponseHeaderTimeout: timeout,
+		}
+	} else {
+		transport = &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   timeout,
+				KeepAlive: -1,
+			}).DialContext,
+			DisableKeepAlives:     true,
+			ResponseHeaderTimeout: timeout,
+		}
 	}
 
 	client := &http.Client{

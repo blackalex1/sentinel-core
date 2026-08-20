@@ -412,6 +412,14 @@ func SentinelClearInMemoryLogs(core *C.char) *C.char {
 	return C.CString(`{"success": true}`)
 }
 
+//export SentinelPushLogLine
+func SentinelPushLogLine(core *C.char, line *C.char) *C.char {
+	goCore := safeGoString(core)
+	l := safeGoString(line)
+	supervisor.GetLogBroadcaster().PushLine(goCore, l)
+	return C.CString(`{"success": true}`)
+}
+
 //export SentinelGetSecuritySchema
 func SentinelGetSecuritySchema(lang *C.char) *C.char {
 	goLang := safeGoString(lang)
