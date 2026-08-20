@@ -61,6 +61,6 @@ func DefaultSmartPolicy() *RoutingPolicy {
 func DefaultGlobalPolicy() *RoutingPolicy {
 	return &RoutingPolicy{
 		Mode:           ModeGlobalProxy,
-		EnabledPresets: []string{"global_proxy"},
+		EnabledPresets: []string{},
 	}
 }

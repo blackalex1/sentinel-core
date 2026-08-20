@@ -33,11 +33,7 @@ func GetAvailablePresetsLocalized(lang string) []PresetSummary {
 
 		pType := p.Type
 		if pType == "" {
-			if p.ID == "global_proxy" || p.ID == "direct_all" {
-				pType = "template"
-			} else {
-				pType = "quick_rule"
-			}
+			pType = "quick_rule"
 		}
 
 		nameKey := "PRESET_" + strings.ToUpper(p.ID) + "_NAME"

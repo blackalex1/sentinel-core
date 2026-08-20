@@ -152,6 +152,7 @@ func (e *Engine) CompilePolicy(policy *RoutingPolicy) *ast.RoutingSpec {
 		}
 	}
 
+	table.Rules = OptimizeRules(table.Rules)
 	astSpec := table.CompileToAST()
 	if strings.ToUpper(defaultTarget) == "DIRECT" {
 		astSpec.DefaultAction = ast.ActionDirect
