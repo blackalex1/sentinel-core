@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	singboxInboundRegex = regexp.MustCompile(`inbound connection to ([^:]+):(\d+).*?(?:from user ([^\s]+)|from ([^\s:]+)(?::\d+)?)`)
-	singboxRejectRegex  = regexp.MustCompile(`(?:rule|router).*?(?:match|rejected).*?(?:for|to)\s+([^\s:]+):(\d+)`)
+	singboxInboundRegex  = regexp.MustCompile(`inbound connection to ([^:]+):(\d+).*?(?:from process ([^\s,]+)|by process ([^\s,]+)|from user ([^\s,]+)|from ([^\s:]+)(?::\d+)?)`)
+	singboxRejectRegex   = regexp.MustCompile(`(?:rule|router).*?(?:match|rejected).*?(?:for|to)\s+([^\s:]+):(\d+)`)
+	singboxProcessRegex  = regexp.MustCompile(`(?i)(?:from process|by process|process[:=\s]+|user[:=\s]+)([^\s,\]\)]+)`)
 	singboxMetadataRegex = regexp.MustCompile(`(?:169\.254\.169\.254|metadata\.google\.internal|100\.100\.100\.200)`)
 )
 
@@ -37,7 +38,7 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 	if singboxMetadataRegex.MatchString(cleanLine) {
 		return &ParsedLogEvent{
 			CoreName:    "sing-box",
-			ClientRawID: extractUserID(cleanLine),
+			ClientRawID: extractProcessOrUser(cleanLine),
 			TargetHost:  "169.254.169.254",
 			TargetPort:  80,
 			EventType:   "SSRF_PROBE",
@@ -48,15 +49,30 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 	// 2. Check for inbound connection (e.g. sensitive port probes)
 	if matches := singboxInboundRegex.FindStringSubmatch(cleanLine); len(matches) >= 3 {
 		port, _ := strconv.Atoi(matches[2])
-		user := matches[3]
-		clientIP := matches[4]
-		if user == "" {
-			user = clientIP
+		proc1 := matches[3] // from process
+		proc2 := matches[4] // by process
+		user := matches[5]  // from user
+		clientIP := matches[6]
+
+		identifiedID := proc1
+		if identifiedID == "" {
+			identifiedID = proc2
+		}
+		if identifiedID == "" {
+			identifiedID = user
+		}
+		if identifiedID == "" {
+			identifiedID = extractProcessOrUser(cleanLine)
+		}
+		if identifiedID == "" {
+			identifiedID = clientIP
+		} else {
+			identifiedID = cleanProcessName(identifiedID)
 		}
 
 		return &ParsedLogEvent{
 			CoreName:    "sing-box",
-			ClientRawID: user,
+			ClientRawID: identifiedID,
 			ClientIP:    clientIP,
 			TargetHost:  matches[1],
 			TargetPort:  port,
@@ -70,7 +86,7 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 		port, _ := strconv.Atoi(matches[2])
 		return &ParsedLogEvent{
 			CoreName:    "sing-box",
-			ClientRawID: extractUserID(cleanLine),
+			ClientRawID: extractProcessOrUser(cleanLine),
 			TargetHost:  matches[1],
 			TargetPort:  port,
 			EventType:   "ROUTING_REJECT",
@@ -130,6 +146,24 @@ func ParseSingboxConnections(rawJSON []byte) ([]ActiveConnection, error) {
 	}
 
 	return res, nil
+}
+
+func cleanProcessName(s string) string {
+	s = strings.Trim(s, "()\"',:;[]")
+	if idx := strings.LastIndexAny(s, "/\\"); idx != -1 {
+		s = s[idx+1:]
+	}
+	return s
+}
+
+func extractProcessOrUser(line string) string {
+	if m := singboxProcessRegex.FindStringSubmatch(line); len(m) >= 2 {
+		proc := cleanProcessName(m[1])
+		if proc != "" && !strings.Contains(proc, ":") {
+			return proc
+		}
+	}
+	return extractUserID(line)
 }
 
 func extractUserID(line string) string {
