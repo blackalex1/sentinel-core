@@ -179,6 +179,21 @@ func SentinelGetUnifiedTraffic() *C.char {
 	return C.CString(string(jsonBytes))
 }
 
+//export SentinelGetRealtimeTraffic
+func SentinelGetRealtimeTraffic(clashAddr *C.char) *C.char {
+	addr := safeGoString(clashAddr)
+	ctrl := supervisor.GetController()
+	stats := ctrl.GetRealtimeTraffic(addr)
+	jsonBytes, _ := json.Marshal(stats)
+	return C.CString(string(jsonBytes))
+}
+
+//export SentinelResetRealtimeTraffic
+func SentinelResetRealtimeTraffic() *C.char {
+	supervisor.ResetRealtimeTraffic()
+	return C.CString(`{"success": true}`)
+}
+
 //export SentinelKickClient
 func SentinelKickClient(clientEmail *C.char) *C.char {
 	email := safeGoString(clientEmail)
@@ -449,18 +464,51 @@ func SentinelValidateSecurityConfig(configJSON *C.char) *C.char {
 	return C.CString(`{"valid": true}`)
 }
 
-//export SentinelAndroidAuditConnection
-func SentinelAndroidAuditConnection(reqJSON *C.char) *C.char {
+//export SentinelAuditConnection
+func SentinelAuditConnection(reqJSON *C.char) *C.char {
 	goJSON := safeGoString(reqJSON)
-	var req androidSec.AuditRequest
+	var req security.SecurityAuditRequest
 	if err := json.Unmarshal([]byte(goJSON), &req); err != nil {
 		errResp, _ := json.Marshal(map[string]any{"error": err.Error()})
 		return C.CString(string(errResp))
 	}
 
-	engine := androidSec.GetDefaultEngine()
+	engine := security.GetDefaultSecurityEngine()
 	verdict := engine.AuditConnection(req)
 	respBytes, _ := json.Marshal(verdict)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelGetPortShieldCatalog
+func SentinelGetPortShieldCatalog(lang *C.char) *C.char {
+	goLang := safeGoString(lang)
+	if goLang == "" {
+		goLang = "ru"
+	}
+	catalog := security.GetPortShieldCatalog(goLang)
+	respBytes, _ := json.Marshal(catalog)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelConfigureSecurityPolicy
+func SentinelConfigureSecurityPolicy(policyJSON *C.char) *C.char {
+	goJSON := safeGoString(policyJSON)
+	var policy security.SecurityPolicyConfig
+	if err := json.Unmarshal([]byte(goJSON), &policy); err != nil {
+		errResp, _ := json.Marshal(map[string]any{"success": false, "error": err.Error()})
+		return C.CString(string(errResp))
+	}
+
+	engine := security.GetDefaultSecurityEngine()
+	engine.ConfigurePolicy(policy)
+	return C.CString(`{"success": true}`)
+}
+
+//export SentinelGetSecurityPolicy
+func SentinelGetSecurityPolicy() *C.char {
+	engine := security.GetDefaultSecurityEngine()
+	policy := engine.GetPolicy()
+	respBytes, _ := json.Marshal(policy)
 	return C.CString(string(respBytes))
 }
 
