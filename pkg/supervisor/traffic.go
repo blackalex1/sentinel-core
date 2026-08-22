@@ -1,13 +1,23 @@
 package supervisor
 
 import (
+	"context"
+	"net"
 	"net/http"
 	"time"
 )
 
 // HTTPClient with fast timeout for localhost queries
 var localHTTPClient = &http.Client{
-	Timeout: 500 * time.Millisecond,
+	Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			d := net.Dialer{Timeout: 300 * time.Millisecond}
+			return d.DialContext(ctx, "tcp4", addr)
+		},
+		ResponseHeaderTimeout: 300 * time.Millisecond,
+		DisableKeepAlives:     true,
+	},
+	Timeout: 400 * time.Millisecond,
 }
 
 // AggregateTraffic combines traffic metrics from multiple cores for each client.

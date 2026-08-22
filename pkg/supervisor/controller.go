@@ -288,3 +288,80 @@ func (c *Controller) GetLogs(coreName string, lines int) ([]string, error) {
 
 	return ReadCoreLogs(path, lines)
 }
+
+// RealtimeTrafficStats holds instantaneous speed (B/s), total volume, and active connection count
+type RealtimeTrafficStats struct {
+	UploadSpeed   int64 `json:"uploadSpeed"`   // Bytes per second
+	DownloadSpeed int64 `json:"downloadSpeed"` // Bytes per second
+	UploadTotal   int64 `json:"uploadTotal"`   // Cumulative bytes
+	DownloadTotal int64 `json:"downloadTotal"` // Cumulative bytes
+	Connections   int   `json:"connections"`
+}
+
+var (
+	rtMu         sync.Mutex
+	lastDownTot  int64
+	lastUpTot    int64
+	lastSampleAt time.Time
+)
+
+// ResetRealtimeTraffic clears in-memory delta counters
+func ResetRealtimeTraffic() {
+	rtMu.Lock()
+	defer rtMu.Unlock()
+	lastDownTot = 0
+	lastUpTot = 0
+	lastSampleAt = time.Time{}
+}
+
+// GetRealtimeTraffic queries core endpoints and calculates instantaneous speed and cumulative volume
+func (c *Controller) GetRealtimeTraffic(clashAddr string) RealtimeTrafficStats {
+	if clashAddr == "" {
+		c.mu.RLock()
+		clashAddr = c.clashAPIAddr
+		c.mu.RUnlock()
+	}
+	if clashAddr == "" {
+		clashAddr = "127.0.0.1:9090"
+	}
+
+	stats := RealtimeTrafficStats{}
+
+	url := fmt.Sprintf("http://%s/connections", clashAddr)
+	resp, err := localHTTPClient.Get(url)
+	if err == nil && resp.StatusCode == 200 {
+		defer resp.Body.Close()
+		var data struct {
+			DownloadTotal int64 `json:"downloadTotal"`
+			UploadTotal   int64 `json:"uploadTotal"`
+			Connections   []any `json:"connections"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
+			stats.DownloadTotal = data.DownloadTotal
+			stats.UploadTotal = data.UploadTotal
+			stats.Connections = len(data.Connections)
+
+			rtMu.Lock()
+			now := time.Now()
+			if !lastSampleAt.IsZero() {
+				deltaSec := now.Sub(lastSampleAt).Seconds()
+				if deltaSec > 0.1 {
+					downDelta := data.DownloadTotal - lastDownTot
+					upDelta := data.UploadTotal - lastUpTot
+					if downDelta >= 0 {
+						stats.DownloadSpeed = int64(float64(downDelta) / deltaSec)
+					}
+					if upDelta >= 0 {
+						stats.UploadSpeed = int64(float64(upDelta) / deltaSec)
+					}
+				}
+			}
+			lastDownTot = data.DownloadTotal
+			lastUpTot = data.UploadTotal
+			lastSampleAt = now
+			rtMu.Unlock()
+		}
+	}
+
+	return stats
+}

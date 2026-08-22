@@ -2,6 +2,7 @@ package singbox
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 )
@@ -95,7 +96,18 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 					base["inbound"] = r.InboundTags
 				}
 				if len(r.Ports) > 0 {
-					base["port"] = r.Ports
+					var ports []interface{}
+					for _, p := range r.Ports {
+						pTrim := strings.TrimSpace(p)
+						if num, err := strconv.Atoi(pTrim); err == nil {
+							ports = append(ports, num)
+						} else if pTrim != "" {
+							ports = append(ports, pTrim)
+						}
+					}
+					if len(ports) > 0 {
+						base["port"] = ports
+					}
 				}
 				if len(r.Protocols) > 0 {
 					var networks []string
