@@ -452,8 +452,8 @@ func IsCloudMetadataEndpoint(destIP, destHost string) bool {
 
 // IsMasqueradedSystemProcess detects MITRE ATT&CK T1036 (Masquerading / Fake System Executables).
 func IsMasqueradedSystemProcess(callerID, fullPath string) (bool, string) {
-	name := strings.ToLower(filepath.Base(callerID))
-	path := strings.ToLower(filepath.ToSlash(fullPath))
+	name := strings.ToLower(filepath.Base(strings.ReplaceAll(callerID, "\\", "/")))
+	path := strings.ToLower(strings.ReplaceAll(fullPath, "\\", "/"))
 
 	systemBinaries := map[string]string{
 		"svchost.exe":   "system32",
@@ -472,13 +472,13 @@ func IsMasqueradedSystemProcess(callerID, fullPath string) (bool, string) {
 		return false, ""
 	}
 
-	// Genuine system paths must be within C:/windows or C:/windows/system32
+	// Genuine system paths must be within /windows/system32 or /windows/syswow64
 	if expectedSubdir == "system32" {
-		if strings.Contains(path, "/windows/system32/") || strings.Contains(path, "/windows/syswow64/") {
+		if strings.Contains(path, "/windows/system32") || strings.Contains(path, "/windows/syswow64") {
 			return false, ""
 		}
 	} else if expectedSubdir == "windows" {
-		if strings.Contains(path, "/windows/") && !strings.Contains(path, "/users/") && !strings.Contains(path, "/temp/") && !strings.Contains(path, "/appdata/") {
+		if strings.Contains(path, "/windows") && !strings.Contains(path, "/users/") && !strings.Contains(path, "/temp/") && !strings.Contains(path, "/appdata/") {
 			return false, ""
 		}
 	}
@@ -489,17 +489,17 @@ func IsMasqueradedSystemProcess(callerID, fullPath string) (bool, string) {
 // isProtectedSystemEntity ensures ONLY genuinely verified OS components are immune to broad quarantine.
 func isProtectedSystemEntity(caller, execPath string) bool {
 	clean := strings.ToLower(strings.TrimSpace(caller))
+	p := strings.ToLower(strings.ReplaceAll(execPath, "\\", "/"))
+
 	switch clean {
 	case "", "defaultentity", "unknown", "pending", "127.0.0.1", "::1":
 		return true
 	case "system", "system.exe", "kernel", "ntoskrnl.exe":
-		return execPath == "" || !strings.Contains(strings.ToLower(execPath), "/users/")
+		return p == "" || !strings.Contains(p, "/users/")
 	case "svchost.exe", "csrss.exe", "lsass.exe", "services.exe", "smss.exe", "taskhostw.exe", "dwm.exe", "conhost.exe":
-		p := strings.ToLower(filepath.ToSlash(execPath))
-		return p == "" || strings.Contains(p, "/windows/system32/") || strings.Contains(p, "/windows/syswow64/")
+		return p == "" || strings.Contains(p, "/windows/system32") || strings.Contains(p, "/windows/syswow64")
 	case "explorer.exe":
-		p := strings.ToLower(filepath.ToSlash(execPath))
-		return p == "" || (strings.Contains(p, "/windows/") && !strings.Contains(p, "/users/") && !strings.Contains(p, "/temp/") && !strings.Contains(p, "/appdata/"))
+		return p == "" || (strings.Contains(p, "/windows") && !strings.Contains(p, "/users/") && !strings.Contains(p, "/temp/") && !strings.Contains(p, "/appdata/"))
 	default:
 		return false
 	}
