@@ -175,6 +175,7 @@ func TestExhaustive_Shadowsocks_Ciphers_And_Networks(t *testing.T) {
 					RawSettings: map[string]interface{}{
 						"method":   c.cipher,
 						"password": c.pwd,
+						"network":  "tcp,udp",
 					},
 				}
 

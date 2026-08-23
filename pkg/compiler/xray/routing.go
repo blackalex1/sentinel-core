@@ -10,7 +10,16 @@ import (
 func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 	rules := make([]map[string]interface{}, 0)
 
-	// 0. Ensure direct connection to server IP/host to prevent routing loopbacks
+	// 0. Ensure DNS queries (port 53) are routed to Xray's DNS engine
+	dnsRule := map[string]interface{}{
+		"type":        "field",
+		"outboundTag": "dns-out",
+		"port":        "53",
+		"network":     "udp,tcp",
+	}
+	rules = append(rules, dnsRule)
+
+	// 0.1 Ensure direct connection to server IP/host to prevent routing loopbacks
 	if spec.ServerNode != nil && spec.ServerNode.Address != "" {
 		srvRule := map[string]interface{}{
 			"type":        "field",
@@ -22,6 +31,30 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 			srvRule["domain"] = []string{spec.ServerNode.Address}
 		}
 		rules = append(rules, srvRule)
+	}
+
+	// 0.1 Drop link-local, multicast, broadcast, and NetBIOS in desktop TUN mode to avoid Windows routing loops
+	if spec.ClientInbound != nil && spec.ClientInbound.Mode == ast.InboundModeDesktopTun {
+		rules = append(rules,
+			map[string]interface{}{
+				"type":        "field",
+				"outboundTag": "block",
+				"ip": []string{
+					"169.254.0.0/16",
+					"224.0.0.0/4",
+					"255.255.255.255/32",
+					"fe80::/10",
+					"ff00::/8",
+					"::1",
+				},
+			},
+			map[string]interface{}{
+				"type":        "field",
+				"outboundTag": "block",
+				"port":        "137,138,1900,5353",
+				"network":     "udp",
+			},
+		)
 	}
 
 	if spec.Routing != nil {
@@ -71,6 +104,8 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 					ruleMap["user"] = r.Users
 				} else if len(r.PackageUIDs) > 0 {
 					ruleMap["user"] = r.PackageUIDs
+				} else if len(r.ProcessNames) > 0 {
+					ruleMap["user"] = r.ProcessNames
 				}
 				if len(r.InboundTags) > 0 {
 					ruleMap["inboundTag"] = r.InboundTags
@@ -110,7 +145,7 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 				rules = append(rules, ipRule)
 			} else {
 				baseRule := createBaseRule()
-				if len(baseRule) > 2 || r.OutboundTag != "" || r.Action != "" {
+				if len(baseRule) > 2 {
 					rules = append(rules, baseRule)
 				}
 			}

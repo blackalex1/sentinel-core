@@ -31,7 +31,15 @@ func parseMapOrJSON(val interface{}) map[string]interface{} {
 
 // buildSingBoxTLS extracts and builds TLS/Reality configuration map from an ast.ServerProfile.
 func buildSingBoxTLS(node *ast.ServerProfile) map[string]interface{} {
-	if node.Security == "" || node.Security == ast.SecurityNone {
+	sec := strings.ToLower(strings.TrimSpace(node.Security))
+	if sec == "" {
+		if node.PublicKey != "" {
+			sec = ast.SecurityReality
+		} else if node.SNI != "" || node.Flow == "xtls-rprx-vision" {
+			sec = ast.SecurityTLS
+		}
+	}
+	if sec == "" || sec == ast.SecurityNone {
 		return nil
 	}
 
@@ -52,7 +60,7 @@ func buildSingBoxTLS(node *ast.ServerProfile) map[string]interface{} {
 	}
 
 	// Reality specific (requires valid public key)
-	if node.Security == ast.SecurityReality && node.PublicKey != "" {
+	if (sec == ast.SecurityReality || node.PublicKey != "") && node.PublicKey != "" {
 		realityMap := map[string]interface{}{
 			"enabled":    true,
 			"public_key": node.PublicKey,

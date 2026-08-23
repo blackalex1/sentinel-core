@@ -14,14 +14,22 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 		"default_domain_resolver": "dns-direct",
 	}
 
+	if spec.ClientInbound != nil && spec.ClientInbound.Mode == ast.InboundModeDesktopTun {
+		route["find_process"] = true
+	}
+
 	rules := make([]map[string]interface{}, 0)
 	ruleSetMap := make(map[string]map[string]interface{})
 
-	// Add DNS hijacking rule for client TUN mode
+	// Add DNS hijacking rule for client TUN mode (match port 53 directly to prevent private IP direct routing loop on 172.19.0.2:53)
 	if spec.ClientInbound != nil {
 		rules = append(rules, map[string]interface{}{
-			"protocol": "dns",
+			"action": "hijack-dns",
+			"port":   uint16(53),
+		})
+		rules = append(rules, map[string]interface{}{
 			"action":   "hijack-dns",
+			"protocol": "dns",
 		})
 	}
 
@@ -96,17 +104,23 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 					base["inbound"] = r.InboundTags
 				}
 				if len(r.Ports) > 0 {
-					var ports []interface{}
+					var intPorts []uint16
+					var rangePorts []string
 					for _, p := range r.Ports {
 						pTrim := strings.TrimSpace(p)
-						if num, err := strconv.Atoi(pTrim); err == nil {
-							ports = append(ports, num)
+						if num, err := strconv.Atoi(pTrim); err == nil && num > 0 && num <= 65535 {
+							intPorts = append(intPorts, uint16(num))
 						} else if pTrim != "" {
-							ports = append(ports, pTrim)
+							rangePorts = append(rangePorts, pTrim)
 						}
 					}
-					if len(ports) > 0 {
-						base["port"] = ports
+					if len(intPorts) == 1 && len(rangePorts) == 0 {
+						base["port"] = intPorts[0]
+					} else if len(intPorts) > 0 {
+						base["port"] = intPorts
+					}
+					if len(rangePorts) > 0 {
+						base["port_range"] = rangePorts
 					}
 				}
 				if len(r.Protocols) > 0 {

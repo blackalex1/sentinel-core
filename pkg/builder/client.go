@@ -10,6 +10,7 @@ import (
 	"github.com/blackalex1/sentinel-core/pkg/i18n"
 	"github.com/blackalex1/sentinel-core/pkg/matrix"
 	"github.com/blackalex1/sentinel-core/pkg/routing"
+	"github.com/blackalex1/sentinel-core/pkg/security"
 )
 
 // BuildResult contains the compiled JSON config and any warnings emitted during compilation
@@ -57,6 +58,26 @@ func BuildClientConfig(spec *ast.ConfigSpec) (*BuildResult, error) {
 				Message: i18n.TGlobal("HY2_AUTO_SWITCH_SINGBOX"),
 				Action:  "AUTO_SWITCH_TO_SINGBOX",
 			})
+		}
+	}
+
+	// Inject active Zero Trust quarantined entities into routing table for cores supporting routing
+	if (targetCore == ast.CoreSingBox || targetCore == ast.CoreXray) && spec.Routing != nil {
+		blockedEntities := security.GetDefaultSecurityEngine().GetBlockedEntities()
+		if len(blockedEntities) > 0 {
+			var procNames []string
+			for _, be := range blockedEntities {
+				if be.CallerID != "" && be.CallerID != "DefaultEntity" {
+					procNames = append(procNames, be.CallerID)
+				}
+			}
+			if len(procNames) > 0 {
+				quarantineRule := ast.RoutingRule{
+					Action:       ast.ActionBlock,
+					ProcessNames: procNames,
+				}
+				spec.Routing.Rules = append([]ast.RoutingRule{quarantineRule}, spec.Routing.Rules...)
+			}
 		}
 	}
 
