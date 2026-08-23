@@ -45,14 +45,18 @@ func BuildXrayDesktopTunInbound(cb *ast.ClientInboundSpec) map[string]interface{
 		mtu = DefaultDesktopTunMTU
 	}
 
-	tunSettings := map[string]interface{}{
-		"name":  tunName,
-		"mtu":   mtu,
-		"stack": stack,
+	endpoint := cb.EndpointIP
+	if endpoint == "" {
+		endpoint = DefaultDesktopEndpointIP
 	}
 
-	if cb.EndpointIP != "" {
-		tunSettings["gateway"] = []string{cb.EndpointIP}
+	tunSettings := map[string]interface{}{
+		"name":        tunName,
+		"mtu":         mtu,
+		"stack":       stack,
+		"autoRoute":   true,
+		"strictRoute": true,
+		"address":     []string{endpoint},
 	}
 
 	return map[string]interface{}{

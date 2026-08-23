@@ -1,6 +1,7 @@
 package security
 
 import (
+	"os"
 	"testing"
 )
 
@@ -176,7 +177,193 @@ func TestGetPortShieldCatalog(t *testing.T) {
 	}
 
 	catalogEN := GetPortShieldCatalog("en")
-	if len(catalogEN) != len(catalogRU) {
+	if catalogEN == nil || len(catalogEN) != len(catalogRU) {
 		t.Errorf("expected same length for EN and RU catalog")
+	}
+}
+
+func TestUnifiedSecurityEngine_QuarantineAndUnblock(t *testing.T) {
+	engine := NewUnifiedSecurityEngine(0)
+	defer engine.Stop()
+
+	engine.ConfigurePolicy(SecurityPolicyConfig{
+		Mode:           ModeThresholdBlock,
+		BlockThreshold: 2,
+		ProtectedPorts: []int{22, 445},
+	})
+
+	req := SecurityAuditRequest{
+		CallerID:      "bad_process.exe",
+		DestinationIP: "198.51.100.22",
+		Port:          22,
+		Protocol:      "TCP",
+		Platform:      "windows",
+	}
+
+	// Attempt 1: Alert
+	v1 := engine.AuditConnection(req)
+	if v1.IsBlocked || engine.IsEntityBlocked("bad_process.exe") {
+		t.Fatalf("attempt 1 should not block or quarantine")
+	}
+
+	// Attempt 2: Block & Quarantine
+	v2 := engine.AuditConnection(req)
+	if !v2.IsBlocked || !engine.IsEntityBlocked("bad_process.exe") {
+		t.Fatalf("attempt 2 should block and quarantine bad_process.exe")
+	}
+
+	blocked := engine.GetBlockedEntities()
+	if len(blocked) != 1 || blocked[0].CallerID != "bad_process.exe" {
+		t.Fatalf("expected 1 quarantined entity, got: %+v", blocked)
+	}
+
+	// Attempt 3 on safe web port 80: must still be blocked due to Zero Trust isolation!
+	v3 := engine.AuditConnection(SecurityAuditRequest{
+		CallerID:      "bad_process.exe",
+		DestinationIP: "93.184.216.34",
+		Port:          80,
+		Protocol:      "TCP",
+	})
+	if !v3.IsBlocked || v3.ThreatType != ThreatCoreBlocked {
+		t.Fatalf("quarantined process should be blocked even on web ports, got: %+v", v3)
+	}
+
+	// Unblock entity
+	engine.UnblockEntity("bad_process.exe")
+	if engine.IsEntityBlocked("bad_process.exe") {
+		t.Fatalf("expected entity to be unblocked")
+	}
+	if len(engine.GetBlockedEntities()) != 0 {
+		t.Fatalf("expected 0 blocked entities after unblock")
+	}
+}
+
+func TestUnifiedSecurityEngine_PcapSessionAndIngest(t *testing.T) {
+	engine := NewUnifiedSecurityEngine(0)
+	defer engine.Stop()
+
+	engine.ConfigurePolicy(SecurityPolicyConfig{
+		Mode:            ModeThresholdBlock,
+		BlockThreshold:  1,
+		AutoPcapCapture: true,
+		PcapDirectory:   t.TempDir(),
+		ProtectedPorts:  []int{445},
+	})
+
+	// 1. Process discovery log line
+	line1 := "INFO [112233 0ms] router: found process path: C:\\Tools\\smb_scanner.exe"
+	_ = engine.IngestCoreLog(line1)
+
+	// 2. Inbound connection on shielded port 445
+	line2 := "INFO [112233 0ms] inbound/tun[tun-in]: inbound connection to 192.168.1.50:445"
+	v := engine.IngestCoreLog(line2)
+
+	if v == nil {
+		t.Fatalf("expected verdict from IngestCoreLog")
+	}
+	if !v.ThreatDetected || !v.IsBlocked || !v.PcapCaptured {
+		t.Fatalf("expected threat blocked and PCAP captured, got: %+v", v)
+	}
+
+	// 3. Verify active PCAP session
+	status := engine.GetPcapStatus()
+	if !status.IsActive || status.FilePath == "" {
+		t.Fatalf("expected active PCAP session status, got: %+v", status)
+	}
+
+	engine.StopPcapSession()
+	statusAfter := engine.GetPcapStatus()
+	if statusAfter.IsActive {
+		t.Fatalf("expected PCAP session to be inactive after stop")
+	}
+}
+
+func TestUnifiedSecurityEngine_SinglePcapFileForContinuousSession(t *testing.T) {
+	tempDir := t.TempDir()
+	engine := NewUnifiedSecurityEngine(0)
+	defer engine.Stop()
+
+	engine.ConfigurePolicy(SecurityPolicyConfig{
+		Mode:            ModeStrictBlock,
+		BlockThreshold:  1,
+		AutoPcapCapture: true,
+		PcapDirectory:   tempDir,
+		ProtectedPorts:  []int{22, 445, 3389},
+	})
+
+	// Fire 10 blocked attempts rapidly
+	for i := 0; i < 10; i++ {
+		v := engine.AuditConnection(SecurityAuditRequest{
+			CallerID:      "ssh_client.exe",
+			DestinationIP: "198.51.100.14",
+			Port:          22,
+			Protocol:      "TCP",
+			Platform:      "windows",
+		})
+		if !v.IsBlocked || !v.PcapCaptured {
+			t.Fatalf("attempt %d should be blocked with PCAP captured", i+1)
+		}
+	}
+
+	// Verify that ONLY ONE file was created in tempDir
+	entries, err := os.ReadDir(tempDir)
+	if err != nil {
+		t.Fatalf("failed to read temp dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected exactly 1 PCAP file for continuous session, found %d: %+v", len(entries), entries)
+	}
+
+	info, err := entries[0].Info()
+	if err != nil {
+		t.Fatalf("failed to get entry info: %v", err)
+	}
+	// File should contain header (24 bytes) + 10 packets (~100-200 bytes each)
+	if info.Size() < 24+10*50 {
+		t.Fatalf("PCAP file size is too small (%d bytes), expected >500 bytes for 10 packets", info.Size())
+	}
+}
+
+func TestUnifiedSecurityEngine_MasqueradingDetection(t *testing.T) {
+	engine := NewUnifiedSecurityEngine(0)
+	defer engine.Stop()
+
+	engine.ConfigurePolicy(SecurityPolicyConfig{
+		Mode:            ModeThresholdBlock,
+		BlockThreshold:  3,
+		AutoPcapCapture: true,
+		PcapDirectory:   t.TempDir(),
+		ProtectedPorts:  []int{22, 445},
+	})
+
+	// 1. Legitimate Windows svchost.exe in System32
+	legitVerdict := engine.AuditConnection(SecurityAuditRequest{
+		CallerID:       "svchost.exe",
+		ExecutablePath: "C:\\Windows\\System32\\svchost.exe",
+		DestinationIP:  "4.207.247.137",
+		Port:           443,
+		Protocol:       "TCP",
+		Platform:       "windows",
+	})
+	if legitVerdict.IsBlocked || legitVerdict.ThreatDetected {
+		t.Fatalf("legitimate System32 svchost.exe should not be blocked: %+v", legitVerdict)
+	}
+
+	// 2. Fake svchost.exe in Temp folder (MITRE T1036 Masquerading)
+	fakeVerdict := engine.AuditConnection(SecurityAuditRequest{
+		CallerID:       "svchost.exe",
+		ExecutablePath: "C:\\Users\\tester\\AppData\\Local\\Temp\\svchost.exe",
+		DestinationIP:  "198.51.100.50",
+		Port:           443,
+		Protocol:       "TCP",
+		Platform:       "windows",
+	})
+	if !fakeVerdict.IsBlocked || !fakeVerdict.ThreatDetected || fakeVerdict.ThreatType != ThreatMasquerade {
+		t.Fatalf("fake svchost in Temp should be blocked immediately as MASQUERADED_PROCESS: %+v", fakeVerdict)
+	}
+
+	// 3. Verify that the fake process is quarantined
+	if !engine.IsEntityBlocked("svchost.exe") {
+		t.Fatalf("fake svchost.exe should be in quarantine registry")
 	}
 }

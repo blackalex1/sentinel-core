@@ -318,6 +318,7 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 	hasBlock := false
 	hasBlocked := false
 	hasAPI := false
+	hasDNS := false
 	for _, ob := range outbounds {
 		if t, _ := ob["tag"].(string); t == "direct" {
 			hasDirect = true
@@ -327,7 +328,12 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 			hasBlocked = true
 		} else if t == "api" {
 			hasAPI = true
+		} else if t == "dns-out" {
+			hasDNS = true
 		}
+	}
+	if !hasDNS {
+		outbounds = append(outbounds, map[string]interface{}{"protocol": "dns", "tag": "dns-out"})
 	}
 	if !hasDirect {
 		outbounds = append(outbounds, map[string]interface{}{"protocol": "freedom", "tag": "direct"})

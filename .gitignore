@@ -20,7 +20,12 @@ bin/*.dat
 # Test artifacts and temporary files
 *.tmp
 *.log
+*.pcap
+data/pcaps/
 tests/temp_*
+tests/batch_*
+tests/real_batch_*
+batch_*
 sentinel_test_*
 
 # IDEs and OS files

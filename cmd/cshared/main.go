@@ -512,6 +512,58 @@ func SentinelGetSecurityPolicy() *C.char {
 	return C.CString(string(respBytes))
 }
 
+//export SentinelIngestCoreLog
+func SentinelIngestCoreLog(logLine *C.char) *C.char {
+	goLine := safeGoString(logLine)
+	engine := security.GetDefaultSecurityEngine()
+	verdict := engine.IngestCoreLog(goLine)
+	if verdict == nil {
+		return C.CString("")
+	}
+	respBytes, _ := json.Marshal(verdict)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelGetBlockedApps
+func SentinelGetBlockedApps() *C.char {
+	engine := security.GetDefaultSecurityEngine()
+	apps := engine.GetBlockedEntities()
+	respBytes, _ := json.Marshal(apps)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelUnblockApp
+func SentinelUnblockApp(callerID *C.char) *C.char {
+	id := safeGoString(callerID)
+	engine := security.GetDefaultSecurityEngine()
+	if id != "" {
+		engine.UnblockEntity(id)
+	}
+	return C.CString(`{"success": true}`)
+}
+
+//export SentinelUnblockAllApps
+func SentinelUnblockAllApps() *C.char {
+	engine := security.GetDefaultSecurityEngine()
+	engine.UnblockAllEntities()
+	return C.CString(`{"success": true}`)
+}
+
+//export SentinelGetPcapStatus
+func SentinelGetPcapStatus() *C.char {
+	engine := security.GetDefaultSecurityEngine()
+	status := engine.GetPcapStatus()
+	respBytes, _ := json.Marshal(status)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelStopPcapCapture
+func SentinelStopPcapCapture() *C.char {
+	engine := security.GetDefaultSecurityEngine()
+	engine.StopPcapSession()
+	return C.CString(`{"success": true}`)
+}
+
 //export SentinelAndroidWritePcap
 func SentinelAndroidWritePcap(filePath *C.char, rawHex *C.char, timestampMs C.longlong) *C.char {
 	goPath := safeGoString(filePath)
