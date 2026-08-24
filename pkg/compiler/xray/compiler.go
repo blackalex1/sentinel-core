@@ -398,7 +398,8 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 	dnsServers = append(dnsServers, "localhost")
 
 	dnsConfig := map[string]interface{}{
-		"servers": dnsServers,
+		"servers":       dnsServers,
+		"queryStrategy": "UseIPv4",
 	}
 
 	// 6. Log

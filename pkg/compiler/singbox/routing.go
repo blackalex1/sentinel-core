@@ -9,13 +9,9 @@ import (
 
 // BuildSingBoxRoute generates the route object for Sing-box
 func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{} {
-	resolver := "dns-direct"
-	if spec.ServerNode != nil {
-		resolver = "dns-remote"
-	}
 	route := map[string]interface{}{
 		"auto_detect_interface":   true,
-		"default_domain_resolver": resolver,
+		"default_domain_resolver": "dns-direct",
 	}
 
 	if spec.ClientInbound != nil && spec.ClientInbound.Mode == ast.InboundModeDesktopTun {
