@@ -144,7 +144,7 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 
 func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 	remoteDNS := "1.1.1.1"
-	directDNS := "8.8.8.8"
+	directDNS := "77.88.8.8"
 	strategy := "ipv4_only"
 
 	if spec.DNS != nil {
@@ -163,31 +163,71 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 		}
 	}
 
-	servers := []map[string]interface{}{
-		{
-			"tag":         "dns-direct",
-			"type":        "udp",
-			"server":      directDNS,
-			"server_port": 53,
-		},
-	}
+	servers := []map[string]interface{}{}
+	rules := []map[string]interface{}{}
+	finalServer := "dns-direct"
 
 	if spec.ServerNode != nil {
 		detourTag := "proxy"
 		if spec.ServerNode.Name != "" {
 			detourTag = spec.ServerNode.Name
 		}
-		servers = append(servers, map[string]interface{}{
-			"tag":         "dns-remote",
-			"type":        "https",
-			"server":      remoteDNS,
-			"server_port": 443,
-			"detour":      detourTag,
-		})
+
+		if spec.DNS != nil && strings.HasPrefix(spec.DNS.RemoteServer, "https://") {
+			servers = append(servers, map[string]interface{}{
+				"tag":         "dns-remote",
+				"type":        "https",
+				"server":      remoteDNS,
+				"server_port": 443,
+				"path":        "/dns-query",
+				"detour":      detourTag,
+			})
+		} else {
+			servers = append(servers, map[string]interface{}{
+				"tag":         "dns-remote",
+				"type":        "tcp",
+				"server":      "8.8.8.8",
+				"server_port": 53,
+				"detour":      detourTag,
+			})
+		}
+		finalServer = "dns-remote"
 	}
+
+	servers = append(servers, map[string]interface{}{
+		"tag":         "dns-direct",
+		"type":        "udp",
+		"server":      directDNS,
+		"server_port": 53,
+	})
+
+	rules = append(rules,
+		map[string]interface{}{
+			"domain_suffix": []string{
+				".ru", ".su", ".рф", ".xn--p1ai",
+				"detectportal.firefox.com",
+				"www.msftconnecttest.com",
+				"msftconnecttest.com",
+				"ipv6.msftconnecttest.com",
+			},
+			"server": "dns-direct",
+		},
+		map[string]interface{}{
+			"rule_set": []string{
+				"geosite-category-ru",
+				"geosite-category-gov-ru",
+				"geosite-yandex",
+				"geosite-vk",
+				"geosite-mailru",
+			},
+			"server": "dns-direct",
+		},
+	)
 
 	return map[string]interface{}{
 		"servers":  servers,
+		"rules":    rules,
+		"final":    finalServer,
 		"strategy": strategy,
 	}
 }
