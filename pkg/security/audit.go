@@ -590,19 +590,18 @@ func (e *UnifiedSecurityEngine) AuditConnection(req SecurityAuditRequest) Securi
 		}
 	}
 
-	// 2. Explicit Core Block Rule triggered for non-shielded port (Outbound Block / Reject from Core)
+	// 2. Explicit Core Block Rule triggered for non-shielded port (e.g. AdBlock, QUIC drop, BitTorrent rule)
 	if req.IsExplicitBlock && !isSensitive {
 		v := SecurityAuditVerdict{
 			IsBlocked:      true,
-			ShouldBlock:    true,
-			ThreatDetected: true,
-			ThreatType:     ThreatCoreBlocked,
-			Description:    fmt.Sprintf("Explicit Zero Trust security rule dropped connection to %s:%d", req.DestinationIP, req.Port),
-			Action:         "BLOCK",
-			RiskScore:      90,
+			ShouldBlock:    false,
+			ThreatDetected: false,
+			ThreatType:     ThreatNone,
+			Description:    fmt.Sprintf("Filtered connection to %s:%d dropped by routing rule", req.DestinationIP, req.Port),
+			Action:         "DROP",
+			RiskScore:      0,
 			Timestamp:      nowMs,
 		}
-		e.handlePcapAndProfile(caller, &v, req, policy, now, nowMs)
 		return v
 	}
 

@@ -9,9 +9,13 @@ import (
 
 // BuildSingBoxRoute generates the route object for Sing-box
 func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{} {
+	resolver := "dns-direct"
+	if spec.ServerNode != nil {
+		resolver = "dns-remote"
+	}
 	route := map[string]interface{}{
 		"auto_detect_interface":   true,
-		"default_domain_resolver": "dns-direct",
+		"default_domain_resolver": resolver,
 	}
 
 	if spec.ClientInbound != nil && spec.ClientInbound.Mode == ast.InboundModeDesktopTun {
@@ -76,6 +80,15 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 					"strategy": ds,
 				})
 			}
+		}
+	}
+
+	downloadDetour := "direct"
+	if spec.ServerNode != nil {
+		if spec.ServerNode.Name != "" {
+			downloadDetour = spec.ServerNode.Name
+		} else {
+			downloadDetour = "proxy"
 		}
 	}
 
@@ -172,7 +185,7 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 								"type":            "remote",
 								"format":          "binary",
 								"url":             fmt.Sprintf("https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/%s.srs", tag),
-								"download_detour": "direct",
+								"download_detour": downloadDetour,
 							}
 						}
 					} else if strings.HasPrefix(d, "regexp:") {
@@ -216,7 +229,7 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 									"type":            "remote",
 									"format":          "binary",
 									"url":             fmt.Sprintf("https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/%s.srs", tag),
-									"download_detour": "direct",
+									"download_detour": downloadDetour,
 								}
 							}
 						}
