@@ -148,15 +148,15 @@ jobs:
           }
 
           # Linux amd64 shared library
-          build_cshared "Linux amd64 .so" env CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-linux-amd64.so ./cmd/cshared &
+          build_cshared "Linux amd64 .so" env CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -ldflags="$LDFLAGS" -o dist/libsentinel-core-linux-amd64.so ./cmd/cshared &
           pids+=($!)
 
           # Linux arm64 shared library
-          build_cshared "Linux arm64 .so" env CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/libsentinel-core-linux-arm64.so ./cmd/cshared &
+          build_cshared "Linux arm64 .so" env CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -buildmode=c-shared -ldflags="$LDFLAGS" -o dist/libsentinel-core-linux-arm64.so ./cmd/cshared &
           pids+=($!)
 
           # Windows amd64 DLL
-          build_cshared "Windows amd64 .dll" env CC=x86_64-w64-mingw32-gcc CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w" -o dist/sentinel-core-windows-amd64.dll ./cmd/cshared &
+          build_cshared "Windows amd64 .dll" env CC=x86_64-w64-mingw32-gcc CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -buildmode=c-shared -ldflags="$LDFLAGS" -o dist/sentinel-core-windows-amd64.dll ./cmd/cshared &
           pids+=($!)
 
           # Locate Android NDK for Android compilation
@@ -173,13 +173,13 @@ jobs:
             TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
             # Android C-Shared Libraries (.so) with 16 KB page size alignment (Android 15+ compatible)
-            build_cshared "Android arm64 .so" env CC="$TOOLCHAIN/aarch64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm64 go build -buildmode=c-shared -ldflags="-s -w -extldflags '-Wl,-z,max-page-size=16384'" -o dist/libsentinel-core-android-arm64.so ./cmd/cshared &
+            build_cshared "Android arm64 .so" env CC="$TOOLCHAIN/aarch64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm64 go build -buildmode=c-shared -ldflags="$LDFLAGS -extldflags '-Wl,-z,max-page-size=16384'" -o dist/libsentinel-core-android-arm64.so ./cmd/cshared &
             pids+=($!)
 
-            build_cshared "Android armv7 .so" env CC="$TOOLCHAIN/armv7a-linux-androideabi24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm go build -buildmode=c-shared -ldflags="-s -w -extldflags '-Wl,-z,max-page-size=16384'" -o dist/libsentinel-core-android-arm.so ./cmd/cshared &
+            build_cshared "Android armv7 .so" env CC="$TOOLCHAIN/armv7a-linux-androideabi24-clang" CGO_ENABLED=1 GOOS=android GOARCH=arm go build -buildmode=c-shared -ldflags="$LDFLAGS -extldflags '-Wl,-z,max-page-size=16384'" -o dist/libsentinel-core-android-arm.so ./cmd/cshared &
             pids+=($!)
 
-            build_cshared "Android x86_64 .so" env CC="$TOOLCHAIN/x86_64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -buildmode=c-shared -ldflags="-s -w -extldflags '-Wl,-z,max-page-size=16384'" -o dist/libsentinel-core-android-x86_64.so ./cmd/cshared &
+            build_cshared "Android x86_64 .so" env CC="$TOOLCHAIN/x86_64-linux-android24-clang" CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -buildmode=c-shared -ldflags="$LDFLAGS -extldflags '-Wl,-z,max-page-size=16384'" -o dist/libsentinel-core-android-x86_64.so ./cmd/cshared &
             pids+=($!)
 
             # Android CLI Binaries
