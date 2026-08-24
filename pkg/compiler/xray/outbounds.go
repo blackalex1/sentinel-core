@@ -32,6 +32,10 @@ func BuildXrayOutbound(node *ast.ServerProfile) (map[string]interface{}, error) 
 		return buildXrayWireGuardOutbound(tag, node)
 	case ast.ProtoHysteria2:
 		return buildXrayHysteria2Outbound(tag, node)
+	case ast.ProtoSocks, "socks5":
+		return buildXraySocksOutbound(tag, node)
+	case ast.ProtoHTTP, "https":
+		return buildXrayHttpOutbound(tag, node)
 	case ast.ProtoDirect:
 		return map[string]interface{}{"protocol": "freedom", "tag": tag}, nil
 	case ast.ProtoBlock:

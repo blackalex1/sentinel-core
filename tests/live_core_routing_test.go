@@ -144,7 +144,7 @@ func TestDirectPath_Xray_Inbound_To_VLESS_MLKEM_Outbound(t *testing.T) {
 	vlessOutbound, err := xray.BuildXrayOutbound(&ast.ServerProfile{
 		Protocol:    ast.ProtoVLESS,
 		Name:        "vless-mlkem-out",
-		Address:     "192.168.1.92",
+		Address:     "127.0.0.1",
 		Port:        27789,
 		UUID:        "b9f3857a-ce20-4e1e-b5e0-6f3d141fa2b2",
 		Transport:   "tcp",
