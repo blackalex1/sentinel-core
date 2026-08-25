@@ -7,6 +7,7 @@ import "C"
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 	"unsafe"
