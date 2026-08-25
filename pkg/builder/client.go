@@ -172,6 +172,15 @@ func BuildFailoverClientConfig(profiles []*ast.ServerProfile, targetCore ast.Tar
 			HTTPPort:      httpPort,
 			ListenAddress: "127.0.0.1",
 		},
+		Routing: &ast.RoutingSpec{
+			DefaultAction: ast.ActionProxy,
+			Rules: []ast.RoutingRule{
+				{
+					Action:      ast.ActionProxy,
+					OutboundTag: "failover-proxy",
+				},
+			},
+		},
 		LogLevel: "warn",
 	}
 
