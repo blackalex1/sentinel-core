@@ -95,6 +95,9 @@ func (lb *LogBroadcaster) PushLine(coreName, line string) {
 	default:
 		// Queue full, discard oldest if needed
 	}
+
+	// 4. Update session tracking in-memory
+	GetSessionTracker().ProcessLogLine(norm, line)
 }
 
 // GetHistory returns recent buffered log lines for the core
