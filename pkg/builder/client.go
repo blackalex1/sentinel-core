@@ -132,3 +132,49 @@ func BuildClientConfig(spec *ast.ConfigSpec) (*BuildResult, error) {
 		Warnings:   warnings,
 	}, nil
 }
+
+// BuildFailoverClientConfig creates a client configuration with SOCKS5/HTTP inbounds and a multi-node failover/urltest outbound group.
+func BuildFailoverClientConfig(profiles []*ast.ServerProfile, targetCore ast.TargetCore, socksPort, httpPort int, healthCheckURL string) (*BuildResult, error) {
+	if len(profiles) == 0 {
+		return nil, fmt.Errorf("at least one server profile is required")
+	}
+
+	if targetCore == "" {
+		targetCore = ast.CoreSingBox
+	}
+	if socksPort <= 0 {
+		socksPort = 10808
+	}
+	if httpPort <= 0 {
+		httpPort = 10809
+	}
+	if healthCheckURL == "" {
+		healthCheckURL = "https://api.telegram.org"
+	}
+
+	primaryNode := profiles[0]
+	primaryCopy := *primaryNode
+	primaryCopy.Name = "failover-proxy"
+	primaryCopy.HealthCheckURL = healthCheckURL
+	primaryCopy.HealthCheckInterval = 15
+	primaryCopy.FallbackStrategy = "priority"
+
+	if len(profiles) > 1 {
+		primaryCopy.BackupProfiles = profiles[1:]
+	}
+
+	spec := &ast.ConfigSpec{
+		TargetCore: targetCore,
+		ServerNode: &primaryCopy,
+		ClientInbound: &ast.ClientInboundSpec{
+			Mode:          ast.InboundModeSystemProxy,
+			SocksPort:     socksPort,
+			HTTPPort:      httpPort,
+			ListenAddress: "127.0.0.1",
+		},
+		LogLevel: "warn",
+	}
+
+	return BuildClientConfig(spec)
+}
+

@@ -70,3 +70,42 @@ func handleGenerate() {
 
 	fmt.Println(uri)
 }
+
+func handleParseSubscription() {
+	fs := flag.NewFlagSet("parse-subscription", flag.ExitOnError)
+	file := fs.String("file", "", "Path to file containing subscription (or leave empty for stdin)")
+	raw := fs.String("content", "", "Raw or base64 subscription string")
+	_ = fs.Parse(os.Args[2:])
+
+	var content string
+	if *raw != "" {
+		content = *raw
+	} else if *file != "" {
+		bytes, err := os.ReadFile(*file)
+		if err != nil {
+			fmt.Printf("Error reading file: %v\n", err)
+			exitFunc(1)
+			return
+		}
+		content = string(bytes)
+	} else {
+		bytes, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Printf("Stdin error: %v\n", err)
+			exitFunc(1)
+			return
+		}
+		content = string(bytes)
+	}
+
+	profiles, err := parser.ParseSubscription(content)
+	if err != nil {
+		fmt.Printf("Subscription parse error: %v\n", err)
+		exitFunc(1)
+		return
+	}
+
+	jsonBytes, _ := json.MarshalIndent(profiles, "", "  ")
+	fmt.Println(string(jsonBytes))
+}
+

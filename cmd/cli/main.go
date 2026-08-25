@@ -56,6 +56,12 @@ func main() {
 		handleDecrypt()
 	case "vlessenc":
 		handleVlessEnc()
+	case "parse-subscription":
+		handleParseSubscription()
+	case "check-proxies":
+		handleCheckProxies()
+	case "build-failover":
+		handleBuildFailover()
 	default:
 		fmt.Printf("Unknown command '%s'\n", command)
 		printUsage()
