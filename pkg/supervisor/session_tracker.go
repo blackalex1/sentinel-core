@@ -45,9 +45,9 @@ var (
 	defaultTracker     *SessionTracker
 	defaultTrackerOnce sync.Once
 
-	singboxConnIDPattern = regexp.MustCompile(`\[(\d+)\s+\d+m?s\]`)
-	singboxFromPattern   = regexp.MustCompile(`from\s+(?:tcp:|udp:)?\[?([0-9a-fA-F.:]+)\]?(?::\d+)?`)
-	singboxUserPattern   = regexp.MustCompile(`\[([a-zA-Z0-9_\-@.]+)\]\s+inbound connection`)
+	singboxConnIDPattern = regexp.MustCompile(`\[(\d+)\s+[^\]]+\]`)
+	singboxFromPattern   = regexp.MustCompile(`(?:from|client)\s+(?:tcp:|udp:)?\[?([0-9a-fA-F.:]+)\]?(?::\d+)?`)
+	singboxUserPattern   = regexp.MustCompile(`\[([a-zA-Z0-9_\-@.]+)\]\s+(?:inbound connection|accepted)`)
 	xrayAcceptedPattern  = regexp.MustCompile(`from\s+(?:tcp:|udp:)?\[?([0-9a-fA-F.:]+)\]?(?::\d+)?\s+accepted`)
 	xrayEmailPattern     = regexp.MustCompile(`email:\s+([a-zA-Z0-9_\-@.]+)`)
 )
