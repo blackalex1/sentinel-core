@@ -7,6 +7,9 @@ import (
 	"os"
 
 	"github.com/blackalex1/sentinel-core/pkg/security"
+	"github.com/blackalex1/sentinel-core/pkg/security/detector"
+	"github.com/blackalex1/sentinel-core/pkg/security/netfilter"
+	"github.com/blackalex1/sentinel-core/pkg/security/ssh"
 	"github.com/blackalex1/sentinel-core/pkg/supervisor"
 )
 
@@ -168,8 +171,115 @@ func handleSecurity() {
 		}
 		fmt.Printf(`{"status": "killed", "pid": %d}`+"\n", *pid)
 
+	case "parse-iptables":
+		fs := flag.NewFlagSet("security-parse-iptables", flag.ExitOnError)
+		line := fs.String("line", "", "Raw iptables log line")
+		vmid := fs.Int("vmid", 100, "VPN VMID fallback")
+		_ = fs.Parse(os.Args[3:])
+
+		ev := netfilter.ParseIptablesLine(*line, *vmid)
+		if ev == nil {
+			fmt.Println("{}")
+			return
+		}
+		b, _ := json.Marshal(ev)
+		fmt.Println(string(b))
+
+	case "classify":
+		fs := flag.NewFlagSet("security-classify", flag.ExitOnError)
+		eventJSON := fs.String("event", "", "IptablesEvent JSON string")
+		policyJSON := fs.String("policy", "", "ClassifierPolicy JSON string")
+		lang := fs.String("lang", "ru", "Language (ru or en)")
+		_ = fs.Parse(os.Args[3:])
+
+		var ev netfilter.IptablesEvent
+		_ = json.Unmarshal([]byte(*eventJSON), &ev)
+
+		policy := netfilter.DefaultClassifierPolicy()
+		if *policyJSON != "" {
+			_ = json.Unmarshal([]byte(*policyJSON), &policy)
+		}
+
+		res := netfilter.ClassifyConnection(ev, policy, *lang)
+		b, _ := json.Marshal(res)
+		fmt.Println(string(b))
+
+	case "parse-auth":
+		fs := flag.NewFlagSet("security-parse-auth", flag.ExitOnError)
+		line := fs.String("line", "", "Raw auth.log / secure log line")
+		_ = fs.Parse(os.Args[3:])
+
+		ev, ok := ssh.ParseAuthLine(*line)
+		if !ok || ev == nil {
+			fmt.Println("{}")
+			return
+		}
+		b, _ := json.Marshal(ev)
+		fmt.Println(string(b))
+
+	case "find-vpn-client":
+		fs := flag.NewFlagSet("security-find-vpn-client", flag.ExitOnError)
+		proto := fs.String("proto", "tcp", "Protocol (tcp or udp)")
+		containerIP := fs.String("container-ip", "", "Container IP")
+		dstIP := fs.String("dst-ip", "", "Destination IP")
+		sport := fs.Int("sport", 0, "Source port")
+		dpt := fs.Int("dpt", 0, "Destination port")
+		dump := fs.String("dump", "", "Optional conntrack dump string")
+		_ = fs.Parse(os.Args[3:])
+
+		res := netfilter.FindRealVPNClientIP(*proto, *containerIP, *dstIP, *sport, *dpt, *dump)
+		b, _ := json.Marshal(map[string]string{"client_ip": res})
+		fmt.Println(string(b))
+
+	case "find-proxy-client":
+		fs := flag.NewFlagSet("security-find-proxy-client", flag.ExitOnError)
+		coreType := fs.String("core", "xray", "Core type (xray, singbox, hysteria, hysteria-ip)")
+		linesJSON := fs.String("lines", "[]", "JSON array of log lines")
+		clientIP := fs.String("client-ip", "", "Client IP")
+		dstIP := fs.String("dst-ip", "", "Destination IP")
+		emailArg := fs.String("email", "", "Email or User ID")
+		dpt := fs.Int("dpt", 0, "Destination port")
+		maxAge := fs.Int("max-age", 300, "Max age in seconds")
+		_ = fs.Parse(os.Args[3:])
+
+		var lines []string
+		_ = json.Unmarshal([]byte(*linesJSON), &lines)
+
+		if *coreType == "hysteria-ip" || (*coreType == "hysteria" && *emailArg != "") {
+			ip := detector.FindClientIPForEmailInHysteriaLog(lines, *emailArg, *maxAge)
+			b, _ := json.Marshal(map[string]string{"client_ip": ip})
+			fmt.Println(string(b))
+		} else if *coreType == "hysteria" {
+			email := detector.FindEmailInHysteriaLog(lines, *dstIP, *dpt, *maxAge)
+			b, _ := json.Marshal(map[string]string{"email": email})
+			fmt.Println(string(b))
+		} else {
+			email, ip, tag := detector.FindEmailAndIPInXrayLog(lines, *clientIP, *dstIP, *dpt, *maxAge)
+			b, _ := json.Marshal(map[string]string{"email": email, "ip": ip, "inbound_tag": tag})
+			fmt.Println(string(b))
+		}
+
+
+	case "parse-router":
+		fs := flag.NewFlagSet("security-parse-router", flag.ExitOnError)
+		line := fs.String("line", "", "Raw router line")
+		_ = fs.Parse(os.Args[3:])
+
+		if ev := netfilter.ParseRouterConntrackLine(*line); ev != nil {
+			b, _ := json.Marshal(ev)
+			fmt.Println(string(b))
+			return
+		}
+		if ev := netfilter.ParseRouterIptablesLine(*line); ev != nil {
+			b, _ := json.Marshal(ev)
+			fmt.Println(string(b))
+			return
+		}
+		fmt.Println("{}")
+
 	default:
 		fmt.Printf("Unknown security action '%s'\n", action)
 		exitFunc(1)
 	}
 }
+

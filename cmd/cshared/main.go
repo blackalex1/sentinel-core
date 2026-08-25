@@ -20,6 +20,9 @@ import (
 	androidSec "github.com/blackalex1/sentinel-core/pkg/platform/android/security"
 	"github.com/blackalex1/sentinel-core/pkg/routing"
 	"github.com/blackalex1/sentinel-core/pkg/security"
+	"github.com/blackalex1/sentinel-core/pkg/security/detector"
+	"github.com/blackalex1/sentinel-core/pkg/security/netfilter"
+	"github.com/blackalex1/sentinel-core/pkg/security/ssh"
 	"github.com/blackalex1/sentinel-core/pkg/supervisor"
 )
 
@@ -794,6 +797,134 @@ func SentinelAndroidClearLogs() *C.char {
 	androidSec.GetGlobalLogBuffer().Clear()
 	return C.CString(`{"success": true}`)
 }
+
+//export SentinelParseIptablesLine
+func SentinelParseIptablesLine(line *C.char, vpnVMID C.int) *C.char {
+	goLine := safeGoString(line)
+	ev := netfilter.ParseIptablesLine(goLine, int(vpnVMID))
+	if ev == nil {
+		return C.CString("")
+	}
+	respBytes, _ := json.Marshal(ev)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelClassifyConnection
+func SentinelClassifyConnection(eventJSON *C.char, policyJSON *C.char, lang *C.char) *C.char {
+	goEvJSON := safeGoString(eventJSON)
+	goPolJSON := safeGoString(policyJSON)
+	goLang := safeGoString(lang)
+
+	var ev netfilter.IptablesEvent
+	if err := json.Unmarshal([]byte(goEvJSON), &ev); err != nil {
+		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(errResp))
+	}
+
+	policy := netfilter.DefaultClassifierPolicy()
+	if goPolJSON != "" {
+		_ = json.Unmarshal([]byte(goPolJSON), &policy)
+	}
+
+	res := netfilter.ClassifyConnection(ev, policy, goLang)
+	respBytes, _ := json.Marshal(res)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelFindRealVPNClientIP
+func SentinelFindRealVPNClientIP(proto *C.char, containerIP *C.char, dstIP *C.char, sport C.int, dpt C.int, conntrackDump *C.char) *C.char {
+	goProto := safeGoString(proto)
+	goContIP := safeGoString(containerIP)
+	goDstIP := safeGoString(dstIP)
+	goDump := safeGoString(conntrackDump)
+
+	clientIP := netfilter.FindRealVPNClientIP(goProto, goContIP, goDstIP, int(sport), int(dpt), goDump)
+	return C.CString(clientIP)
+}
+
+//export SentinelFindXrayClientEmail
+func SentinelFindXrayClientEmail(linesJSON *C.char, clientIP *C.char, dstIP *C.char, dstPort C.int, maxAgeSec C.int) *C.char {
+	goLinesJSON := safeGoString(linesJSON)
+	goClientIP := safeGoString(clientIP)
+	goDstIP := safeGoString(dstIP)
+
+	var lines []string
+	if err := json.Unmarshal([]byte(goLinesJSON), &lines); err != nil {
+		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(errResp))
+	}
+
+	email, ip, tag := detector.FindEmailAndIPInXrayLog(lines, goClientIP, goDstIP, int(dstPort), int(maxAgeSec))
+	res := map[string]string{
+		"email":       email,
+		"ip":          ip,
+		"inbound_tag": tag,
+	}
+	respBytes, _ := json.Marshal(res)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelFindHysteriaClientEmail
+func SentinelFindHysteriaClientEmail(linesJSON *C.char, dstIP *C.char, dstPort C.int, maxAgeSec C.int) *C.char {
+	goLinesJSON := safeGoString(linesJSON)
+	goDstIP := safeGoString(dstIP)
+
+	var lines []string
+	if err := json.Unmarshal([]byte(goLinesJSON), &lines); err != nil {
+		return C.CString("")
+	}
+
+	email := detector.FindEmailInHysteriaLog(lines, goDstIP, int(dstPort), int(maxAgeSec))
+	return C.CString(email)
+}
+
+//export SentinelFindClientIPForEmail
+func SentinelFindClientIPForEmail(linesJSON *C.char, email *C.char, maxAgeSec C.int) *C.char {
+	goLinesJSON := safeGoString(linesJSON)
+	goEmail := safeGoString(email)
+
+	var lines []string
+	if err := json.Unmarshal([]byte(goLinesJSON), &lines); err != nil {
+		return C.CString("")
+	}
+
+	ip := detector.FindClientIPForEmailInHysteriaLog(lines, goEmail, int(maxAgeSec))
+	return C.CString(ip)
+}
+
+//export SentinelParseAuthLogLine
+func SentinelParseAuthLogLine(line *C.char) *C.char {
+	goLine := safeGoString(line)
+	ev, ok := ssh.ParseAuthLine(goLine)
+	if !ok || ev == nil {
+		return C.CString("")
+	}
+	respBytes, _ := json.Marshal(ev)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelParseRouterConntrackLine
+func SentinelParseRouterConntrackLine(line *C.char) *C.char {
+	goLine := safeGoString(line)
+	ev := netfilter.ParseRouterConntrackLine(goLine)
+	if ev == nil {
+		return C.CString("")
+	}
+	respBytes, _ := json.Marshal(ev)
+	return C.CString(string(respBytes))
+}
+
+//export SentinelParseRouterIptablesLine
+func SentinelParseRouterIptablesLine(line *C.char) *C.char {
+	goLine := safeGoString(line)
+	ev := netfilter.ParseRouterIptablesLine(goLine)
+	if ev == nil {
+		return C.CString("")
+	}
+	respBytes, _ := json.Marshal(ev)
+	return C.CString(string(respBytes))
+}
+
 
 func hexDecode(s string) ([]byte, error) {
 	s = strings.TrimPrefix(s, "0x")
