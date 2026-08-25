@@ -42,7 +42,14 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		}
 		allWarnings = append(allWarnings, warnings...)
 
-		if len(adaptedNode.BackupOutbounds) > 0 {
+		if len(adaptedNode.BackupProfiles) > 0 {
+			urltestOb, compiledNodes, err := BuildSingboxMultiNodeFallback(adaptedNode, adaptedNode.BackupProfiles)
+			if err != nil {
+				return "", nil, err
+			}
+			primaryOutbounds = append(primaryOutbounds, urltestOb)
+			primaryOutbounds = append(primaryOutbounds, compiledNodes...)
+		} else if len(adaptedNode.BackupOutbounds) > 0 {
 			urltestOb, primaryNodeObj, err := BuildSingboxNodeFallback(adaptedNode)
 			if err != nil {
 				return "", nil, err

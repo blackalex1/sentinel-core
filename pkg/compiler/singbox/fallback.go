@@ -143,3 +143,69 @@ func BuildSingboxRawFallback(ob map[string]interface{}) (map[string]interface{},
 	urltestOb := BuildSingboxFallbackGroup(tag, primaryCompiled, validBackups, probeURL, probeInt, fallbackStrat)
 	return urltestOb, primaryCompiled, true
 }
+
+// BuildSingboxMultiNodeFallback constructs an urltest outbound group and compiles all primary + backup profiles into outbound objects.
+func BuildSingboxMultiNodeFallback(adaptedNode *ast.ServerProfile, backupProfiles []*ast.ServerProfile) (map[string]interface{}, []map[string]interface{}, error) {
+	groupTag := adaptedNode.Name
+	if groupTag == "" {
+		groupTag = "proxy"
+	}
+
+	primaryTag := fmt.Sprintf("%s-node-1", groupTag)
+	primaryCopy := *adaptedNode
+	primaryCopy.Name = primaryTag
+	primaryOutbound, err := BuildSingBoxOutbound(&primaryCopy)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to build primary outbound: %w", err)
+	}
+
+	compiledNodes := []map[string]interface{}{primaryOutbound}
+	outboundTags := []string{primaryTag}
+
+	for i, bp := range backupProfiles {
+		if bp == nil {
+			continue
+		}
+		nodeTag := fmt.Sprintf("%s-node-%d", groupTag, i+2)
+		bpCopy := *bp
+		bpCopy.Name = nodeTag
+		ob, err := BuildSingBoxOutbound(&bpCopy)
+		if err != nil {
+			continue
+		}
+		compiledNodes = append(compiledNodes, ob)
+		outboundTags = append(outboundTags, nodeTag)
+	}
+
+	for _, bTag := range adaptedNode.BackupOutbounds {
+		if bTag != "" && bTag != groupTag {
+			outboundTags = append(outboundTags, bTag)
+		}
+	}
+
+	probeURL := adaptedNode.HealthCheckURL
+	if probeURL == "" {
+		probeURL = "https://api.telegram.org"
+	}
+	probeInt := adaptedNode.HealthCheckInterval
+	if probeInt <= 0 {
+		probeInt = 15
+	}
+	strategy := adaptedNode.FallbackStrategy
+	if strategy == "" {
+		strategy = "priority"
+	}
+
+	toleranceVal := CalculateSingboxTolerance(strategy)
+	urltestGroup := map[string]interface{}{
+		"type":      "urltest",
+		"tag":       groupTag,
+		"outbounds": outboundTags,
+		"url":       probeURL,
+		"interval":  fmt.Sprintf("%ds", probeInt),
+		"tolerance": toleranceVal,
+	}
+
+	return urltestGroup, compiledNodes, nil
+}
+
