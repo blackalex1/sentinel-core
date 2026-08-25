@@ -644,3 +644,34 @@ func TestLogBroadcaster_And_ProcessMemoryLogs(t *testing.T) {
 	}
 }
 
+func TestSessionTracker_SingBoxRealLog(t *testing.T) {
+	st := GetSessionTracker()
+	line1 := "+0000 2026-08-25 19:55:12 INFO [1978868683 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.42:27073"
+	line2 := "+0000 2026-08-25 19:55:12 INFO [1978868683 155ms] inbound/vless[inbound-8]: [test_client] inbound connection to 192.0.2.102:443"
+
+	st.ProcessLogLine("singbox", line1)
+	st.ProcessLogLine("singbox", line2)
+
+	sessions := st.GetActiveSessions()
+	found := false
+	for _, s := range sessions {
+		if s.Email == "test_client" && s.IP == "198.51.100.42" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected session for phone with IP 198.51.100.42, got: %+v", sessions)
+	}
+
+	events := st.GetRecentEvents(0, 10)
+	if len(events) == 0 {
+		t.Fatalf("expected at least 1 connect event")
+	}
+	ev := events[0]
+	if ev.Email != "test_client" || ev.IP != "198.51.100.42" || ev.Action != "connect" {
+		t.Fatalf("unexpected event: %+v", ev)
+	}
+}
+
+
