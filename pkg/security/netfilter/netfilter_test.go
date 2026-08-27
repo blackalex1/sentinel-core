@@ -2,6 +2,7 @@ package netfilter
 
 import (
 	"testing"
+	"time"
 )
 
 func testClassifyHelper(event IptablesEvent, policy ClassifierPolicy, lang string) ClassificationResult {
@@ -163,3 +164,57 @@ func TestRouterParsers(t *testing.T) {
 		t.Errorf("unexpected router iptables event: %+v", iptEv)
 	}
 }
+
+func TestRouterThreatDetector_Behavioral(t *testing.T) {
+	detector := &RouterThreatDetector{
+		history:      make(map[string][]RouterConnectionRecord),
+		window:       10 * time.Minute,
+		scanLimit:    3,
+		burstLimit1m: 10,
+		burstLimit3m: 15,
+	}
+
+	src := "192.168.1.88"
+
+	// 1. Normal traffic to single IP (1-2 attempts) -> Not a threat
+	ev1 := &RouterEvent{SrcIP: src, DstHost: "192.0.2.10", DstPort: 22, Proto: "TCP"}
+	detector.Evaluate(ev1)
+	if ev1.IsThreat || ev1.ShouldAutoBan {
+		t.Errorf("expected normal traffic, got threat=%v, ban=%v", ev1.IsThreat, ev1.ShouldAutoBan)
+	}
+
+	// 2. Horizontal scan (connecting to 3 distinct IPs on sensitive port) -> Auto-ban
+	ev2 := &RouterEvent{SrcIP: src, DstHost: "192.0.2.20", DstPort: 22, Proto: "TCP"}
+	detector.Evaluate(ev2)
+	ev3 := &RouterEvent{SrcIP: src, DstHost: "192.0.2.30", DstPort: 22, Proto: "TCP"}
+	detector.Evaluate(ev3)
+	if !ev3.IsThreat || !ev3.ShouldAutoBan || ev3.ThreatType != "horizontal_scan" {
+		t.Errorf("expected horizontal_scan autoban, got %+v", ev3)
+	}
+
+	// 3. Vertical brute-force on single target (10 connections in burst) -> Auto-ban
+	detector.mu.Lock()
+	delete(detector.history, src)
+	detector.mu.Unlock()
+
+	for i := 0; i < 9; i++ {
+		ev := &RouterEvent{SrcIP: src, DstHost: "198.51.100.50", DstPort: 22, Proto: "TCP"}
+		detector.Evaluate(ev)
+		if ev.ShouldAutoBan {
+			t.Errorf("premature ban at attempt %d", i)
+		}
+	}
+	ev10 := &RouterEvent{SrcIP: src, DstHost: "198.51.100.50", DstPort: 22, Proto: "TCP"}
+	detector.Evaluate(ev10)
+	if !ev10.IsThreat || !ev10.ShouldAutoBan || ev10.ThreatType != "vertical_bruteforce" {
+		t.Errorf("expected vertical_bruteforce autoban, got %+v", ev10)
+	}
+
+	// 4. Exploit port (Telnet 23) -> Exploit threat
+	evTelnet := &RouterEvent{SrcIP: "192.168.1.99", DstHost: "203.0.113.1", DstPort: 23, Proto: "TCP"}
+	detector.Evaluate(evTelnet)
+	if !evTelnet.IsThreat || evTelnet.ThreatType != "exploit_port" {
+		t.Errorf("expected exploit_port threat, got %+v", evTelnet)
+	}
+}
+
