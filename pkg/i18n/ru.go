@@ -260,4 +260,12 @@ var ruTranslations = map[string]string{
 	"UI_FIELD_RESERVED":          "Reserved байты",
 	"UI_FIELD_USERNAME":          "Имя пользователя (Username)",
 	"UI_FIELD_DOMAIN_STRATEGY":   "Стратегия доменов (Domain Strategy)",
+	"LOG_SESSION_CONNECTED":      "[SessionTracker] Подключен клиент: движок=%s, пользователь=%s, IP=%s",
+	"LOG_SESSION_DISCONNECTED":   "[SessionTracker] Отключен клиент (неактивность): движок=%s, пользователь=%s, IP=%s, длительность=%s",
+	"LOG_SUPERVISOR_STARTED":     "[Supervisor] Движок %s успешно запущен (PID=%d, бинарник=%s)",
+	"LOG_SUPERVISOR_STOPPED":     "[Supervisor] Завершен работающий процесс %s (PID=%d)",
+	"LOG_SUPERVISOR_FAILED_START": "[Supervisor] Не удалось запустить движок %s: %v",
+	"LOG_SUPERVISOR_FINISHED":    "[Supervisor] Процесс движка %s завершился (код выхода=%v)",
+	"LOG_SUPERVISOR_DROPPED_ALL": "[Supervisor] Сброшены все сессии клиентов на всех движках",
+	"LOG_SUPERVISOR_DROPPED_USER": "[Supervisor] Сброшены сессии пользователя %s на всех движках",
 }
