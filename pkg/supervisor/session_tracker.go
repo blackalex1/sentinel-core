@@ -2,11 +2,14 @@ package supervisor
 
 import (
 	"encoding/json"
+	"log"
 	"net"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/blackalex1/sentinel-core/pkg/i18n"
 )
 
 // SessionInfo represents an active client connection tracked by sentinel-core.
@@ -278,6 +281,7 @@ func (st *SessionTracker) registerConnect(core, email, ip string, now int64, now
 		if len(st.events) > st.maxEvents {
 			st.events = st.events[len(st.events)-st.maxEvents:]
 		}
+		log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SESSION_CONNECTED", core, email, ip))
 	} else {
 		sess.LastSeenAt = now
 	}
@@ -370,6 +374,7 @@ func (st *SessionTracker) inactivityCleanerLoop() {
 					st.events = st.events[len(st.events)-st.maxEvents:]
 				}
 				delete(st.sessions, key)
+				log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SESSION_DISCONNECTED", sess.Core, sess.Email, sess.IP, durStr))
 			}
 		}
 		st.mu.Unlock()

@@ -260,4 +260,12 @@ var enTranslations = map[string]string{
 	"UI_FIELD_RESERVED":          "Reserved Bytes",
 	"UI_FIELD_USERNAME":          "Username",
 	"UI_FIELD_DOMAIN_STRATEGY":   "Domain Strategy",
+	"LOG_SESSION_CONNECTED":      "[SessionTracker] Client connected: core=%s, user=%s, IP=%s",
+	"LOG_SESSION_DISCONNECTED":   "[SessionTracker] Client disconnected (inactivity): core=%s, user=%s, IP=%s, duration=%s",
+	"LOG_SUPERVISOR_STARTED":     "[Supervisor] Proxy engine %s successfully started (PID=%d, bin=%s)",
+	"LOG_SUPERVISOR_STOPPED":     "[Supervisor] Terminated running %s process (PID=%d)",
+	"LOG_SUPERVISOR_FAILED_START": "[Supervisor] Failed to start core %s: %v",
+	"LOG_SUPERVISOR_FINISHED":    "[Supervisor] Core %s process finished (exit=%v)",
+	"LOG_SUPERVISOR_DROPPED_ALL": "[Supervisor] Dropped all client sessions across all cores",
+	"LOG_SUPERVISOR_DROPPED_USER": "[Supervisor] Dropped sessions for user %s across all cores",
 }

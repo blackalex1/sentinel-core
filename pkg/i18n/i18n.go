@@ -2,6 +2,8 @@ package i18n
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 )
 
@@ -17,6 +19,18 @@ var (
 	currentLocale = LocaleRU
 	localeMutex   sync.RWMutex
 )
+
+func init() {
+	lang := os.Getenv("SENTINEL_LANGUAGE")
+	if lang == "" {
+		lang = os.Getenv("BOT_LANGUAGE")
+	}
+	if strings.EqualFold(lang, "en") {
+		currentLocale = LocaleEN
+	} else {
+		currentLocale = LocaleRU
+	}
+}
 
 // SetLocale sets the global default locale for the core
 func SetLocale(loc Locale) {

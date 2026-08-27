@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/blackalex1/sentinel-core/pkg/i18n"
 )
 
 // ProcessManager manages child processes of proxy engines
@@ -93,10 +96,12 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 	setSysProcAttr(cmd)
 
 	if err := cmd.Start(); err != nil {
+		log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SUPERVISOR_FAILED_START", normName, err))
 		return fmt.Errorf("failed to start %s: %w", normName, err)
 	}
 
 	pm.processes[normName] = cmd
+	log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SUPERVISOR_STARTED", normName, cmd.Process.Pid, binPath))
 
 	// Auto-register telemetry endpoints from config
 	if configPath != "" {
@@ -141,12 +146,13 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 
 	// Track process completion in background
 	go func(name string, proc *exec.Cmd) {
-		_ = proc.Wait()
+		err := proc.Wait()
 		pm.mu.Lock()
 		if current, exists := pm.processes[name]; exists && current == proc {
 			delete(pm.processes, name)
 		}
 		pm.mu.Unlock()
+		log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SUPERVISOR_FINISHED", name, err))
 	}(normName, cmd)
 
 	return nil
@@ -177,6 +183,7 @@ func (pm *ProcessManager) StopCore(coreName string) error {
 	if cmd, exists := pm.processes[normName]; exists && cmd != nil && cmd.Process != nil {
 		_ = cmd.Process.Kill()
 		delete(pm.processes, normName)
+		log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SUPERVISOR_STOPPED", normName, cmd.Process.Pid))
 	}
 
 	// Also perform safety OS process cleanup

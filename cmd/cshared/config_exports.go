@@ -13,8 +13,16 @@ import (
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 	"github.com/blackalex1/sentinel-core/pkg/builder"
 	"github.com/blackalex1/sentinel-core/pkg/diagnostics"
+	"github.com/blackalex1/sentinel-core/pkg/i18n"
 	"github.com/blackalex1/sentinel-core/pkg/parser"
 )
+
+//export SentinelSetLanguage
+func SentinelSetLanguage(lang *C.char) *C.char {
+	goLang := safeGoString(lang)
+	i18n.SetLocale(i18n.Locale(strings.ToLower(strings.TrimSpace(goLang))))
+	return C.CString(`{"success": true}`)
+}
 
 //export SentinelBuildConfig
 func SentinelBuildConfig(specJSON *C.char) *C.char {

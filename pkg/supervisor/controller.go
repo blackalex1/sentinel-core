@@ -3,11 +3,14 @@ package supervisor
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/blackalex1/sentinel-core/pkg/i18n"
 )
 
 // Controller manages core processes, telemetry, and operations
@@ -268,6 +271,11 @@ func (c *Controller) KickClient(email string) error {
 	}()
 
 	wg.Wait()
+	if email == "" {
+		log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SUPERVISOR_DROPPED_ALL"))
+	} else {
+		log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SUPERVISOR_DROPPED_USER", email))
+	}
 	return nil
 }
 
