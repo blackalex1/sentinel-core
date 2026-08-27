@@ -674,4 +674,94 @@ func TestSessionTracker_SingBoxTwoStageLog(t *testing.T) {
 	}
 }
 
+func TestSessionTracker_XrayLogs(t *testing.T) {
+	st := GetSessionTracker()
+
+	// 1. Standard Xray access log (without 'from')
+	line1 := "2026/08/27 17:00:00 203.0.113.55:54321 accepted tcp:1.1.1.1:443 [vless-in -> direct] email: xray_user_1@domain.com"
+	st.ProcessLogLine("xray", line1)
+
+	// 2. Xray log with 'from tcp:'
+	line2 := "2026/08/27 17:00:01 [Info] [12345] proxy/vless/inbound: from tcp:198.51.100.77:43210 accepted tcp:example.com:443 [vless-in -> direct] email: xray_user_2@domain.com"
+	st.ProcessLogLine("xray", line2)
+
+	events := st.GetRecentEvents(0, 50)
+	found1, found2 := false, false
+	for _, ev := range events {
+		if ev.Email == "xray_user_1@domain.com" && ev.IP == "203.0.113.55" {
+			found1 = true
+		}
+		if ev.Email == "xray_user_2@domain.com" && ev.IP == "198.51.100.77" {
+			found2 = true
+		}
+	}
+	if !found1 {
+		t.Errorf("expected connect event for xray_user_1@domain.com from 203.0.113.55")
+	}
+	if !found2 {
+		t.Errorf("expected connect event for xray_user_2@domain.com from 198.51.100.77")
+	}
+}
+
+func TestSessionTracker_Hysteria2Logs(t *testing.T) {
+	st := GetSessionTracker()
+
+	// 1. JSON format
+	jsonLine := `{"time":"2026-08-27T17:00:00Z","level":"info","msg":"client authenticated","id":"hy_user_json@domain.com","addr":"198.51.100.99:50000"}`
+	st.ProcessLogLine("hysteria2", jsonLine)
+
+	// 2. [TCP] forwarding format
+	tcpLine := `2026-08-27T17:00:01Z [INFO] [TCP] 198.51.100.88:51234 -> 1.1.1.1:443 (user: hy_user_tcp@domain.com)`
+	st.ProcessLogLine("hysteria2", tcpLine)
+
+	// 3. Text auth format
+	textLine := `2026-08-27T17:00:02Z [INFO] client authenticated as hy_user_text@domain.com (198.51.100.66:52345)`
+	st.ProcessLogLine("hysteria2", textLine)
+
+	events := st.GetRecentEvents(0, 50)
+	foundJSON, foundTCP, foundText := false, false, false
+	for _, ev := range events {
+		if ev.Email == "hy_user_json@domain.com" && ev.IP == "198.51.100.99" {
+			foundJSON = true
+		}
+		if ev.Email == "hy_user_tcp@domain.com" && ev.IP == "198.51.100.88" {
+			foundTCP = true
+		}
+		if ev.Email == "hy_user_text@domain.com" && ev.IP == "198.51.100.66" {
+			foundText = true
+		}
+	}
+	if !foundJSON {
+		t.Errorf("expected connect event for hy_user_json@domain.com from 198.51.100.99")
+	}
+	if !foundTCP {
+		t.Errorf("expected connect event for hy_user_tcp@domain.com from 198.51.100.88")
+	}
+	if !foundText {
+		t.Errorf("expected connect event for hy_user_text@domain.com from 198.51.100.66")
+	}
+}
+
+func TestSessionTracker_SingBoxSpecialEmails(t *testing.T) {
+	st := GetSessionTracker()
+	line1 := "+0000 2026-08-25 19:55:12 INFO [88889999 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.123:33445"
+	line2 := "+0000 2026-08-25 19:55:12 INFO [88889999 155ms] inbound/vless[inbound-8]: [alex+vpn_test.1@domain.com] inbound connection to 198.51.100.1:443"
+
+	st.ProcessLogLine("singbox", line1)
+	st.ProcessLogLine("singbox", line2)
+
+	events := st.GetRecentEvents(0, 50)
+	found := false
+	for _, ev := range events {
+		if ev.Email == "alex+vpn_test.1@domain.com" && ev.IP == "198.51.100.123" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected session/event for alex+vpn_test.1@domain.com with IP 198.51.100.123")
+	}
+}
+
+
 

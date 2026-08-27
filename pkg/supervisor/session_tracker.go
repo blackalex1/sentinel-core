@@ -47,9 +47,11 @@ var (
 
 	singboxConnIDPattern = regexp.MustCompile(`\[(\d+)\s+[^\]]+\]`)
 	singboxFromPattern   = regexp.MustCompile(`(?:from|client)\s+(?:tcp:|udp:)?\[?([0-9a-fA-F.:]+)\]?(?::\d+)?`)
-	singboxUserPattern   = regexp.MustCompile(`\[([a-zA-Z0-9_\-@.]+)\]\s+(?:inbound connection|accepted)`)
-	xrayAcceptedPattern  = regexp.MustCompile(`from\s+(?:tcp:|udp:)?\[?([0-9a-fA-F.:]+)\]?(?::\d+)?\s+accepted`)
-	xrayEmailPattern     = regexp.MustCompile(`email:\s+([a-zA-Z0-9_\-@.]+)`)
+	singboxUserPattern   = regexp.MustCompile(`\[([^\s,\]]+)\]\s+(?:inbound connection|accepted)`)
+	xrayAcceptedPattern  = regexp.MustCompile(`(?:from\s+)?(?:tcp:|udp:)?\[?([0-9a-fA-F.:]+)\]?(?::\d+)?\s+accepted`)
+	xrayEmailPattern     = regexp.MustCompile(`email:\s+([^\s,\]]+)`)
+	hyTCPRegex           = regexp.MustCompile(`\[(?:TCP|UDP)\]\s+([^\s:]+):\d+\s+->\s+\S+\s+\(user:\s*([^\s\)]+)\)`)
+	hyAuthAsRegex        = regexp.MustCompile(`(?:client\s+)?authenticated as\s+([^\s(]+)(?:\s+\(?([^\s:)]+)(?::\d+)?\)?)?`)
 )
 
 // GetSessionTracker returns the global session tracker singleton.
@@ -68,9 +70,9 @@ func GetSessionTracker() *SessionTracker {
 
 func parseCleanIP(raw string) string {
 	raw = strings.TrimSpace(raw)
-	raw = strings.Trim(raw, "[]")
+	raw = strings.Trim(raw, "[]'\"()")
 	if host, _, err := net.SplitHostPort(raw); err == nil {
-		return host
+		return strings.Trim(host, "[]")
 	}
 	return raw
 }
@@ -123,8 +125,8 @@ func (st *SessionTracker) processSingBoxLine(line string, now int64, nowStr stri
 
 	// 2. Stage 2: Authenticated user routing
 	if m := singboxUserPattern.FindStringSubmatch(line); len(m) > 1 {
-		email := strings.Trim(m[1], "[]")
-		if email != "" && email != "INFO" && email != "ERROR" && email != "WARN" && email != "DEBUG" {
+		email := strings.Trim(m[1], "[]'\"")
+		if email != "" && email != "INFO" && email != "ERROR" && email != "WARN" && email != "DEBUG" && !strings.HasPrefix(email, "inbound-") {
 			st.mu.RLock()
 			srcIP := st.singboxConns[connID]
 			st.mu.RUnlock()
@@ -156,13 +158,78 @@ func (st *SessionTracker) processXrayLine(line string, now int64, nowStr string)
 }
 
 func (st *SessionTracker) processHysteriaLine(line string, now int64, nowStr string) {
-	// Hysteria logs: "client authenticated as <email>" or "auth_user=<email> client_ip=<ip>"
-	if strings.Contains(line, "authenticated as") || strings.Contains(line, "auth_user=") {
+	// 1. JSON format (Hysteria 2 structured logs)
+	if strings.Contains(line, "{") {
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(line), &obj); err == nil {
+			msg, _ := obj["msg"].(string)
+			email, _ := obj["id"].(string)
+			if email == "" {
+				email, _ = obj["auth"].(string)
+			}
+			if email == "" {
+				email, _ = obj["user"].(string)
+			}
+			addr, _ := obj["addr"].(string)
+			if addr == "" {
+				addr, _ = obj["client_ip"].(string)
+			}
+			if addr == "" {
+				addr, _ = obj["client"].(string)
+			}
+
+			if email != "" && addr != "" && (strings.Contains(msg, "authenticated") || strings.Contains(msg, "connected") || msg == "") {
+				srcIP := parseCleanIP(addr)
+				if srcIP != "" {
+					st.registerConnect("hysteria2", email, srcIP, now, nowStr)
+					return
+				}
+			}
+		}
+	}
+
+	// 2. [TCP]/[UDP] format: [TCP] 1.2.3.4:5678 -> target:443 (user: alice)
+	if m := hyTCPRegex.FindStringSubmatch(line); len(m) >= 3 {
+		srcIP := parseCleanIP(m[1])
+		email := strings.TrimSpace(m[2])
+		if srcIP != "" && email != "" {
+			st.registerConnect("hysteria2", email, srcIP, now, nowStr)
+			return
+		}
+	}
+
+	// 3. "authenticated as <email> (<ip>)"
+	if m := hyAuthAsRegex.FindStringSubmatch(line); len(m) >= 2 {
+		email := strings.TrimSpace(m[1])
+		var srcIP string
+		if len(m) >= 3 && m[2] != "" {
+			srcIP = parseCleanIP(m[2])
+		}
+		if srcIP == "" {
+			parts := strings.Fields(line)
+			for _, p := range parts {
+				cleanP := strings.Trim(p, "():")
+				if strings.Contains(cleanP, ".") && !strings.Contains(cleanP, "@") {
+					srcIP = parseCleanIP(cleanP)
+					break
+				}
+			}
+		}
+		if email != "" && srcIP != "" {
+			st.registerConnect("hysteria2", email, srcIP, now, nowStr)
+			return
+		}
+	}
+
+	// 4. Fallback: key=value format (auth_user=..., client_ip=...)
+	if strings.Contains(line, "auth_user=") || strings.Contains(line, "auth=") {
 		var email, srcIP string
 		parts := strings.Fields(line)
 		for _, p := range parts {
 			if strings.HasPrefix(p, "auth_user=") {
 				email = strings.TrimPrefix(p, "auth_user=")
+			} else if strings.HasPrefix(p, "auth=") {
+				email = strings.TrimPrefix(p, "auth=")
 			} else if strings.HasPrefix(p, "client_ip=") || strings.HasPrefix(p, "client=") || strings.HasPrefix(p, "addr=") {
 				val := strings.Split(p, "=")[1]
 				srcIP = parseCleanIP(val)
