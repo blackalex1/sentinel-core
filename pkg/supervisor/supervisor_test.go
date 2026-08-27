@@ -763,5 +763,51 @@ func TestSessionTracker_SingBoxSpecialEmails(t *testing.T) {
 	}
 }
 
+func TestSessionTracker_NetworkRoamingSwitch(t *testing.T) {
+	st := GetSessionTracker()
 
+	// 1. User connects from Wi-Fi IP
+	st.RegisterExternalConnect("sing-box", "roaming_user", "192.168.1.55")
+	active := st.GetActiveSessions()
+	var wifiActive bool
+	for _, s := range active {
+		if s.Email == "roaming_user" && s.IP == "192.168.1.55" {
+			wifiActive = true
+		}
+	}
+	if !wifiActive {
+		t.Fatalf("expected active session on wifi IP")
+	}
 
+	// 2. User switches to Mobile IP
+	st.RegisterExternalConnect("sing-box", "roaming_user", "198.51.100.88")
+	active2 := st.GetActiveSessions()
+	var mobileActive bool
+	for _, s := range active2 {
+		if s.Email == "roaming_user" && s.IP == "198.51.100.88" {
+			mobileActive = true
+		}
+		if s.Email == "roaming_user" && s.IP == "192.168.1.55" {
+			t.Fatalf("old wifi IP session should have been disconnected and removed")
+		}
+	}
+	if !mobileActive {
+		t.Fatalf("expected active session on mobile IP")
+	}
+
+	// 3. User switches back to Wi-Fi IP
+	st.RegisterExternalConnect("sing-box", "roaming_user", "192.168.1.55")
+	active3 := st.GetActiveSessions()
+	var wifiActiveAgain bool
+	for _, s := range active3 {
+		if s.Email == "roaming_user" && s.IP == "192.168.1.55" {
+			wifiActiveAgain = true
+		}
+		if s.Email == "roaming_user" && s.IP == "198.51.100.88" {
+			t.Fatalf("old mobile IP session should have been disconnected and removed")
+		}
+	}
+	if !wifiActiveAgain {
+		t.Fatalf("expected active session on wifi IP after roaming back")
+	}
+}

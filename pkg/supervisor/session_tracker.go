@@ -280,13 +280,43 @@ func (st *SessionTracker) RegisterExternalConnect(core, email, ip string) {
 	st.registerConnect(core, email, parseCleanIP(ip), now, nowStr)
 }
 
+func formatDuration(durSec int64) string {
+	if durSec < 0 {
+		durSec = 0
+	}
+	if durSec < 60 {
+		return "несколько секунд"
+	}
+	return time.Duration(durSec * int64(time.Second)).String()
+}
+
 func (st *SessionTracker) registerConnect(core, email, ip string, now int64, nowStr string) {
-	key := core + ":" + strings.ToLower(email) + ":" + ip
+	normEmail := strings.ToLower(email)
+	key := core + ":" + normEmail + ":" + ip
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
 	sess, exists := st.sessions[key]
 	if !exists {
+		// Close previous active session of the same user on different IP (Network Roaming / Reconnect)
+		for oldKey, oldSess := range st.sessions {
+			if oldSess.Core == core && strings.ToLower(oldSess.Email) == normEmail && oldSess.IP != ip {
+				durSec := now - oldSess.StartedAt
+				durStr := formatDuration(durSec)
+				st.events = append(st.events, &SessionEvent{
+					Action:    "disconnect",
+					Core:      oldSess.Core,
+					Email:     oldSess.Email,
+					IP:        oldSess.IP,
+					Timestamp: now,
+					TimeStr:   nowStr,
+					Duration:  durStr,
+				})
+				delete(st.sessions, oldKey)
+				log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SESSION_DISCONNECTED", oldSess.Core, oldSess.Email, oldSess.IP, durStr))
+			}
+		}
+
 		st.sessions[key] = &SessionInfo{
 			Email:       email,
 			IP:          ip,
@@ -372,19 +402,9 @@ func (st *SessionTracker) inactivityCleanerLoop() {
 		nowStr := time.Now().Format("2006-01-02 15:04:05")
 
 		for key, sess := range st.sessions {
-			if now-sess.LastSeenAt > 180 {
+			if now-sess.LastSeenAt > 60 {
 				durSec := sess.LastSeenAt - sess.StartedAt
-				if durSec < 0 {
-					durSec = 0
-				}
-				var durStr string
-				if durSec < 60 {
-					durStr = "несколько секунд"
-				} else if durSec < 3600 {
-					durStr = time.Duration(durSec * int64(time.Second)).String()
-				} else {
-					durStr = time.Duration(durSec * int64(time.Second)).String()
-				}
+				durStr := formatDuration(durSec)
 
 				event := &SessionEvent{
 					Action:    "disconnect",
