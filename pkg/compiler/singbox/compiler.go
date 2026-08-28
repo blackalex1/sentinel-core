@@ -150,7 +150,7 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 }
 
 func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
-	remoteDNS := "https://1.1.1.1/dns-query"
+	remoteDNS := "1.1.1.1"
 	directDNS := "8.8.8.8"
 	strategy := "ipv4_only"
 
@@ -168,9 +168,9 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 
 	servers := []map[string]interface{}{
 		{
-			"tag":     "dns-direct",
-			"address": directDNS,
-			"detour":  "direct",
+			"type":   "udp",
+			"tag":    "dns-direct",
+			"server": directDNS,
 		},
 	}
 
@@ -180,15 +180,16 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 			detourTag = spec.ServerNode.Name
 		}
 		servers = append(servers, map[string]interface{}{
-			"tag":              "dns-remote",
-			"address":          remoteDNS,
-			"address_resolver": "dns-direct",
-			"detour":           detourTag,
+			"type":   "udp",
+			"tag":    "dns-remote",
+			"server": remoteDNS,
+			"detour": detourTag,
 		})
 	}
 
 	return map[string]interface{}{
 		"servers":  servers,
+		"final":    "dns-direct",
 		"strategy": strategy,
 	}
 }
