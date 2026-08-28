@@ -150,17 +150,13 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 }
 
 func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
-	remoteDNS := "1.1.1.1"
+	remoteDNS := "https://1.1.1.1/dns-query"
 	directDNS := "8.8.8.8"
 	strategy := "ipv4_only"
 
 	if spec.DNS != nil {
 		if spec.DNS.RemoteServer != "" {
-			cleaned := strings.TrimPrefix(spec.DNS.RemoteServer, "https://")
-			cleaned = strings.TrimSuffix(cleaned, "/dns-query")
-			if cleaned != "" {
-				remoteDNS = cleaned
-			}
+			remoteDNS = spec.DNS.RemoteServer
 		}
 		if spec.DNS.DirectServer != "" {
 			directDNS = spec.DNS.DirectServer
@@ -172,10 +168,9 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 
 	servers := []map[string]interface{}{
 		{
-			"tag":         "dns-direct",
-			"type":        "udp",
-			"server":      directDNS,
-			"server_port": 53,
+			"tag":     "dns-direct",
+			"address": directDNS,
+			"detour":  "direct",
 		},
 	}
 
@@ -185,11 +180,9 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 			detourTag = spec.ServerNode.Name
 		}
 		servers = append(servers, map[string]interface{}{
-			"tag":         "dns-remote",
-			"type":        "https",
-			"server":      remoteDNS,
-			"server_port": 443,
-			"detour":      detourTag,
+			"tag":     "dns-remote",
+			"address": remoteDNS,
+			"detour":  detourTag,
 		})
 	}
 
