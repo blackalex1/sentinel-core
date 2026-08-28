@@ -180,9 +180,10 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 			detourTag = spec.ServerNode.Name
 		}
 		servers = append(servers, map[string]interface{}{
-			"tag":     "dns-remote",
-			"address": remoteDNS,
-			"detour":  detourTag,
+			"tag":              "dns-remote",
+			"address":          remoteDNS,
+			"address_resolver": "dns-direct",
+			"detour":           detourTag,
 		})
 	}
 
