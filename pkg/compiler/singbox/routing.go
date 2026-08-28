@@ -180,7 +180,7 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 								"tag":             tag,
 								"type":            "remote",
 								"format":          "binary",
-								"url":             fmt.Sprintf("https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/%s.srs", tag),
+								"url":             fmt.Sprintf("https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/%s.srs", tag),
 								"download_detour": downloadDetour,
 							}
 						}
@@ -224,7 +224,7 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 									"tag":             tag,
 									"type":            "remote",
 									"format":          "binary",
-									"url":             fmt.Sprintf("https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/%s.srs", tag),
+									"url":             fmt.Sprintf("https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/%s.srs", tag),
 									"download_detour": downloadDetour,
 								}
 							}
