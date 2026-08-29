@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/blackalex1/sentinel-core/pkg/i18n"
 )
 
 func TestController_Configure_And_GetStatus(t *testing.T) {
@@ -813,7 +815,17 @@ func TestSessionTracker_NetworkRoamingSwitch(t *testing.T) {
 }
 
 func TestFormatDuration(t *testing.T) {
-	cases := []struct {
+	fromPkgI18n := func(loc string) {
+		if loc == "en" {
+			i18n.SetLocale(i18n.LocaleEN)
+		} else {
+			i18n.SetLocale(i18n.LocaleRU)
+		}
+	}
+	defer fromPkgI18n("ru")
+
+	fromPkgI18n("ru")
+	casesRU := []struct {
 		inputSec int64
 		expected string
 	}{
@@ -828,10 +840,33 @@ func TestFormatDuration(t *testing.T) {
 		{7320, "2 ч 2 мин"},
 	}
 
-	for _, tc := range cases {
+	for _, tc := range casesRU {
 		res := formatDuration(tc.inputSec)
 		if res != tc.expected {
-			t.Errorf("formatDuration(%d) = %q, expected %q", tc.inputSec, res, tc.expected)
+			t.Errorf("RU formatDuration(%d) = %q, expected %q", tc.inputSec, res, tc.expected)
+		}
+	}
+
+	fromPkgI18n("en")
+	casesEN := []struct {
+		inputSec int64
+		expected string
+	}{
+		{-5, "1s"},
+		{0, "1s"},
+		{1, "1s"},
+		{45, "45s"},
+		{60, "1m"},
+		{75, "1m 15s"},
+		{3600, "1h"},
+		{3665, "1h 1m"},
+		{7320, "2h 2m"},
+	}
+
+	for _, tc := range casesEN {
+		res := formatDuration(tc.inputSec)
+		if res != tc.expected {
+			t.Errorf("EN formatDuration(%d) = %q, expected %q", tc.inputSec, res, tc.expected)
 		}
 	}
 }

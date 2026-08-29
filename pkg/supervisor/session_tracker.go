@@ -282,6 +282,30 @@ func (st *SessionTracker) RegisterExternalConnect(core, email, ip string) {
 }
 
 func formatDuration(durSec int64) string {
+	loc := i18n.GetLocale()
+	if loc == i18n.LocaleEN {
+		if durSec <= 0 {
+			return "1s"
+		}
+		if durSec < 60 {
+			return fmt.Sprintf("%ds", durSec)
+		}
+		if durSec < 3600 {
+			mins := durSec / 60
+			secs := durSec % 60
+			if secs > 0 {
+				return fmt.Sprintf("%dm %ds", mins, secs)
+			}
+			return fmt.Sprintf("%dm", mins)
+		}
+		hours := durSec / 3600
+		mins := (durSec % 3600) / 60
+		if mins > 0 {
+			return fmt.Sprintf("%dh %dm", hours, mins)
+		}
+		return fmt.Sprintf("%dh", hours)
+	}
+
 	if durSec <= 0 {
 		return "1 сек"
 	}
