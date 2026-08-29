@@ -165,6 +165,7 @@ func BuildFailoverClientConfig(profiles []*ast.ServerProfile, targetCore ast.Tar
 
 	spec := &ast.ConfigSpec{
 		TargetCore: targetCore,
+		LogLevel:   "info",
 		ServerNode: &primaryCopy,
 		ClientInbound: &ast.ClientInboundSpec{
 			Mode:          ast.InboundModeSystemProxy,
@@ -181,7 +182,6 @@ func BuildFailoverClientConfig(profiles []*ast.ServerProfile, targetCore ast.Tar
 				},
 			},
 		},
-		LogLevel: "warn",
 	}
 
 	return BuildClientConfig(spec)
