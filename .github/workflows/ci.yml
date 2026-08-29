@@ -28,9 +28,8 @@ jobs:
 
       - name: Run Tests with Race Detector (Multi-threaded & Parallel)
         run: |
-          CPU_COUNT=$(nproc 2>/dev/null || echo 4)
-          echo "Running test suite with ${CPU_COUNT} parallel worker threads..."
-          go test -v -race -p "${CPU_COUNT}" -parallel "${CPU_COUNT}" ./...
+          echo "Running test suite with race detector (p=2)..."
+          go test -v -race -p 2 ./...
 
       - name: Verify CLI Compilation
         run: go build -v -o /dev/null ./cmd/cli
