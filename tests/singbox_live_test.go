@@ -24,7 +24,8 @@ func TestSingBoxLive_GoogleBlockAndDirectAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to resolve singbox path: %v", err)
 	}
-	if _, err := os.Stat(singboxBin); os.IsNotExist(err) {
+	fi, err := os.Stat(singboxBin)
+	if err != nil || fi.IsDir() {
 		t.Skipf("sing-box binary not found at %s, skipping live test", singboxBin)
 	}
 

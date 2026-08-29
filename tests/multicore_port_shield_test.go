@@ -27,7 +27,7 @@ func findCoreBinary(name string) string {
 	for _, c := range candidates {
 		abs, err := filepath.Abs(c)
 		if err == nil {
-			if _, err := os.Stat(abs); err == nil {
+			if fi, err := os.Stat(abs); err == nil && !fi.IsDir() {
 				return abs
 			}
 		}
