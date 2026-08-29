@@ -1,0 +1,1 @@
+{"dns":{"servers":[{"tag":"dns-direct","address":"8.8.8.8","detour":"direct"},{"tag":"dns-remote","address":"https://1.1.1.1/dns-query","detour":"proxy"}],"final":"dns-remote","strategy":"ipv4_only"},"outbounds":[{"type":"direct","tag":"direct"},{"type":"direct","tag":"proxy"}]}
