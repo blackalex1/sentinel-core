@@ -2,6 +2,8 @@ package matrix
 
 import (
 	"errors"
+	"strings"
+
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 	"github.com/blackalex1/sentinel-core/pkg/i18n"
 )
@@ -74,6 +76,21 @@ func (n *Negotiator) Negotiate(
 	if node.Security == ast.SecurityReality {
 		if !caps.IsFeatureSupported(FeatureReality) {
 			return nil, nil, errors.New(i18n.TGlobal("ERR_REALITY_UNSUPPORTED", targetCore, node.Protocol))
+		}
+		if targetCore == ast.CoreXray {
+			// Xray only supports Reality over TCP/RAW, gRPC, and XHTTP
+			t := strings.ToLower(node.Transport)
+			if t == "ws" || t == "websocket" || t == "httpupgrade" || t == "h2" || t == "http" {
+				if strictMode {
+					return nil, nil, errors.New("Xray REALITY only supports RAW, gRPC, and XHTTP transports")
+				}
+				adaptedNode.Transport = "tcp"
+				warnings = append(warnings, NegotiationWarning{
+					Feature: FeatureReality,
+					Message: "Xray does not support Reality over " + t + " transport; adapted to TCP/RAW",
+					Action:  "ADAPTED_TRANSPORT_TO_RAW_FOR_XRAY_REALITY",
+				})
+			}
 		}
 	}
 

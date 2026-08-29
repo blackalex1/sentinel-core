@@ -102,6 +102,18 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		}
 	}
 
+	// 3.1 Extract endpoints (e.g. WireGuard in Sing-box 1.12+)
+	var endpoints []map[string]interface{}
+	var finalOutbounds []map[string]interface{}
+	for _, ob := range outbounds {
+		if obType, ok := ob["type"].(string); ok && obType == "wireguard" {
+			endpoints = append(endpoints, ob)
+		} else {
+			finalOutbounds = append(finalOutbounds, ob)
+		}
+	}
+	outbounds = finalOutbounds
+
 	// 4. Build DNS (modern format for Sing-box 1.12+)
 	dnsConfig := buildSingBoxDNS(spec)
 
@@ -130,6 +142,10 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		"inbounds":  inbounds,
 		"outbounds": outbounds,
 		"route":     routeConfig,
+	}
+
+	if len(endpoints) > 0 {
+		configObj["endpoints"] = endpoints
 	}
 
 	// 7. Clash API / External Controller

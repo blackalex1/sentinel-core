@@ -225,7 +225,7 @@ func TestNegotiator_Rejection_And_Adaptation(t *testing.T) {
 	node := &ast.ServerProfile{
 		Protocol:    ast.ProtoVLESS,
 		Name:        "mlkem-node",
-		Address:     "1.2.3.4",
+		Address:     "198.51.100.1",
 		Port:        443,
 		UUID:        "b9f3857a-ce20-4e1e-b5e0-6f3d141fa2b2",
 		Security:    "reality",
