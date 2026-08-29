@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"regexp"
@@ -281,13 +282,26 @@ func (st *SessionTracker) RegisterExternalConnect(core, email, ip string) {
 }
 
 func formatDuration(durSec int64) string {
-	if durSec < 0 {
-		durSec = 0
+	if durSec <= 0 {
+		return "1 сек"
 	}
 	if durSec < 60 {
-		return "несколько секунд"
+		return fmt.Sprintf("%d сек", durSec)
 	}
-	return time.Duration(durSec * int64(time.Second)).String()
+	if durSec < 3600 {
+		mins := durSec / 60
+		secs := durSec % 60
+		if secs > 0 {
+			return fmt.Sprintf("%d мин %d сек", mins, secs)
+		}
+		return fmt.Sprintf("%d мин", mins)
+	}
+	hours := durSec / 3600
+	mins := (durSec % 3600) / 60
+	if mins > 0 {
+		return fmt.Sprintf("%d ч %d мин", hours, mins)
+	}
+	return fmt.Sprintf("%d ч", hours)
 }
 
 func (st *SessionTracker) registerConnect(core, email, ip string, now int64, nowStr string) {
@@ -397,13 +411,30 @@ func (st *SessionTracker) GetRecentEvents(sinceTimestamp int64, limit int) []*Se
 func (st *SessionTracker) inactivityCleanerLoop() {
 	ticker := time.NewTicker(10 * time.Second)
 	for range ticker.C {
-		st.mu.Lock()
 		now := time.Now().Unix()
 		nowStr := time.Now().Format("2006-01-02 15:04:05")
 
+		// Query live active traffic across all engines to keep active sessions alive
+		activeTraffic, _ := GetController().GetUnifiedTraffic()
+
+		st.mu.Lock()
+		if activeTraffic != nil {
+			for _, sess := range st.sessions {
+				normEmail := strings.ToLower(sess.Email)
+				for em, ct := range activeTraffic {
+					if strings.ToLower(em) == normEmail {
+						if ct.Online || ct.Connections > 0 {
+							sess.LastSeenAt = now
+						}
+						break
+					}
+				}
+			}
+		}
+
 		for key, sess := range st.sessions {
-			if now-sess.LastSeenAt > 60 {
-				durSec := sess.LastSeenAt - sess.StartedAt
+			if now-sess.LastSeenAt > 90 {
+				durSec := now - sess.StartedAt
 				durStr := formatDuration(durSec)
 
 				event := &SessionEvent{
