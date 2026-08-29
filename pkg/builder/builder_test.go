@@ -352,3 +352,51 @@ func TestBuildServerConfig_Hysteria2(t *testing.T) {
 		t.Errorf("outbounds should be omitted when routing is nil, got:\n%s", cfgNoRouting)
 	}
 }
+
+func TestBuildFailoverClientConfig_RealBinaryVerification(t *testing.T) {
+	profiles := []*ast.ServerProfile{
+		{
+			Protocol:    ast.ProtoVLESS,
+			Name:        "Romania-VLESS",
+			Address:     "192.0.2.109",
+			Port:        443,
+			UUID:        "e99dc462-8409-4e45-bf28-665544332211",
+			Security:    ast.SecurityReality,
+			SNI:         "gateway.icloud.com",
+			Flow:        "xtls-rprx-vision",
+			Fingerprint: "chrome",
+			PublicKey:   "kPubMockKeyForUnitTestsOnly0000000000000005",
+			ShortID:     "6ba7b810",
+		},
+		{
+			Protocol: ast.ProtoHysteria2,
+			Name:     "Finland-Hysteria2",
+			Address:  "fi.example.com",
+			Port:     8443,
+			Password: "hy2password123",
+			SNI:      "fi.example.com",
+		},
+		{
+			Protocol: ast.ProtoTrojan,
+			Name:     "Germany-Trojan",
+			Address:  "de.example.com",
+			Port:     443,
+			Password: "trojanpassword",
+			SNI:      "de.example.com",
+		},
+	}
+
+	res, err := BuildFailoverClientConfig(profiles, ast.CoreSingBox, 10818, 10819, "https://api.telegram.org")
+	if err != nil {
+		t.Fatalf("BuildFailoverClientConfig failed: %v", err)
+	}
+
+	if res == nil || res.ConfigJSON == "" {
+		t.Fatal("expected non-empty configJson in BuildResult")
+	}
+
+	// Verify no deprecated address_resolver
+	if strings.Contains(res.ConfigJSON, "address_resolver") {
+		t.Fatalf("Config contains deprecated 'address_resolver' field:\n%s", res.ConfigJSON)
+	}
+}

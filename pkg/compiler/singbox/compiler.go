@@ -175,12 +175,7 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 	}
 
 	finalDNS := "dns-direct"
-	dnsRules := []map[string]interface{}{
-		{
-			"outbound": []string{"direct"},
-			"server":   "dns-direct",
-		},
-	}
+	dnsRules := []map[string]interface{}{}
 
 	if spec.ServerNode != nil {
 		detourTag := "proxy"
@@ -188,10 +183,9 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 			detourTag = spec.ServerNode.Name
 		}
 		remoteServerObj := map[string]interface{}{
-			"tag":              "dns-remote",
-			"server":           remoteDNS,
-			"address_resolver": "dns-direct",
-			"detour":           detourTag,
+			"tag":    "dns-remote",
+			"server": remoteDNS,
+			"detour": detourTag,
 		}
 		if strings.HasPrefix(remoteDNS, "https://") || strings.HasPrefix(remoteDNS, "h3://") {
 			remoteServerObj["type"] = "https"
