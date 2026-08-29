@@ -390,7 +390,7 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 	}
 
 	if len(dnsServers) == 0 {
-		dnsServers = []string{"https://dns.google/dns-query", "8.8.8.8"}
+		dnsServers = []string{"https://1.1.1.1/dns-query", "8.8.8.8", "8.8.4.4"}
 	}
 	if spec.DNS != nil && spec.DNS.DirectServer != "" {
 		dnsServers = append(dnsServers, spec.DNS.DirectServer)

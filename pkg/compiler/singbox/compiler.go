@@ -150,7 +150,7 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 }
 
 func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
-	remoteDNS := "1.1.1.1"
+	remoteDNS := "https://1.1.1.1/dns-query"
 	directDNS := "8.8.8.8"
 	strategy := "ipv4_only"
 
@@ -174,22 +174,42 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 		},
 	}
 
+	finalDNS := "dns-direct"
+	dnsRules := []map[string]interface{}{
+		{
+			"outbound": []string{"direct"},
+			"server":   "dns-direct",
+		},
+	}
+
 	if spec.ServerNode != nil {
 		detourTag := "proxy"
 		if spec.ServerNode.Name != "" {
 			detourTag = spec.ServerNode.Name
 		}
-		servers = append(servers, map[string]interface{}{
-			"type":   "udp",
-			"tag":    "dns-remote",
-			"server": remoteDNS,
-			"detour": detourTag,
-		})
+		remoteServerObj := map[string]interface{}{
+			"tag":              "dns-remote",
+			"server":           remoteDNS,
+			"address_resolver": "dns-direct",
+			"detour":           detourTag,
+		}
+		if strings.HasPrefix(remoteDNS, "https://") || strings.HasPrefix(remoteDNS, "h3://") {
+			remoteServerObj["type"] = "https"
+		} else if strings.HasPrefix(remoteDNS, "tls://") {
+			remoteServerObj["type"] = "tls"
+		} else if strings.HasPrefix(remoteDNS, "tcp://") {
+			remoteServerObj["type"] = "tcp"
+		} else {
+			remoteServerObj["type"] = "udp"
+		}
+		servers = append([]map[string]interface{}{remoteServerObj}, servers...)
+		finalDNS = "dns-remote"
 	}
 
 	return map[string]interface{}{
 		"servers":  servers,
-		"final":    "dns-direct",
+		"rules":    dnsRules,
+		"final":    finalDNS,
 		"strategy": strategy,
 	}
 }
