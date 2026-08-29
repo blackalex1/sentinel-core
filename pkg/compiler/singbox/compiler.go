@@ -182,13 +182,14 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 		}
 	}
 
-	servers := []map[string]interface{}{
-		{
-			"tag":     "dns-direct",
-			"address": directDNS,
-			"detour":  "direct",
-		},
+	directServerObj := map[string]interface{}{
+		"tag":         "dns-direct",
+		"type":        "udp",
+		"server":      directDNS,
+		"server_port": 53,
 	}
+
+	servers := []map[string]interface{}{directServerObj}
 
 	finalDNS := "dns-direct"
 	dnsRules := []map[string]interface{}{}
@@ -200,9 +201,35 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 		}
 
 		remoteServerObj := map[string]interface{}{
-			"tag":     "dns-remote",
-			"address": remoteDNS,
-			"detour":  detourTag,
+			"tag":    "dns-remote",
+			"detour": detourTag,
+		}
+
+		if strings.HasPrefix(remoteDNS, "https://") {
+			remoteServerObj["type"] = "https"
+			trimmed := strings.TrimPrefix(remoteDNS, "https://")
+			parts := strings.SplitN(trimmed, "/", 2)
+			remoteServerObj["server"] = parts[0]
+			if len(parts) > 1 && parts[1] != "" {
+				remoteServerObj["path"] = "/" + parts[1]
+			}
+			remoteServerObj["server_port"] = 443
+		} else if strings.HasPrefix(remoteDNS, "tls://") {
+			remoteServerObj["type"] = "tls"
+			remoteServerObj["server"] = strings.TrimPrefix(remoteDNS, "tls://")
+			remoteServerObj["server_port"] = 853
+		} else if strings.HasPrefix(remoteDNS, "tcp://") {
+			remoteServerObj["type"] = "tcp"
+			remoteServerObj["server"] = strings.TrimPrefix(remoteDNS, "tcp://")
+			remoteServerObj["server_port"] = 53
+		} else if strings.HasPrefix(remoteDNS, "udp://") {
+			remoteServerObj["type"] = "udp"
+			remoteServerObj["server"] = strings.TrimPrefix(remoteDNS, "udp://")
+			remoteServerObj["server_port"] = 53
+		} else {
+			remoteServerObj["type"] = "udp"
+			remoteServerObj["server"] = remoteDNS
+			remoteServerObj["server_port"] = 53
 		}
 
 		servers = append([]map[string]interface{}{remoteServerObj}, servers...)
