@@ -35,7 +35,7 @@ func TestDBAdapter_EncryptedRowIngestion(t *testing.T) {
 		ID:         "node-db-001",
 		Name:       "Encrypted-Node",
 		Protocol:   "vless",
-		Address:    "10.20.30.40",
+		Address:    "198.51.100.40",
 		Port:       443,
 		Transport:  "tcp",
 		Security:   "reality",

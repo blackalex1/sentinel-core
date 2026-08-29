@@ -13,7 +13,7 @@ func TestCompiler_SingBox_TunAndRoutes(t *testing.T) {
 	node := &ast.ServerProfile{
 		Name:      "DE-Server",
 		Protocol:  ast.ProtoVLESS,
-		Address:   "1.2.3.4",
+		Address:   "198.51.100.1",
 		Port:      443,
 		UUID:      "a6c8e874-5182-4916-9ea6-f7723933c091",
 		Security:  ast.SecurityReality,

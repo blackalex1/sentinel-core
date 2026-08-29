@@ -2,6 +2,7 @@ package xray
 
 import (
 	"github.com/blackalex1/sentinel-core/pkg/ast"
+	"github.com/blackalex1/sentinel-core/pkg/crypto"
 )
 
 // buildXrayStreamSettings constructs the Xray streamSettings object (transport, TLS, Reality).
@@ -49,8 +50,7 @@ func buildXrayStreamSettings(node *ast.ServerProfile) map[string]interface{} {
 			"spiderX":     node.SpiderX,
 		}
 		if node.PostQuantum {
-			// Explicitly inject Post-Quantum hybrid curves into reality / TLS settings
-			realitySettings["curves"] = []string{"X25519Kyber768Draft00", "X25519"}
+			realitySettings["curves"] = crypto.DefaultPostQuantumCurves()
 		}
 		stream["realitySettings"] = realitySettings
 	} else if security == "tls" {
@@ -66,7 +66,7 @@ func buildXrayStreamSettings(node *ast.ServerProfile) map[string]interface{} {
 			tlsSettings["pinnedPeerCertSha256"] = node.PinnedPeerCertSha256
 		}
 		if node.PostQuantum {
-			tlsSettings["curves"] = []string{"X25519Kyber768Draft00", "X25519"}
+			tlsSettings["curves"] = crypto.DefaultPostQuantumCurves()
 		}
 		stream["tlsSettings"] = tlsSettings
 	}

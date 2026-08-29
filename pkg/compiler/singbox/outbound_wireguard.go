@@ -6,23 +6,33 @@ import (
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 )
 
-// buildWireGuardOutbound compiles an ast.ServerProfile into a Sing-box WireGuard outbound object.
+// buildWireGuardOutbound compiles an ast.ServerProfile into a Sing-box WireGuard outbound/endpoint object.
 func buildWireGuardOutbound(tag string, node *ast.ServerProfile) (map[string]interface{}, error) {
 	pubKey := node.PeerPublicKey
 	if pubKey == "" {
 		pubKey = node.PublicKey
 	}
-	out := map[string]interface{}{
-		"type":            "wireguard",
-		"tag":             tag,
-		"server":          node.Address,
-		"server_port":     node.Port,
-		"private_key":     node.PrivateKey,
-		"peer_public_key": pubKey,
+
+	peer := map[string]interface{}{
+		"address":     node.Address,
+		"port":        node.Port,
+		"public_key":  pubKey,
+		"allowed_ips": []string{"0.0.0.0/0", "::/0"},
 	}
 
 	if node.PreSharedKey != "" {
-		out["pre_shared_key"] = node.PreSharedKey
+		peer["pre_shared_key"] = node.PreSharedKey
+	}
+
+	if len(node.ReservedBytes) > 0 {
+		peer["reserved"] = node.ReservedBytes
+	}
+
+	out := map[string]interface{}{
+		"type":        "wireguard",
+		"tag":         tag,
+		"private_key": node.PrivateKey,
+		"peers":       []map[string]interface{}{peer},
 	}
 
 	if len(node.LocalAddress) > 0 {
@@ -80,9 +90,13 @@ func compileRawWireguardOutbound(tag string, sMap, tsMap map[string]interface{})
 		}
 
 		if la, ok := sMap["address"].([]interface{}); ok {
-			wgOb["address"] = la
+			wgOb["local_address"] = la
 		} else if la, ok := sMap["local_address"]; ok {
-			wgOb["address"] = la
+			wgOb["local_address"] = la
+		}
+
+		if res, ok := sMap["reserved"]; ok {
+			wgOb["reserved"] = res
 		}
 
 		if mtu, ok := sMap["mtu"]; ok {

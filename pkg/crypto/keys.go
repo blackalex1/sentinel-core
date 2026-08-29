@@ -8,6 +8,19 @@ import (
 	"strings"
 )
 
+// Standard TLS 1.3 Key Exchange Curves / Post-Quantum Hybrid Groups
+const (
+	CurveX25519MLKEM768     = "X25519MLKEM768"     // NIST FIPS 203 ML-KEM Standard
+	CurveX25519Kyber768Draft = "X25519Kyber768Draft00" // Kyber draft hybrid
+	CurveX25519             = "X25519"             // Classical Curve25519
+	CurveSecP256r1MLKEM768  = "SecP256r1MLKEM768"  // NIST P-256 + ML-KEM
+)
+
+// DefaultPostQuantumCurves returns standard hybrid Post-Quantum key exchange curve groups supported by modern proxy cores.
+func DefaultPostQuantumCurves() []string {
+	return []string{CurveX25519MLKEM768, CurveX25519Kyber768Draft, CurveX25519}
+}
+
 // KeyPair represents a cryptographic public/private keypair.
 type KeyPair struct {
 	PrivateKey string `json:"privateKey"`

@@ -109,6 +109,28 @@ func parseHysteria2(raw string) (*ast.ServerProfile, error) {
 		name = u.Fragment
 	}
 
+	bwUp := q.Get("up")
+	if bwUp == "" {
+		bwUp = q.Get("upmbps")
+	}
+	if bwUp == "" {
+		bwUp = q.Get("up_mbps")
+	}
+	if bwUp == "" {
+		bwUp = q.Get("upload")
+	}
+
+	bwDown := q.Get("down")
+	if bwDown == "" {
+		bwDown = q.Get("downmbps")
+	}
+	if bwDown == "" {
+		bwDown = q.Get("down_mbps")
+	}
+	if bwDown == "" {
+		bwDown = q.Get("download")
+	}
+
 	profile := &ast.ServerProfile{
 		Protocol:             ast.ProtoHysteria2,
 		Username:             username,
@@ -122,8 +144,8 @@ func parseHysteria2(raw string) (*ast.ServerProfile, error) {
 		ObfsType:             obfsType,
 		ObfsPassword:         obfsPassword,
 		PortHopping:          portHopping,
-		BandwidthUp:          q.Get("up"),
-		BandwidthDown:        q.Get("down"),
+		BandwidthUp:          bwUp,
+		BandwidthDown:        bwDown,
 		ALPN:                 alpn,
 	}
 

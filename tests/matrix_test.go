@@ -12,7 +12,7 @@ func TestMatrix_PostQuantum_Xray(t *testing.T) {
 	node := &ast.ServerProfile{
 		Name:        "PQ-Xray-Node",
 		Protocol:    ast.ProtoVLESS,
-		Address:     "1.2.3.4",
+		Address:     "198.51.100.1",
 		Port:        443,
 		UUID:        "test-uuid",
 		Security:    ast.SecurityReality,
@@ -40,7 +40,7 @@ func TestMatrix_PostQuantum_SingBox_GracefulFallback(t *testing.T) {
 	node := &ast.ServerProfile{
 		Name:        "PQ-Singbox-Node",
 		Protocol:    ast.ProtoVLESS,
-		Address:     "1.2.3.4",
+		Address:     "198.51.100.1",
 		Port:        443,
 		UUID:        "test-uuid",
 		Security:    ast.SecurityReality,
@@ -85,7 +85,7 @@ func TestMatrix_PostQuantum_SingBox_StrictMode(t *testing.T) {
 	node := &ast.ServerProfile{
 		Name:        "PQ-Singbox-Node",
 		Protocol:    ast.ProtoVLESS,
-		Address:     "1.2.3.4",
+		Address:     "198.51.100.1",
 		Port:        443,
 		UUID:        "test-uuid",
 		Security:    ast.SecurityReality,

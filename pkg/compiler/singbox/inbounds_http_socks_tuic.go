@@ -110,8 +110,10 @@ func buildTUICInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 	}
 
 	if sb.RawSettings != nil {
-		if cc, ok := sb.RawSettings["congestion_controller"].(string); ok && cc != "" {
-			inbound["congestion_controller"] = cc
+		if cc, ok := sb.RawSettings["congestion_control"].(string); ok && cc != "" {
+			inbound["congestion_control"] = cc
+		} else if cc, ok := sb.RawSettings["congestion_controller"].(string); ok && cc != "" {
+			inbound["congestion_control"] = cc
 		}
 		if zrtt, ok := sb.RawSettings["zero_rtt_handshake"].(bool); ok {
 			inbound["zero_rtt_handshake"] = zrtt

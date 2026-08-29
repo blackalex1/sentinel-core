@@ -69,7 +69,7 @@ func TestRoutingEngine_ThreatIsolationAndProcessRouting(t *testing.T) {
 		TargetCore: ast.CoreSingBox,
 		ServerNode: &ast.ServerProfile{
 			Protocol: ast.ProtoVLESS,
-			Address:  "1.2.3.4",
+			Address:  "198.51.100.1",
 			Port:     443,
 			UUID:     "test-uuid",
 		},

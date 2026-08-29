@@ -12,7 +12,7 @@ func TestCryptoVault_EncryptDecrypt(t *testing.T) {
 		t.Fatalf("failed to create vault: %v", err)
 	}
 
-	plaintext := "vless://a6c8e874-1234-5678-abcd@1.2.3.4:443?security=reality"
+	plaintext := "vless://a6c8e874-1234-5678-abcd@198.51.100.1:443?security=reality"
 	encrypted, err := vault.EncryptString(plaintext)
 	if err != nil {
 		t.Fatalf("failed to encrypt string: %v", err)

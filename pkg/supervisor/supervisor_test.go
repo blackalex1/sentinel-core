@@ -745,7 +745,7 @@ func TestSessionTracker_Hysteria2Logs(t *testing.T) {
 func TestSessionTracker_SingBoxSpecialEmails(t *testing.T) {
 	st := GetSessionTracker()
 	line1 := "+0000 2026-08-25 19:55:12 INFO [88889999 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.123:33445"
-	line2 := "+0000 2026-08-25 19:55:12 INFO [88889999 155ms] inbound/vless[inbound-8]: [alex+vpn_test.1@domain.com] inbound connection to 198.51.100.1:443"
+	line2 := "+0000 2026-08-25 19:55:12 INFO [88889999 155ms] inbound/vless[inbound-8]: [user_test+vpn.1@domain.com] inbound connection to 198.51.100.1:443"
 
 	st.ProcessLogLine("singbox", line1)
 	st.ProcessLogLine("singbox", line2)
@@ -753,13 +753,13 @@ func TestSessionTracker_SingBoxSpecialEmails(t *testing.T) {
 	events := st.GetRecentEvents(0, 50)
 	found := false
 	for _, ev := range events {
-		if ev.Email == "alex+vpn_test.1@domain.com" && ev.IP == "198.51.100.123" {
+		if ev.Email == "user_test+vpn.1@domain.com" && ev.IP == "198.51.100.123" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("expected session/event for alex+vpn_test.1@domain.com with IP 198.51.100.123")
+		t.Fatalf("expected session/event for user_test+vpn.1@domain.com with IP 198.51.100.123")
 	}
 }
 
