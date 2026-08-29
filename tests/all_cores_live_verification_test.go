@@ -389,10 +389,6 @@ func TestLiveVerification_Xray_AllProtocols(t *testing.T) {
 		t.Fatalf("failed to generate reality keys: %v", err)
 	}
 
-	rawKey16 := make([]byte, 16)
-	rand.Read(rawKey16)
-	ssKey16 := base64.StdEncoding.EncodeToString(rawKey16)
-
 	protocols := []struct {
 		name     string
 		inbound  ast.ServerInboundSpec
@@ -551,17 +547,17 @@ func TestLiveVerification_Xray_AllProtocols(t *testing.T) {
 			},
 		},
 		{
-			name: "Shadowsocks_2022_Aes128Gcm",
+			name: "Shadowsocks_Aes128Gcm",
 			inbound: ast.ServerInboundSpec{
 				Tag:      "ss-in",
 				Port:     32006,
 				Protocol: "shadowsocks",
 				RawSettings: map[string]interface{}{
-					"method":   "2022-blake3-aes-128-gcm",
-					"password": ssKey16,
+					"method":   "aes-128-gcm",
+					"password": "strong-secret-pass-123",
 				},
 				Clients: []ast.ServerInboundClient{
-					{Password: ssKey16},
+					{Password: "strong-secret-pass-123"},
 				},
 			},
 			outbound: &ast.ServerProfile{
@@ -569,8 +565,8 @@ func TestLiveVerification_Xray_AllProtocols(t *testing.T) {
 				Name:     "ss-out",
 				Address:  "ss.sentinel.internal",
 				Port:     8388,
-				Cipher:   "2022-blake3-aes-128-gcm",
-				Password: ssKey16,
+				Cipher:   "aes-128-gcm",
+				Password: "strong-secret-pass-123",
 			},
 		},
 	}

@@ -25,9 +25,10 @@ func buildTUICOutbound(tag string, node *ast.ServerProfile) (map[string]interfac
 		out["zero_rtt_handshake"] = true
 	}
 
-	// TLS Settings
+	// TLS Settings (QUIC/UDP protocols like TUIC do NOT support uTLS in sing-box)
 	tlsMap := buildSingBoxTLS(node)
 	if tlsMap != nil {
+		delete(tlsMap, "utls")
 		out["tls"] = tlsMap
 	} else {
 		tlsMap = map[string]interface{}{
