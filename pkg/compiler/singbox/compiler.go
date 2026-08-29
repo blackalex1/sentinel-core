@@ -190,6 +190,7 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 
 		if strings.HasPrefix(remoteDNS, "https://") {
 			remoteServerObj["type"] = "https"
+			remoteServerObj["domain_resolver"] = "dns-direct"
 			trimmed := strings.TrimPrefix(remoteDNS, "https://")
 			parts := strings.SplitN(trimmed, "/", 2)
 			remoteServerObj["server"] = parts[0]
@@ -198,6 +199,7 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 			}
 		} else if strings.HasPrefix(remoteDNS, "tls://") {
 			remoteServerObj["type"] = "tls"
+			remoteServerObj["domain_resolver"] = "dns-direct"
 			remoteServerObj["server"] = strings.TrimPrefix(remoteDNS, "tls://")
 		} else if strings.HasPrefix(remoteDNS, "tcp://") {
 			remoteServerObj["type"] = "tcp"
