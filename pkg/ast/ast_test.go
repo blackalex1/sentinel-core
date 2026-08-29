@@ -208,7 +208,7 @@ func TestServerProfile_ToJSON_Comprehensive(t *testing.T) {
 
 func TestDNSSpec_DefaultAndCustom(t *testing.T) {
 	def := DefaultDNSSpec()
-	if def.RemoteServer != "https://dns.google/dns-query" {
+	if def.RemoteServer != "https://1.1.1.1/dns-query" {
 		t.Errorf("unexpected default remote server: %s", def.RemoteServer)
 	}
 	if def.DirectServer != "8.8.8.8" {

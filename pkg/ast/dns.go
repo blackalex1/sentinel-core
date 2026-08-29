@@ -10,14 +10,16 @@ type DNSSpec struct {
 	FinalServer  string   `json:"finalServer,omitempty"`
 }
 
-// DefaultDNSSpec returns a sensible default DNS specification
+// DefaultDNSSpec returns a sensible default split DNS specification:
+// unencrypted direct DNS (8.8.8.8) for VPN server bootstrap,
+// and encrypted DoH (https://1.1.1.1/dns-query) through VPN for all other queries.
 func DefaultDNSSpec() DNSSpec {
 	return DNSSpec{
-		RemoteServer: "https://dns.google/dns-query",
+		RemoteServer: "https://1.1.1.1/dns-query",
 		DirectServer: "8.8.8.8",
 		Strategy:     "ipv4_only",
 		FakeIP:       false,
-		Servers:      []string{"https://dns.google/dns-query", "8.8.8.8"},
-		FinalServer:  "8.8.8.8",
+		Servers:      []string{"https://1.1.1.1/dns-query", "8.8.8.8"},
+		FinalServer:  "dns-remote",
 	}
 }
