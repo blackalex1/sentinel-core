@@ -75,9 +75,10 @@ func buildHysteria2Outbound(tag string, node *ast.ServerProfile) (map[string]int
 		}
 	}
 
-	// TLS Settings
+	// TLS Settings (QUIC/UDP protocols like Hysteria 2 do NOT support uTLS in sing-box)
 	tlsMap := buildSingBoxTLS(node)
 	if tlsMap != nil {
+		delete(tlsMap, "utls")
 		out["tls"] = tlsMap
 	} else {
 		// Hysteria 2 always requires TLS enabled in sing-box
