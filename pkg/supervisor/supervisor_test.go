@@ -811,3 +811,27 @@ func TestSessionTracker_NetworkRoamingSwitch(t *testing.T) {
 		t.Fatalf("expected active session on wifi IP after roaming back")
 	}
 }
+
+func TestFormatDuration(t *testing.T) {
+	cases := []struct {
+		inputSec int64
+		expected string
+	}{
+		{-5, "1 сек"},
+		{0, "1 сек"},
+		{1, "1 сек"},
+		{45, "45 сек"},
+		{60, "1 мин"},
+		{75, "1 мин 15 сек"},
+		{3600, "1 ч"},
+		{3665, "1 ч 1 мин"},
+		{7320, "2 ч 2 мин"},
+	}
+
+	for _, tc := range cases {
+		res := formatDuration(tc.inputSec)
+		if res != tc.expected {
+			t.Errorf("formatDuration(%d) = %q, expected %q", tc.inputSec, res, tc.expected)
+		}
+	}
+}
