@@ -20,14 +20,14 @@ import (
 func getBinPath(rel string) string {
 	abs, err := filepath.Abs(rel)
 	if err == nil {
-		if _, err := os.Stat(abs); err == nil {
+		if fi, err := os.Stat(abs); err == nil && !fi.IsDir() {
 			return abs
 		}
 	}
 	// Check panel/bin
 	panelBin, err := filepath.Abs("../../panel/bin/" + filepath.Base(rel))
 	if err == nil {
-		if _, err := os.Stat(panelBin); err == nil {
+		if fi, err := os.Stat(panelBin); err == nil && !fi.IsDir() {
 			return panelBin
 		}
 	}
