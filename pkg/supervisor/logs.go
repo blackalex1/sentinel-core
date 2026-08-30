@@ -3,7 +3,6 @@ package supervisor
 import (
 	"bufio"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,7 +196,6 @@ func StreamPipe(coreName string, r io.Reader) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		log.Printf("[%s] %s", coreName, line)
 		defaultBroadcaster.PushLine(coreName, line)
 	}
 }
@@ -243,7 +241,6 @@ func TailFile(coreName string, filePath string, stopCh <-chan struct{}) {
 		if err == nil {
 			trimmed := strings.TrimRight(line, "\r\n")
 			if trimmed != "" {
-				log.Printf("[%s] %s", coreName, trimmed)
 				defaultBroadcaster.PushLine(coreName, trimmed)
 			}
 		} else if err == io.EOF {
