@@ -103,7 +103,10 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 	pm.processes[normName] = cmd
 	log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SUPERVISOR_STARTED", normName, cmd.Process.Pid, binPath))
 
-	// Auto-register telemetry endpoints from config
+	// Auto-register telemetry endpoints and tail log files from config
+	stopCh := make(chan struct{})
+	var logFileToTail string
+
 	if configPath != "" {
 		if data, err := os.ReadFile(configPath); err == nil {
 			if normName == "hysteria2" {
@@ -123,17 +126,45 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 				}
 			} else if normName == "sing-box" {
 				var sbCfg struct {
+					Log struct {
+						Output string `json:"output"`
+					} `json:"log"`
 					Experimental struct {
 						ClashAPI struct {
 							ExternalController string `json:"external_controller"`
 						} `json:"clash_api"`
 					} `json:"experimental"`
 				}
-				if err := json.Unmarshal(data, &sbCfg); err == nil && sbCfg.Experimental.ClashAPI.ExternalController != "" {
-					GetController().Configure(sbCfg.Experimental.ClashAPI.ExternalController, nil, nil)
+				if err := json.Unmarshal(data, &sbCfg); err == nil {
+					if sbCfg.Log.Output != "" {
+						logFileToTail = sbCfg.Log.Output
+					}
+					if sbCfg.Experimental.ClashAPI.ExternalController != "" {
+						GetController().Configure(sbCfg.Experimental.ClashAPI.ExternalController, nil, nil)
+					}
+				}
+			} else if normName == "xray" {
+				var xCfg struct {
+					Log struct {
+						Access string `json:"access"`
+						Error  string `json:"error"`
+					} `json:"log"`
+				}
+				if err := json.Unmarshal(data, &xCfg); err == nil {
+					if xCfg.Log.Access != "" {
+						logFileToTail = xCfg.Log.Access
+					}
 				}
 			}
 		}
+	}
+
+	if logFileToTail != "" {
+		go TailFile(normName, logFileToTail, stopCh)
+	}
+	defaultLogPath := filepath.Join(filepath.Dir(binPath), normName+".log")
+	if defaultLogPath != logFileToTail && defaultLogPath != "" {
+		go TailFile(normName, defaultLogPath, stopCh)
 	}
 
 	// Stream stdout & stderr lines directly into in-memory broadcaster
@@ -145,15 +176,16 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 	}
 
 	// Track process completion in background
-	go func(name string, proc *exec.Cmd) {
+	go func(name string, proc *exec.Cmd, stopTail chan struct{}) {
 		err := proc.Wait()
+		close(stopTail)
 		pm.mu.Lock()
 		if current, exists := pm.processes[name]; exists && current == proc {
 			delete(pm.processes, name)
 		}
 		pm.mu.Unlock()
 		log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SUPERVISOR_FINISHED", name, err))
-	}(normName, cmd)
+	}(normName, cmd, stopCh)
 
 	return nil
 }

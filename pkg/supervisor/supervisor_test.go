@@ -3,6 +3,7 @@ package supervisor
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1006,5 +1007,80 @@ func TestSessionTracker_MultiClientGoogleTraffic(t *testing.T) {
 		t.Errorf("GetRecentEventsJSON missing mobile_user1: %s", eventsJSON)
 	}
 }
+
+func TestProcessManager_PureStdoutPipeStreaming_ZeroDiskIO(t *testing.T) {
+	broadcaster := GetLogBroadcaster()
+	tracker := GetSessionTracker()
+
+	line1 := "+0000 2026-08-31 15:00:01 INFO [77777777 0ms] inbound/vless[inbound-8]: inbound connection from 188.170.74.53:30276"
+	line2 := "+0000 2026-08-31 15:00:01 INFO [77777777 82ms] inbound/vless[inbound-8]: [phone] inbound connection to www.google.com:443"
+	line3 := "+0000 2026-08-31 15:00:01 INFO [77777777 84ms] outbound/hysteria2[primary]: outbound connection to www.google.com:443"
+
+	// 1. Create in-memory pipe simulator (io.Pipe) - pure RAM, zero disk IO
+	pr, pw := io.Pipe()
+
+	streamDone := make(chan struct{})
+	go func() {
+		StreamPipe("sing-box", pr)
+		close(streamDone)
+	}()
+
+	// 2. Stream real Sing-box lines into pipe
+	go func() {
+		fmt.Fprintln(pw, line1)
+		time.Sleep(10 * time.Millisecond)
+		fmt.Fprintln(pw, line2)
+		time.Sleep(10 * time.Millisecond)
+		fmt.Fprintln(pw, line3)
+		pw.Close()
+	}()
+
+	<-streamDone
+
+	// 3. Verify LogBroadcaster in-memory history
+	history := broadcaster.GetHistory("sing-box", 50)
+	foundL1 := false
+	foundL2 := false
+	for _, l := range history {
+		if strings.Contains(l, "188.170.74.53:30276") {
+			foundL1 = true
+		}
+		if strings.Contains(l, "[phone] inbound connection to www.google.com:443") {
+			foundL2 = true
+		}
+	}
+	if !foundL1 {
+		t.Errorf("stdout pipe line 1 was not captured in LogBroadcaster memory: %+v", history)
+	}
+	if !foundL2 {
+		t.Errorf("stdout pipe line 2 was not captured in LogBroadcaster memory: %+v", history)
+	}
+
+	// 4. Verify SessionTracker pure RAM state
+	active := tracker.GetActiveSessions()
+	var phoneSession *SessionInfo
+	for _, s := range active {
+		if s.Email == "phone" && s.IP == "188.170.74.53" {
+			phoneSession = s
+			break
+		}
+	}
+	if phoneSession == nil {
+		t.Fatalf("expected active session for phone with IP 188.170.74.53 captured purely from stdout pipe, got: %+v", active)
+	}
+
+	events := tracker.GetRecentEvents(0, 100)
+	var phoneConnectEvent *SessionEvent
+	for _, ev := range events {
+		if ev.Email == "phone" && ev.IP == "188.170.74.53" && ev.Action == "connect" {
+			phoneConnectEvent = ev
+			break
+		}
+	}
+	if phoneConnectEvent == nil {
+		t.Fatalf("expected connect event for phone with IP 188.170.74.53 captured purely from stdout pipe, events: %+v", events)
+	}
+}
+
 
 
