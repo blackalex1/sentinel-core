@@ -1012,9 +1012,9 @@ func TestProcessManager_PureStdoutPipeStreaming_ZeroDiskIO(t *testing.T) {
 	broadcaster := GetLogBroadcaster()
 	tracker := GetSessionTracker()
 
-	line1 := "+0000 2026-08-31 15:00:01 INFO [77777777 0ms] inbound/vless[inbound-8]: inbound connection from 188.170.74.53:30276"
-	line2 := "+0000 2026-08-31 15:00:01 INFO [77777777 82ms] inbound/vless[inbound-8]: [phone] inbound connection to www.google.com:443"
-	line3 := "+0000 2026-08-31 15:00:01 INFO [77777777 84ms] outbound/hysteria2[primary]: outbound connection to www.google.com:443"
+	line1 := "+0000 2026-08-31 15:00:01 INFO [77777777 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.200:30276"
+	line2 := "+0000 2026-08-31 15:00:01 INFO [77777777 82ms] inbound/vless[inbound-8]: [test_client_vless] inbound connection to www.example.com:443"
+	line3 := "+0000 2026-08-31 15:00:01 INFO [77777777 84ms] outbound/hysteria2[primary]: outbound connection to www.example.com:443"
 
 	// 1. Create in-memory pipe simulator (io.Pipe) - pure RAM, zero disk IO
 	pr, pw := io.Pipe()
@@ -1025,7 +1025,7 @@ func TestProcessManager_PureStdoutPipeStreaming_ZeroDiskIO(t *testing.T) {
 		close(streamDone)
 	}()
 
-	// 2. Stream real Sing-box lines into pipe
+	// 2. Stream Sing-box lines into pipe
 	go func() {
 		fmt.Fprintln(pw, line1)
 		time.Sleep(10 * time.Millisecond)
@@ -1042,10 +1042,10 @@ func TestProcessManager_PureStdoutPipeStreaming_ZeroDiskIO(t *testing.T) {
 	foundL1 := false
 	foundL2 := false
 	for _, l := range history {
-		if strings.Contains(l, "188.170.74.53:30276") {
+		if strings.Contains(l, "198.51.100.200:30276") {
 			foundL1 = true
 		}
-		if strings.Contains(l, "[phone] inbound connection to www.google.com:443") {
+		if strings.Contains(l, "[test_client_vless] inbound connection to www.example.com:443") {
 			foundL2 = true
 		}
 	}
@@ -1058,27 +1058,27 @@ func TestProcessManager_PureStdoutPipeStreaming_ZeroDiskIO(t *testing.T) {
 
 	// 4. Verify SessionTracker pure RAM state
 	active := tracker.GetActiveSessions()
-	var phoneSession *SessionInfo
+	var testSession *SessionInfo
 	for _, s := range active {
-		if s.Email == "phone" && s.IP == "188.170.74.53" {
-			phoneSession = s
+		if s.Email == "test_client_vless" && s.IP == "198.51.100.200" {
+			testSession = s
 			break
 		}
 	}
-	if phoneSession == nil {
-		t.Fatalf("expected active session for phone with IP 188.170.74.53 captured purely from stdout pipe, got: %+v", active)
+	if testSession == nil {
+		t.Fatalf("expected active session for test_client_vless with IP 198.51.100.200 captured purely from stdout pipe, got: %+v", active)
 	}
 
 	events := tracker.GetRecentEvents(0, 100)
-	var phoneConnectEvent *SessionEvent
+	var testConnectEvent *SessionEvent
 	for _, ev := range events {
-		if ev.Email == "phone" && ev.IP == "188.170.74.53" && ev.Action == "connect" {
-			phoneConnectEvent = ev
+		if ev.Email == "test_client_vless" && ev.IP == "198.51.100.200" && ev.Action == "connect" {
+			testConnectEvent = ev
 			break
 		}
 	}
-	if phoneConnectEvent == nil {
-		t.Fatalf("expected connect event for phone with IP 188.170.74.53 captured purely from stdout pipe, events: %+v", events)
+	if testConnectEvent == nil {
+		t.Fatalf("expected connect event for test_client_vless with IP 198.51.100.200 captured purely from stdout pipe, events: %+v", events)
 	}
 }
 
