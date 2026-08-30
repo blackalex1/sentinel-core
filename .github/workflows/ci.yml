@@ -25,6 +25,7 @@ jobs:
         with:
           go-version: '1.24'
           cache: true
+          cache-dependency-path: go.mod
 
       - name: Run Tests with Race Detector (Multi-threaded & Parallel)
         run: |
