@@ -930,3 +930,81 @@ func TestSessionTracker_SingBoxAnonymizedStream(t *testing.T) {
 	}
 }
 
+func TestSessionTracker_MultiClientGoogleTraffic(t *testing.T) {
+	st := GetSessionTracker()
+
+	// Interleaved stream from 3 distinct clients making concurrent requests to Google DNS (8.8.8.8:53/853) & Google Web (443)
+	concurrentLogs := []string{
+		// Client 1 (mobile_user1 from 198.51.100.10) connects to 8.8.8.8:853
+		"+0000 2026-08-31 12:00:01 INFO [11111111 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.10:32402",
+		// Client 2 (mobile_user2 from 203.0.113.20) connects to 8.8.8.8:53
+		"+0000 2026-08-31 12:00:01 INFO [22222222 0ms] inbound/vless[inbound-8]: inbound connection from 203.0.113.20:41150",
+		// Client 3 (pc_user from 192.0.2.30) connects to www.google.com:443
+		"+0000 2026-08-31 12:00:01 INFO [33333333 0ms] inbound/vless[inbound-8]: inbound connection from 192.0.2.30:52110",
+
+		// Interleaved authentications & routings
+		"+0000 2026-08-31 12:00:01 INFO [11111111 45ms] inbound/vless[inbound-8]: [mobile_user1] inbound connection to 8.8.8.8:853",
+		"+0000 2026-08-31 12:00:01 INFO [11111111 45ms] outbound/direct[direct]: outbound connection to 8.8.8.8:853",
+		"+0000 2026-08-31 12:00:01 INFO [22222222 50ms] inbound/vless[inbound-8]: [mobile_user2] inbound connection to 8.8.8.8:53",
+		"+0000 2026-08-31 12:00:01 INFO [22222222 50ms] outbound/hysteria2[primary]: outbound connection to 8.8.8.8:53",
+		"+0000 2026-08-31 12:00:01 INFO [33333333 80ms] inbound/vless[inbound-8]: [pc_user] inbound connection to www.google.com:443",
+		"+0000 2026-08-31 12:00:01 INFO [33333333 80ms] outbound/hysteria2[primary]: outbound connection to www.google.com:443",
+
+		// Subsequent requests from same users (different ports / connection IDs)
+		"+0000 2026-08-31 12:00:02 INFO [11111112 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.10:32408",
+		"+0000 2026-08-31 12:00:02 INFO [11111112 40ms] inbound/vless[inbound-8]: [mobile_user1] inbound connection to dns.google:443",
+	}
+
+	for _, line := range concurrentLogs {
+		st.ProcessLogLine("sing-box", line)
+	}
+
+	// 1. Verify Active Sessions
+	active := st.GetActiveSessions()
+	expected := map[string]string{
+		"mobile_user1": "198.51.100.10",
+		"mobile_user2": "203.0.113.20",
+		"pc_user":      "192.0.2.30",
+	}
+
+	for expUser, expIP := range expected {
+		found := false
+		for _, s := range active {
+			if s.Email == expUser && s.IP == expIP {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("active session not found for %s (%s), current active: %+v", expUser, expIP, active)
+		}
+	}
+
+	// 2. Verify Online Emails
+	emails := st.GetOnlineEmails()
+	for expUser := range expected {
+		found := false
+		for _, e := range emails {
+			if e == expUser {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("online email not found for %s, current: %+v", expUser, emails)
+		}
+	}
+
+	// 3. Verify JSON C-FFI output
+	jsonActive := st.GetActiveSessionsJSON()
+	if !strings.Contains(jsonActive, "mobile_user1") || !strings.Contains(jsonActive, "198.51.100.10") {
+		t.Errorf("GetActiveSessionsJSON missing mobile_user1: %s", jsonActive)
+	}
+
+	eventsJSON := st.GetRecentEventsJSON(0, 100)
+	if !strings.Contains(eventsJSON, "mobile_user1") || !strings.Contains(eventsJSON, "198.51.100.10") {
+		t.Errorf("GetRecentEventsJSON missing mobile_user1: %s", eventsJSON)
+	}
+}
+
+
