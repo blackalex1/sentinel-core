@@ -200,6 +200,63 @@ func StreamPipe(coreName string, r io.Reader) {
 	}
 }
 
+// TailFile follows a log file line-by-line in real time, pushing new lines into LogBroadcaster.
+func TailFile(coreName string, filePath string, stopCh <-chan struct{}) {
+	if filePath == "" {
+		return
+	}
+	cleanPath := filepath.Clean(filePath)
+
+	// Wait up to 5s for the log file to appear if it is being created by a newly started process
+	for i := 0; i < 50; i++ {
+		select {
+		case <-stopCh:
+			return
+		default:
+		}
+		if _, err := os.Stat(cleanPath); err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	file, err := os.Open(cleanPath)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	// Seek to end of file to tail live additions
+	_, _ = file.Seek(0, io.SeekEnd)
+	reader := bufio.NewReader(file)
+
+	for {
+		select {
+		case <-stopCh:
+			return
+		default:
+		}
+
+		line, err := reader.ReadString('\n')
+		if err == nil {
+			trimmed := strings.TrimRight(line, "\r\n")
+			if trimmed != "" {
+				defaultBroadcaster.PushLine(coreName, trimmed)
+			}
+		} else if err == io.EOF {
+			// Check if file was truncated/recreated
+			if fi, statErr := os.Stat(cleanPath); statErr == nil {
+				if curOffset, _ := file.Seek(0, io.SeekCurrent); fi.Size() < curOffset {
+					_, _ = file.Seek(0, io.SeekStart)
+				}
+			}
+			time.Sleep(50 * time.Millisecond)
+		} else {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+}
+
 // ReadCoreLogs reads the last N lines from the given log file path.
 func ReadCoreLogs(logPath string, maxLines int) ([]string, error) {
 	if maxLines <= 0 {
@@ -247,3 +304,4 @@ func ReadCoreLogs(logPath string, maxLines int) ([]string, error) {
 
 	return lines, nil
 }
+
