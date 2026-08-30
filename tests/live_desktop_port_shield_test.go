@@ -54,6 +54,7 @@ func TestSingBoxLive_DesktopSensitivePortShielding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to resolve config path: %v", err)
 	}
+	_ = os.MkdirAll(filepath.Dir(configFile), 0755)
 	if err := os.WriteFile(configFile, []byte(res.ConfigJSON), 0644); err != nil {
 		t.Fatalf("failed to write test config: %v", err)
 	}
