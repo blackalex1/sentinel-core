@@ -50,8 +50,8 @@ var (
 	defaultTrackerOnce sync.Once
 
 	singboxConnIDPattern = regexp.MustCompile(`\[([0-9]{1,12})(?:\s+[^\]]+)?\]`)
-	singboxFromPattern   = regexp.MustCompile(`(?:from|client)\s+(?:tcp:|udp:)?\[?([0-9a-fA-F.:]+)\]?(?::\d+)?`)
-	singboxUserPattern   = regexp.MustCompile(`(?:\[([a-zA-Z0-9_.+@-]+)\]\s+(?:inbound connection|accepted|router)|(?:user|email)[:=]\s*([a-zA-Z0-9_.+@-]+))`)
+	singboxFromPattern   = regexp.MustCompile(`(?:from|client|accepted\s+(?:tcp|udp):)\s*(?:tcp:|udp:)?\[?([0-9a-fA-F.:]+)\]?(?::\d+)?`)
+	singboxUserPattern   = regexp.MustCompile(`(?:inbound/[a-zA-Z0-9_-]+(?:\[[^\]]+\])?:\s*\[([a-zA-Z0-9_.+@-]+)\]|\[([a-zA-Z0-9_.+@-]+)\]\s+(?:inbound connection|accepted|router|route|match)|(?:user|email)[:=\s]+([a-zA-Z0-9_.+@-]+))`)
 	xrayAcceptedPattern  = regexp.MustCompile(`(?:from\s+)?(?:tcp:|udp:)?\[?([0-9a-fA-F.:]+)\]?(?::\d+)?\s+accepted`)
 	xrayEmailPattern     = regexp.MustCompile(`email:\s+([^\s,\]]+)`)
 	hyTCPRegex           = regexp.MustCompile(`\[(?:TCP|UDP)\]\s+([^\s:]+):\d+\s+->\s+\S+\s+\(user:\s*([^\s\)]+)\)`)
@@ -113,11 +113,11 @@ func (st *SessionTracker) ProcessLogLine(coreName, line string) {
 }
 
 func (st *SessionTracker) processSingBoxLine(line string, now int64, nowStr string) {
-	if !strings.Contains(line, "inbound connection") && !strings.Contains(line, "accepted") {
+	if !strings.Contains(line, "inbound connection") && !strings.Contains(line, "accepted") && !strings.Contains(line, "inbound/") {
 		return
 	}
 
-	// Extract connection ID if present (e.g. [1978868683 155ms], [12345], [conn-1])
+	// Extract connection ID if present (e.g. [388439065 0ms], [388439065 79ms])
 	var connID string
 	if m := singboxConnIDPattern.FindStringSubmatch(line); len(m) > 1 {
 		connID = m[1]
@@ -129,14 +129,16 @@ func (st *SessionTracker) processSingBoxLine(line string, now int64, nowStr stri
 	}
 
 	// 1. Stage 1: Handshake with Source IP
-	if strings.Contains(line, "inbound connection from") || strings.Contains(line, "from ") || fromIP != "" {
+	if strings.Contains(line, "inbound connection from") || strings.Contains(line, "from ") || strings.Contains(line, "client") || fromIP != "" {
 		if fromIP != "" && connID != "" {
 			st.mu.Lock()
 			st.singboxConns[connID] = fromIP
-			if len(st.singboxConns) > 1000 {
+			if len(st.singboxConns) > 5000 {
+				count := 0
 				for k := range st.singboxConns {
 					delete(st.singboxConns, k)
-					if len(st.singboxConns) <= 500 {
+					count++
+					if count >= 2500 {
 						break
 					}
 				}
@@ -147,9 +149,12 @@ func (st *SessionTracker) processSingBoxLine(line string, now int64, nowStr stri
 
 	// 2. Stage 2: Authenticated user routing
 	if m := singboxUserPattern.FindStringSubmatch(line); len(m) > 1 {
-		email := m[1]
-		if email == "" && len(m) > 2 {
-			email = m[2]
+		var email string
+		for _, g := range m[1:] {
+			if g != "" {
+				email = g
+				break
+			}
 		}
 		email = strings.Trim(email, "[]'\"")
 		if email != "" && email != "INFO" && email != "ERROR" && email != "WARN" && email != "DEBUG" && !strings.HasPrefix(email, "inbound-") {

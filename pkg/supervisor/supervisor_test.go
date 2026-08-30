@@ -870,3 +870,63 @@ func TestFormatDuration(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionTracker_SingBoxAnonymizedStream(t *testing.T) {
+	st := GetSessionTracker()
+
+	anonymizedLogs := []string{
+		"+0000 2026-08-31 10:00:01 INFO [10000001 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.50:5019",
+		"+0000 2026-08-31 10:00:01 INFO [10000001 79ms] inbound/vless[inbound-8]: [client_alpha] inbound connection to www.example.com:443",
+		"+0000 2026-08-31 10:00:01 INFO [10000001 79ms] outbound/hysteria2[primary]: outbound connection to www.example.com:443",
+		"+0000 2026-08-31 10:00:02 INFO [10000002 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.50:18611",
+		"+0000 2026-08-31 10:00:02 INFO [10000002 89ms] inbound/vless[inbound-8]: [client_alpha] inbound connection to [2001:db8::a]:443",
+		"+0000 2026-08-31 10:00:03 INFO [20000001 0ms] inbound/vless[inbound-8]: inbound connection from 203.0.113.88:28658",
+		"+0000 2026-08-31 10:00:03 INFO [20000002 0ms] inbound/vless[inbound-8]: inbound connection from 203.0.113.88:31042",
+		"+0000 2026-08-31 10:00:03 INFO [20000001 80ms] inbound/vless[inbound-8]: [client_beta] inbound connection to [2001:db8::a]:443",
+		"+0000 2026-08-31 10:00:03 INFO [20000002 77ms] inbound/vless[inbound-8]: [client_beta] inbound connection to www.example.com:443",
+		"+0000 2026-08-31 10:00:04 INFO [30000001 0ms] inbound/vless[inbound-8]: inbound connection from 192.0.2.77:14959",
+		"+0000 2026-08-31 10:00:04 INFO [30000001 96ms] inbound/vless[inbound-8]: [user.gamma@domain.com] route to outbound/hysteria2[primary]",
+	}
+
+	for _, line := range anonymizedLogs {
+		st.ProcessLogLine("singbox", line)
+	}
+
+	active := st.GetActiveSessions()
+	alphaFound := false
+	betaFound := false
+	for _, s := range active {
+		if s.Email == "client_alpha" && s.IP == "198.51.100.50" {
+			alphaFound = true
+		}
+		if s.Email == "client_beta" && s.IP == "203.0.113.88" {
+			betaFound = true
+		}
+	}
+
+	if !alphaFound {
+		t.Errorf("expected active session for client_alpha with IP 198.51.100.50, active=%+v", active)
+	}
+	if !betaFound {
+		t.Errorf("expected active session for client_beta with IP 203.0.113.88, active=%+v", active)
+	}
+
+	events := st.GetRecentEvents(0, 100)
+	var hasAlphaEvent, hasBetaEvent bool
+	for _, ev := range events {
+		if ev.Email == "client_alpha" && ev.IP == "198.51.100.50" && ev.Action == "connect" {
+			hasAlphaEvent = true
+		}
+		if ev.Email == "client_beta" && ev.IP == "203.0.113.88" && ev.Action == "connect" {
+			hasBetaEvent = true
+		}
+	}
+
+	if !hasAlphaEvent {
+		t.Errorf("expected connect event for client_alpha from 198.51.100.50")
+	}
+	if !hasBetaEvent {
+		t.Errorf("expected connect event for client_beta from 203.0.113.88")
+	}
+}
+
