@@ -194,8 +194,6 @@ func (st *SessionTracker) processSingBoxLine(line string, now int64, nowStr stri
 			st.mu.RLock()
 			srcIP = st.singboxConns[connID]
 			st.mu.RUnlock()
-		} else {
-			srcIP = extractAnyNonLoopbackIP(line)
 		}
 
 		if srcIP != "" {
@@ -477,7 +475,7 @@ func (st *SessionTracker) GetRecentEvents(sinceTimestamp int64, limit int) []*Se
 	res := make([]*SessionEvent, 0, limit)
 	for i := len(st.events) - 1; i >= 0 && len(res) < limit; i-- {
 		ev := st.events[i]
-		if ev.Timestamp >= sinceTimestamp {
+		if sinceTimestamp <= 0 || ev.Timestamp > sinceTimestamp {
 			res = append(res, ev)
 		}
 	}
