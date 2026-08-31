@@ -1325,7 +1325,38 @@ func TestSessionTracker_RealSingBoxProductionStream(t *testing.T) {
 	}
 }
 
+func TestSessionTracker_RealProductionHandshakeWithUntrustedIP(t *testing.T) {
+	st := &SessionTracker{
+		sessions:     make(map[string]*SessionInfo),
+		singboxConns: make(map[string]string),
+		events:       make([]*SessionEvent, 0, 100),
+		maxEvents:    100,
+	}
 
+	rawLogs := []string{
+		"+0000 2026-08-31 15:02:11 INFO [3250429930 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.89:3144",
+		"+0000 2026-08-31 15:02:11 INFO [3250429930 109ms] inbound/vless[inbound-8]: [phone] inbound connection to mtalk.google.com:5228",
+		"+0000 2026-08-31 15:02:11 INFO [3250429930 109ms] outbound/hysteria2[hysteria2-cybergrid-servequake-com-primary]: outbound connection to mtalk.google.com:5228",
+	}
 
+	for _, l := range rawLogs {
+		st.ProcessLogLine("sing-box", l)
+	}
 
+	active := st.GetActiveSessions()
+	if len(active) != 1 {
+		t.Fatalf("expected 1 active session, got %d: %+v", len(active), active)
+	}
+	if active[0].Email != "phone" || active[0].IP != "198.51.100.89" {
+		t.Fatalf("expected active session phone@198.51.100.89, got: %+v", active[0])
+	}
+
+	events := st.GetRecentEvents(0, 100)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 connect event, got %d: %+v", len(events), events)
+	}
+	if events[0].Action != "connect" || events[0].Email != "phone" || events[0].IP != "198.51.100.89" {
+		t.Fatalf("unexpected event: %+v", events[0])
+	}
+}
 
