@@ -17,14 +17,20 @@ var (
 	singboxConnIDRegex    = regexp.MustCompile(`\[(\d+)\s+\d+m?s\]`)
 	singboxProcEventRegex = regexp.MustCompile(`(?:router:\s+)?found process path:\s+([^\r\n]+)`)
 	singboxMetadataRegex  = regexp.MustCompile(`(?:169\.254\.169\.254|metadata\.google\.internal|100\.100\.100\.200)`)
+
+	// singboxFromClientRegex extracts (connID, clientIP) from "inbound connection from IP:PORT" lines.
+	// sing-box emits this before the "[user] inbound connection to DST:PORT" line for the same connID.
+	singboxFromClientRegex = regexp.MustCompile(`\[(\d+)\s+[\d.]+(?:ms|µs|us|s|ns|m)\]\s+\S+:\s+inbound connection from\s+([^\s:]+):\d+`)
 )
 
 // SingboxParser handles log parsing and connection translation for Sing-box.
 type SingboxParser struct {
-	connProcCache sync.Map // map[string]string (connID -> processName)
-	connPathCache sync.Map // map[string]string (connID -> fullExecutablePath)
-	pendingEvents sync.Map // map[string]*ParsedLogEvent (connID -> *ParsedLogEvent)
+	connProcCache    sync.Map // map[string]string (connID -> processName)
+	connPathCache    sync.Map // map[string]string (connID -> fullExecutablePath)
+	pendingEvents    sync.Map // map[string]*ParsedLogEvent (connID -> *ParsedLogEvent)
+	connClientIPCache sync.Map // map[string]string (connID -> real client source IP)
 }
+
 
 // NewSingboxParser creates a new Singbox log parser.
 func NewSingboxParser() *SingboxParser {
@@ -42,11 +48,24 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 		return nil, false
 	}
 
-	// 0. Correlate found process path event with connection ID
+	// Extract connection ID if present (e.g. [338227781 0ms], [338227781 79ms])
 	var connID string
 	if cMatches := singboxConnIDRegex.FindStringSubmatch(cleanLine); len(cMatches) >= 2 {
 		connID = cMatches[1]
 	}
+
+	// Stage 0a: Cache real client IP from "inbound connection from IP:PORT" lines.
+	// sing-box emits this as the first line for a new connection, before the
+	// "[user] inbound connection to DST:PORT" line with the same connID.
+	if strings.Contains(cleanLine, "inbound connection from") {
+		if fm := singboxFromClientRegex.FindStringSubmatch(cleanLine); len(fm) >= 3 {
+			p.connClientIPCache.Store(fm[1], fm[2])
+		}
+		// "from" lines carry no security event by themselves — return early.
+		return nil, false
+	}
+
+	// Stage 0b: Correlate found process path event with connection ID
 	if pMatches := singboxProcEventRegex.FindStringSubmatch(cleanLine); len(pMatches) >= 2 {
 		fullPath := strings.TrimSpace(pMatches[1])
 		procName := cleanProcessName(fullPath)
@@ -72,10 +91,18 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 				proc = v.(string)
 			}
 		}
+		// Look up real client IP from the preceding "from" line for this connID.
+		var clientIP string
+		if connID != "" {
+			if v, ok := p.connClientIPCache.Load(connID); ok {
+				clientIP = v.(string)
+			}
+		}
 
 		return &ParsedLogEvent{
 			CoreName:    "sing-box",
 			ClientRawID: proc,
+			ClientIP:    clientIP,
 			TargetHost:  "169.254.169.254",
 			TargetPort:  80,
 			EventType:   "SSRF_PROBE",
@@ -90,12 +117,17 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 
 		identifiedID := ""
 		identifiedPath := ""
+		var clientIP string
 		if connID != "" {
 			if v, ok := p.connProcCache.Load(connID); ok {
 				identifiedID = v.(string)
 			}
 			if v, ok := p.connPathCache.Load(connID); ok {
 				identifiedPath = v.(string)
+			}
+			// Retrieve real source IP from "from" line cache.
+			if v, ok := p.connClientIPCache.Load(connID); ok {
+				clientIP = v.(string)
 			}
 		}
 		if identifiedID == "" {
@@ -107,6 +139,7 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 			p.pendingEvents.Store(connID, &ParsedLogEvent{
 				CoreName:    "sing-box",
 				ClientRawID: "pending",
+				ClientIP:    clientIP,
 				TargetHost:  targetHost,
 				TargetPort:  port,
 				EventType:   "SENSITIVE_PORT_PROBE",
@@ -130,6 +163,7 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 		return &ParsedLogEvent{
 			CoreName:       "sing-box",
 			ClientRawID:    identifiedID,
+			ClientIP:       clientIP,
 			ExecutablePath: identifiedPath,
 			TargetHost:     targetHost,
 			TargetPort:     port,
@@ -137,6 +171,7 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 			RawLine:        cleanLine,
 		}, true
 	}
+
 
 	// 3. Check for router rule rejects
 	if matches := singboxRejectRegex.FindStringSubmatch(cleanLine); len(matches) >= 3 {
@@ -205,6 +240,24 @@ func ParseSingboxConnections(rawJSON []byte) ([]ActiveConnection, error) {
 	return res, nil
 }
 
+func isIgnoredTagOrLevel(val string) bool {
+	if val == "" {
+		return true
+	}
+	upper := strings.ToUpper(val)
+	if upper == "INFO" || upper == "DEBUG" || upper == "WARN" || upper == "WARNING" || upper == "ERROR" || upper == "TRACE" || upper == "FATAL" || upper == "PANIC" {
+		return true
+	}
+	lower := strings.ToLower(val)
+	if lower == "direct" || lower == "block" || lower == "blocked" || lower == "dns" || lower == "dns-out" || lower == "dns-direct" || lower == "mixed-in" || lower == "vless-in" || lower == "ss-in" || lower == "trojan-in" || lower == "hysteria-in" || lower == "tuic-in" {
+		return true
+	}
+	if strings.HasPrefix(lower, "inbound-") && !strings.Contains(lower, "@") {
+		return true
+	}
+	return false
+}
+
 func cleanProcessName(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.Trim(s, "()\"',:;[] \t\r\n")
@@ -221,11 +274,34 @@ func extractProcessOrUser(line string) string {
 			raw = m[2]
 		}
 		proc := cleanProcessName(raw)
-		if proc != "" && !strings.Contains(proc, ":") {
+		if proc != "" && !strings.Contains(proc, ":") && !isIgnoredTagOrLevel(proc) {
 			return proc
 		}
 	}
-	return extractUserID(line)
+	// Check sing-box [user] bracket tags before "inbound connection to" or router match
+	if m := sbBracketUser.FindStringSubmatch(line); len(m) >= 2 {
+		u := cleanProcessName(m[1])
+		if u != "" && !isIgnoredTagOrLevel(u) {
+			return u
+		}
+	}
+	if m := sbInboundTagRegex.FindStringSubmatch(line); len(m) >= 2 {
+		u := cleanProcessName(m[1])
+		if u != "" && !isIgnoredTagOrLevel(u) {
+			return u
+		}
+	}
+	if m := sbRouterMatchRegex.FindStringSubmatch(line); len(m) >= 2 {
+		u := cleanProcessName(m[1])
+		if u != "" && !isIgnoredTagOrLevel(u) {
+			return u
+		}
+	}
+	u := extractUserID(line)
+	if !isIgnoredTagOrLevel(u) {
+		return u
+	}
+	return ""
 }
 
 func extractUserID(line string) string {
@@ -236,9 +312,10 @@ func extractUserID(line string) string {
 		}
 	}
 	for i, w := range words {
-		if (w == "user" || w == "client") && i+1 < len(words) {
+		if (w == "user" || w == "client" || w == "username" || w == "auth") && i+1 < len(words) {
 			return strings.Trim(words[i+1], "(),:;[]")
 		}
 	}
 	return ""
 }
+
