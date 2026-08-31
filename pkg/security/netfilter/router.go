@@ -28,7 +28,6 @@ var (
 		8006: true, // Proxmox VE Web GUI
 		2222: true, // Alt SSH / Direct Admin
 		3389: true, // RDP
-		8443: true, // Alt HTTPS
 	}
 
 	// Known malware / exploit / worm ports
@@ -112,6 +111,17 @@ func IsPrivateOrLocalIP(ipStr string) bool {
 
 // Evaluate performs behavioral analysis on the connection event without relying on static whitelists.
 func (d *RouterThreatDetector) Evaluate(ev *RouterEvent) {
+	// Fast-Path: 99.9% of traffic is normal (ports 80, 443, 53, etc.) and not directed to local gateway
+	desc, isExploit := dangerousExploitPorts[ev.DstPort]
+	isSensitive := defaultSensitivePorts[ev.DstPort]
+	isGatewayTarget := (ev.DstHost == "192.168.1.1" || ev.DstHost == "127.0.0.1" || strings.HasPrefix(ev.DstHost, "192.168.")) && (isSensitive || isExploit)
+
+	if !isExploit && !isSensitive && !isGatewayTarget {
+		ev.IsThreat = false
+		ev.ShouldAutoBan = false
+		return
+	}
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -124,20 +134,23 @@ func (d *RouterThreatDetector) Evaluate(ev *RouterEvent) {
 		Proto:     ev.Proto,
 	})
 
-	// Prune old entries outside sliding window
+	// Prune old entries outside sliding window in-place to avoid GC memory allocations
 	cutoff := now.Add(-d.window)
-	var active []RouterConnectionRecord
-	for _, rec := range d.history[ev.SrcIP] {
+	history := d.history[ev.SrcIP]
+	n := 0
+	for _, rec := range history {
 		if rec.Timestamp.After(cutoff) {
-			active = append(active, rec)
+			history[n] = rec
+			n++
 		}
 	}
-	d.history[ev.SrcIP] = active
+	history = history[:n]
+	d.history[ev.SrcIP] = history
 
 	// 1. Check dangerous exploit ports (Telnet, SMB, Mirai, ADB)
-	if desc, isExploit := dangerousExploitPorts[ev.DstPort]; isExploit {
+	if isExploit {
 		exploitCount := 0
-		for _, rec := range active {
+		for _, rec := range history {
 			if _, ok := dangerousExploitPorts[rec.DstPort]; ok {
 				exploitCount++
 			}
@@ -155,76 +168,74 @@ func (d *RouterThreatDetector) Evaluate(ev *RouterEvent) {
 	}
 
 	// 2. Check if destination is the local router / gateway
-	if ev.DstHost == "192.168.1.1" || ev.DstHost == "127.0.0.1" || strings.HasPrefix(ev.DstHost, "192.168.") {
-		if defaultSensitivePorts[ev.DstPort] {
-			gatewayCount := 0
-			for _, rec := range active {
-				if (rec.DstHost == "192.168.1.1" || rec.DstHost == "127.0.0.1") && defaultSensitivePorts[rec.DstPort] {
-					gatewayCount++
-				}
+	if isGatewayTarget {
+		gatewayCount := 0
+		for _, rec := range history {
+			if (rec.DstHost == "192.168.1.1" || rec.DstHost == "127.0.0.1") && (defaultSensitivePorts[rec.DstPort] || dangerousExploitPorts[rec.DstPort] != "") {
+				gatewayCount++
 			}
-			if gatewayCount >= 3 {
-				ev.IsThreat = true
-				ev.ShouldAutoBan = true
-				ev.ThreatType = "gateway_attack"
-				ev.Reason = "Атака на сервисы шлюза (порт " + strconv.Itoa(ev.DstPort) + " " + ev.Proto + ")"
-				return
-			}
+		}
+		if gatewayCount >= 3 {
+			ev.IsThreat = true
+			ev.ShouldAutoBan = true
+			ev.ThreatType = "gateway_attack"
+			ev.Reason = "Атака на сервисы шлюза (порт " + strconv.Itoa(ev.DstPort) + " " + ev.Proto + ")"
+			return
 		}
 	}
 
-	// Filter sensitive port connections in active window
-	var sensitiveConns []RouterConnectionRecord
-	distinctMap := make(map[string]bool)
-	sameTarget1m := 0
-	sameTarget3m := 0
-	cutoff1m := now.Add(-1 * time.Minute)
-	cutoff3m := now.Add(-3 * time.Minute)
+	// 3. Sensitive port analysis (SSH, RDP, Proxmox VE)
+	if isSensitive {
+		distinctMap := make(map[string]bool)
+		sameTarget1m := 0
+		sameTarget3m := 0
+		cutoff1m := now.Add(-1 * time.Minute)
+		cutoff3m := now.Add(-3 * time.Minute)
 
-	for _, rec := range active {
-		if defaultSensitivePorts[rec.DstPort] {
-			sensitiveConns = append(sensitiveConns, rec)
-			distinctMap[rec.DstHost] = true
-			if rec.DstHost == ev.DstHost && rec.DstPort == ev.DstPort {
-				if rec.Timestamp.After(cutoff1m) {
-					sameTarget1m++
-				}
-				if rec.Timestamp.After(cutoff3m) {
-					sameTarget3m++
+		for _, rec := range history {
+			if rec.DstPort == ev.DstPort {
+				distinctMap[rec.DstHost] = true
+				if rec.DstHost == ev.DstHost {
+					if rec.Timestamp.After(cutoff1m) {
+						sameTarget1m++
+					}
+					if rec.Timestamp.After(cutoff3m) {
+						sameTarget3m++
+					}
 				}
 			}
 		}
+
+		ev.DistinctHosts = len(distinctMap)
+		ev.BurstRate1m = sameTarget1m
+
+		// Horizontal scan: 3+ distinct destination IPs on the SAME sensitive port in window
+		if len(distinctMap) >= d.scanLimit {
+			ev.IsThreat = true
+			ev.ShouldAutoBan = true
+			ev.ThreatType = "horizontal_scan"
+			ev.Reason = "Массовое сканирование сети (" + strconv.Itoa(len(distinctMap)) + " целевых IP на порт " + strconv.Itoa(ev.DstPort) + ")"
+			return
+		}
+
+		// Vertical brute-force: 10+ conns/min or 15+ conns/3min to single target
+		if sameTarget1m >= d.burstLimit1m {
+			ev.IsThreat = true
+			ev.ShouldAutoBan = true
+			ev.ThreatType = "vertical_bruteforce"
+			ev.Reason = "Брутфорс SSH/портов (" + strconv.Itoa(sameTarget1m) + " подкл/мин к " + ev.DstHost + ":" + strconv.Itoa(ev.DstPort) + ")"
+			return
+		}
+		if sameTarget3m >= d.burstLimit3m {
+			ev.IsThreat = true
+			ev.ShouldAutoBan = true
+			ev.ThreatType = "vertical_bruteforce"
+			ev.Reason = "Брутфорс SSH/портов (" + strconv.Itoa(sameTarget3m) + " подкл/3мин к " + ev.DstHost + ":" + strconv.Itoa(ev.DstPort) + ")"
+			return
+		}
 	}
 
-	ev.DistinctHosts = len(distinctMap)
-	ev.BurstRate1m = sameTarget1m
-
-	// 3. Horizontal network scan: 3+ distinct destination IPs on sensitive ports in 10 min
-	if len(distinctMap) >= d.scanLimit {
-		ev.IsThreat = true
-		ev.ShouldAutoBan = true
-		ev.ThreatType = "horizontal_scan"
-		ev.Reason = "Массовое сканирование сети (" + strconv.Itoa(len(distinctMap)) + " целевых IP на порт " + strconv.Itoa(ev.DstPort) + ")"
-		return
-	}
-
-	// 4. Vertical brute-force on single target: 10+ connections in 60s or 15+ in 180s
-	if sameTarget1m >= d.burstLimit1m {
-		ev.IsThreat = true
-		ev.ShouldAutoBan = true
-		ev.ThreatType = "vertical_bruteforce"
-		ev.Reason = "Брутфорс SSH/портов (" + strconv.Itoa(sameTarget1m) + " подкл/мин к " + ev.DstHost + ":" + strconv.Itoa(ev.DstPort) + ")"
-		return
-	}
-	if sameTarget3m >= d.burstLimit3m {
-		ev.IsThreat = true
-		ev.ShouldAutoBan = true
-		ev.ThreatType = "vertical_bruteforce"
-		ev.Reason = "Брутфорс SSH/портов (" + strconv.Itoa(sameTarget3m) + " подкл/3мин к " + ev.DstHost + ":" + strconv.Itoa(ev.DstPort) + ")"
-		return
-	}
-
-	// 5. Normal single-host traffic (1-4 connections): Not a threat
+	// 4. Normal single-host traffic: Not a threat
 	ev.IsThreat = false
 	ev.ShouldAutoBan = false
 }
