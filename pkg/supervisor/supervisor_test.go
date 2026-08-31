@@ -1273,6 +1273,58 @@ func TestSessionTracker_SimulateRealisticVLESSWebBrowsingAndGitHubDownload(t *te
 	}
 }
 
+func TestSessionTracker_RealSingBoxProductionStream(t *testing.T) {
+	st := &SessionTracker{
+		sessions:     make(map[string]*SessionInfo),
+		singboxConns: make(map[string]string),
+		events:       make([]*SessionEvent, 0, 100),
+		maxEvents:    100,
+	}
+
+	prodLogs := []string{
+		"+0000 2026-08-31 11:19:52 INFO [4100723628 70ms] outbound/hysteria2[primary]: outbound connection to [2001:db8::a]:443",
+		"+0000 2026-08-31 11:19:53 INFO [4256241913 0ms] inbound/vless[inbound-8]: inbound connection from 192.0.2.10:37130",
+		"+0000 2026-08-31 11:19:53 INFO [4256241913 202ms] inbound/vless[inbound-8]: [client_user_roaming] inbound connection to www.example.com:443",
+		"+0000 2026-08-31 11:19:53 INFO [4256241913 202ms] outbound/hysteria2[primary]: outbound connection to www.example.com:443",
+		"+0000 2026-08-31 11:19:53 INFO [2594817763 0ms] inbound/vless[inbound-8]: inbound connection from 192.0.2.10:37144",
+		"+0000 2026-08-31 11:19:53 ERROR [2594817763 56ms] inbound/vless[inbound-8]: process connection from 192.0.2.10:37144: EOF",
+		"+0000 2026-08-31 11:19:54 INFO [145717122 0ms] inbound/vless[inbound-8]: inbound connection from 192.0.2.10:37150",
+		"+0000 2026-08-31 11:19:54 INFO [145717122 51ms] inbound/vless[inbound-8]: [client_user_roaming] inbound connection to [2001:db8::a]:443",
+		"+0000 2026-08-31 11:19:54 INFO [145717122 51ms] outbound/hysteria2[primary]: outbound connection to [2001:db8::a]:443",
+		"+0000 2026-08-31 11:19:54 INFO [273469817 0ms] inbound/vless[inbound-8]: inbound connection from 192.0.2.10:37164",
+		"+0000 2026-08-31 11:19:54 INFO [273469817 45ms] inbound/vless[inbound-8]: [client_user_roaming] inbound connection to www.example.com:443",
+		"+0000 2026-08-31 11:19:54 INFO [273469817 45ms] outbound/hysteria2[primary]: outbound connection to www.example.com:443",
+
+		// User roams from Wi-Fi (192.0.2.10) to Mobile LTE (198.51.100.71)
+		"+0000 2026-08-31 11:20:08 INFO [3637169170 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.71:10911",
+		"+0000 2026-08-31 11:20:08 INFO [3637169170 78ms] inbound/vless[inbound-8]: [client_user_roaming] inbound connection to 192.0.2.50:5222",
+		"+0000 2026-08-31 11:20:08 INFO [3637169170 78ms] outbound/hysteria2[primary]: outbound connection to 192.0.2.50:5222",
+		"+0000 2026-08-31 11:20:09 INFO [2390507552 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.71:2983",
+		"+0000 2026-08-31 11:20:09 INFO [2390507552 85ms] inbound/vless[inbound-8]: [client_user_roaming] inbound connection to 192.0.2.53:853",
+		"+0000 2026-08-31 11:20:09 INFO [2390507552 85ms] outbound/hysteria2[primary]: outbound connection to 192.0.2.53:853",
+	}
+
+	for _, l := range prodLogs {
+		st.ProcessLogLine("sing-box", l)
+	}
+
+	active := st.GetActiveSessions()
+	var foundActive bool
+	for _, s := range active {
+		if s.Email == "client_user_roaming" && s.IP == "198.51.100.71" {
+			foundActive = true
+		}
+	}
+	if !foundActive {
+		t.Fatalf("expected active session for client_user_roaming on LTE IP 198.51.100.71, active: %+v", active)
+	}
+
+	events := st.GetRecentEvents(0, 100)
+	if len(events) < 2 {
+		t.Fatalf("expected at least connect to Wi-Fi and roam to LTE events, got: %+v", events)
+	}
+}
+
 
 
 
