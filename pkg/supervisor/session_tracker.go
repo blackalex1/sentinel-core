@@ -507,7 +507,7 @@ func (st *SessionTracker) inactivityCleanerLoop() {
 		}
 
 		for key, sess := range st.sessions {
-			if now-sess.LastSeenAt > 90 {
+			if now-sess.LastSeenAt > 180 {
 				durSec := now - sess.StartedAt
 				durStr := formatDuration(durSec)
 
