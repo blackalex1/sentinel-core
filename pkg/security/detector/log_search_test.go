@@ -34,7 +34,7 @@ func TestLogSearchXrayAndSingbox(t *testing.T) {
 }
 
 func TestLogSearchHysteria(t *testing.T) {
-	nowStr := time.Now().Format("2006-01-02T15:04:05Z")
+	nowStr := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	lines := []string{
 		fmt.Sprintf(`{"time":"%s","id":"tunnel_user","reqAddr":"13.251.130.193:22"}`, nowStr),
 		fmt.Sprintf(`{"time":"%s","auth":"alice@hy2.com","addr":"192.168.1.88:45678"}`, nowStr),

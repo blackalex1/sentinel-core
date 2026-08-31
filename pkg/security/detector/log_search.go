@@ -2,7 +2,6 @@ package detector
 
 import (
 	"encoding/json"
-	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -10,7 +9,8 @@ import (
 )
 
 var (
-	xrayTimeRegex     = regexp.MustCompile(`(\d{4}[/-]\d{2}[/-]\d{2}[ T]\d{2}:\d{2}:\d{2})`)
+	// xrayTimeRegex optionally captures a leading +HHMM timezone offset (sing-box format: "+0300 2026-08-31 14:10:09").
+	xrayTimeRegex     = regexp.MustCompile(`([+-]\d{4})\s+(\d{4}[/-]\d{2}[/-]\d{2}[ T]\d{2}:\d{2}:\d{2})|(\d{4}[/-]\d{2}[/-]\d{2}[ T]\d{2}:\d{2}:\d{2})`)
 	hyTimeJSONRegex   = regexp.MustCompile(`\{.*"time"\s*:\s*"([^"]+)".*\}`)
 	hyTimeISO8601     = regexp.MustCompile(`(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})`)
 	hyTimeNoYear      = regexp.MustCompile(`\b(\d{2}-\d{2}T\d{2}:\d{2}:\d{2})`)
@@ -23,17 +23,17 @@ var (
 	hyDestHostRegex   = regexp.MustCompile(`->\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\d+`)
 	hyClientConnRegex = regexp.MustCompile(`(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`)
 
-	sbInboundTagRegex   = regexp.MustCompile(`(?:inbound/[^:]+|inbound[^:]*):\s*\[([a-zA-Z0-9_\.\-]+)\]\s+inbound connection to`)
-	sbBracketUser       = regexp.MustCompile(`\[([a-zA-Z0-9_\.\-]+)\]\s+inbound connection to`)
-	sbRouterMatchRegex  = regexp.MustCompile(`router:\s*match\[\d+\]\s*(?:inbound/[^\s]+\s+)?\[([a-zA-Z0-9_\.\-]+)\]`)
-	sbAcceptedRegex     = regexp.MustCompile(`accepted\s+(?:tcp|udp):?\S*\s+\[([a-zA-Z0-9_\.\-]+)\]`)
-	xrayEmailRegex      = regexp.MustCompile(`email:\s*(\S+)`)
-	xrayAcceptedRegex   = regexp.MustCompile(`accepted\s+(?:tcp|udp):\S+\s+\[[^\]]+\]\s+([a-zA-Z0-9_\.\-]+)`)
-	xrayUserTagRegex    = regexp.MustCompile(`(?:user|username|clientUser|auth_user):\s*([^\s,\]]+)`)
-	xrayJSONUserRegex   = regexp.MustCompile(`"(?:user|username|id|email|auth)"\s*:\s*"([^"]+)"`)
-	sbConnUserRegex     = regexp.MustCompile(`inbound connection\s+.*?\s+\[([a-zA-Z0-9_\.\-]+)\]`)
-	sbEndUserRegex      = regexp.MustCompile(`\[([a-zA-Z0-9_\.\-]+@[a-zA-Z0-9_\.\-]+|[a-zA-Z0-9_\.\-]+)\]\s*$`)
-	genericEmailRegex   = regexp.MustCompile(`([a-zA-Z0-9_\.\-]+@[a-zA-Z0-9_\.\-]+)`)
+	sbInboundTagRegex = regexp.MustCompile(`(?:inbound/[^:]+|inbound[^:]*):\s*\[([a-zA-Z0-9_\.\-]+)\]\s+inbound connection to`)
+	sbBracketUser     = regexp.MustCompile(`\[([a-zA-Z0-9_\.\-]+)\]\s+inbound connection to`)
+	sbRouterMatchRegex = regexp.MustCompile(`router:\s*match\[\d+\]\s*(?:inbound/[^\s]+\s+)?\[([a-zA-Z0-9_\.\-]+)\]`)
+	sbAcceptedRegex   = regexp.MustCompile(`accepted\s+(?:tcp|udp):?\S*\s+\[([a-zA-Z0-9_\.\-]+)\]`)
+	xrayEmailRegex    = regexp.MustCompile(`email:\s*(\S+)`)
+	xrayAcceptedRegex = regexp.MustCompile(`accepted\s+(?:tcp|udp):\S+\s+\[[^\]]+\]\s+([a-zA-Z0-9_\.\-]+)`)
+	xrayUserTagRegex  = regexp.MustCompile(`(?:user|username|clientUser|auth_user):\s*([^\s,\]]+)`)
+	xrayJSONUserRegex = regexp.MustCompile(`"(?:user|username|id|email|auth)"\s*:\s*"([^"]+)"`)
+	sbConnUserRegex   = regexp.MustCompile(`inbound connection\s+.*?\s+\[([a-zA-Z0-9_\.\-]+)\]`)
+	sbEndUserRegex    = regexp.MustCompile(`\[([a-zA-Z0-9_\.\-]+@[a-zA-Z0-9_\.\-]+|[a-zA-Z0-9_\.\-]+)\]\s*$`)
+	genericEmailRegex = regexp.MustCompile(`([a-zA-Z0-9_\.\-]+@[a-zA-Z0-9_\.\-]+)`)
 
 	xrayIPAcceptedRegex = regexp.MustCompile(`(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\d+\s+(?:accepted|inbound connection)`)
 	xrayIPFromRegex     = regexp.MustCompile(`from\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`)
@@ -41,19 +41,82 @@ var (
 	sbInboundConnTag    = regexp.MustCompile(`\[([^\]]+)\]\s+inbound connection`)
 	xrayDestMatchRegex  = regexp.MustCompile(`(?:accepted|connection)\s+(?:tcp|udp):([^:]+):`)
 	ipv4CheckRegex      = regexp.MustCompile(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$`)
+
+	// sing-box two-line format: connID links "inbound connection from IP" and "[user] inbound connection to DST".
+	// sbConnIDLineRegex extracts the connID from any timed log line: [338227781 79ms].
+	sbConnIDLineRegex = regexp.MustCompile(`\[(\d+)\s+[\d.]+(?:ms|µs|us|s|ns|m)\]`)
+	// sbFromIPLineRegex extracts (connID, clientIP) from "inbound connection from IP:PORT" lines.
+	sbFromIPLineRegex = regexp.MustCompile(`\[(\d+)\s+[\d.]+(?:ms|µs|us|s|ns|m)\]\s+\S+:\s+inbound connection from\s+([^\s:]+):\d+`)
 )
 
 // ParseXrayTimestamp extracts a time.Time from an Xray/Sing-box log line.
+// Handles the sing-box format with timezone prefix: "+0000 2026-08-31 11:33:20"
+// as well as plain Xray format: "2026/08/31 11:33:20".
+// The returned time is always in UTC.
 func ParseXrayTimestamp(line string) *time.Time {
-	if m := xrayTimeRegex.FindStringSubmatch(line); len(m) >= 2 {
-		normalized := strings.ReplaceAll(m[1], "/", "-")
-		normalized = strings.ReplaceAll(normalized, "T", " ")
-		if t, err := time.Parse("2006-01-02 15:04:05", normalized); err == nil {
-			return &t
-		}
+	m := xrayTimeRegex.FindStringSubmatch(line)
+	if len(m) < 2 {
+		return nil
 	}
-	return nil
+
+	var tzOffset, dateStr string
+	// xrayTimeRegex has 3 groups: (tzOffset) (dateWithTZ) | (dateNoTZ)
+	if m[1] != "" {
+		// Groups 1+2: timezone offset + date string
+		tzOffset = m[1]
+		dateStr = m[2]
+	} else {
+		// Group 3: plain date without timezone prefix (Xray format)
+		dateStr = m[3]
+	}
+	if dateStr == "" {
+		return nil
+	}
+
+	normalized := strings.ReplaceAll(dateStr, "/", "-")
+	normalized = strings.ReplaceAll(normalized, "T", " ")
+
+	if tzOffset != "" && len(tzOffset) == 5 {
+		// sing-box: explicit offset present — parse naive, then shift to UTC.
+		// "+0300 14:10:09" → UTC 11:10:09 ; "+0000 11:10:09" → UTC 11:10:09
+		t, err := time.Parse("2006-01-02 15:04:05", normalized)
+		if err != nil {
+			return nil
+		}
+		sign := 1
+		if tzOffset[0] == '-' {
+			sign = -1
+		}
+		hh := int(tzOffset[1]-'0')*10 + int(tzOffset[2]-'0')
+		mm := int(tzOffset[3]-'0')*10 + int(tzOffset[4]-'0')
+		offsetSec := sign * (hh*3600 + mm*60)
+		utc := t.Add(-time.Duration(offsetSec) * time.Second).UTC()
+		return &utc
+	}
+
+	// No offset — Xray writes in server local time without prefix.
+	// Parse as local time so the result converts correctly to real UTC.
+	t, err := time.ParseInLocation("2006-01-02 15:04:05", normalized, time.Local)
+	if err != nil {
+		return nil
+	}
+	utc := t.UTC()
+	return &utc
 }
+
+// checkAge returns true if the log timestamp is within maxAgeSec seconds of now.
+// logTime must be in UTC (as returned by ParseXrayTimestamp / ParseHysteriaTimestamp).
+func checkAge(logTime *time.Time, maxAgeSec int) bool {
+	if logTime == nil || maxAgeSec <= 0 {
+		return true
+	}
+	diff := time.Since(*logTime)
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff <= time.Duration(maxAgeSec)*time.Second
+}
+
 
 // ParseHysteriaTimestamp extracts a time.Time from a Hysteria 2 log line.
 func ParseHysteriaTimestamp(line string) *time.Time {
@@ -107,23 +170,6 @@ func ParseHysteriaTimestamp(line string) *time.Time {
 	}
 
 	return nil
-}
-
-func checkAge(logTime *time.Time, maxAgeSec int) bool {
-	if logTime == nil || maxAgeSec <= 0 {
-		return true
-	}
-	nowLocal := time.Now()
-	nowUTC := time.Now().UTC()
-
-	logSec := logTime.Unix()
-	nowLocalNaiveSec := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), nowLocal.Hour(), nowLocal.Minute(), nowLocal.Second(), 0, time.UTC).Unix()
-	nowUTCNaiveSec := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), nowUTC.Hour(), nowUTC.Minute(), nowUTC.Second(), 0, time.UTC).Unix()
-
-	diffLocal := math.Abs(float64(nowLocalNaiveSec - logSec))
-	diffUTC := math.Abs(float64(nowUTCNaiveSec - logSec))
-
-	return diffLocal <= float64(maxAgeSec) || diffUTC <= float64(maxAgeSec)
 }
 
 // FindEmailInHysteriaLog searches Hysteria 2 log lines for the user ID associated with a target IP:port.
@@ -286,6 +332,9 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 		}
 
 		foundEmail = strings.Trim(foundEmail, "[]'\"")
+		if isIgnoredTagOrLevel(foundEmail) {
+			return "", "", ""
+		}
 
 		if m := xrayIPAcceptedRegex.FindStringSubmatch(line); len(m) >= 2 {
 			foundIP = m[1]
@@ -306,6 +355,18 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 		return foundEmail, foundIP, foundTag
 	}
 
+	// Pre-compute connID→clientIP map for sing-box two-line log format.
+	// Sing-box splits source IP and username across two lines sharing the same connID:
+	//   [338227781 0ms]  inbound/vless[..]: inbound connection from 1.2.3.4:PORT   ← IP here
+	//   [338227781 42ms] inbound/vless[..]: [phone] inbound connection to DST:PORT  ← username here
+	// Without this map the Pass 1 IP filter drops the username line.
+	connIDToIP := make(map[string]string)
+	for _, l := range lines {
+		if m := sbFromIPLineRegex.FindStringSubmatch(l); len(m) >= 3 {
+			connIDToIP[m[1]] = m[2]
+		}
+	}
+
 	// Pass 1: Match port and IP/client_ip
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := lines[i]
@@ -319,12 +380,30 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 		}
 
 		matchIP := (dstIP != "" && strings.Contains(line, dstIP)) || (clientIP != "" && strings.Contains(line, clientIP)) || dstIP == ""
+
+		// Augmented match for sing-box: check if this line's connID maps to the requested clientIP.
+		if !matchIP && clientIP != "" {
+			if m := sbConnIDLineRegex.FindStringSubmatch(line); len(m) >= 2 {
+				if cachedIP, ok := connIDToIP[m[1]]; ok && cachedIP == clientIP {
+					matchIP = true
+				}
+			}
+		}
+
 		if !matchIP {
 			continue
 		}
 
 		e, p, tag := extractInfo(line)
 		if e != "" {
+			// If IP not found in this line, fill from connID cache.
+			if p == "" || p == clientIP {
+				if m := sbConnIDLineRegex.FindStringSubmatch(line); len(m) >= 2 {
+					if cachedIP, ok := connIDToIP[m[1]]; ok {
+						p = cachedIP
+					}
+				}
+			}
 			return e, p, tag
 		}
 	}
@@ -352,9 +431,18 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 
 		e, p, tag := extractInfo(line)
 		if e != "" {
+			// Fill IP from connID cache if missing.
+			if p == "" {
+				if m := sbConnIDLineRegex.FindStringSubmatch(line); len(m) >= 2 {
+					if cachedIP, ok := connIDToIP[m[1]]; ok {
+						p = cachedIP
+					}
+				}
+			}
 			return e, p, tag
 		}
 	}
 
 	return "", "", ""
 }
+

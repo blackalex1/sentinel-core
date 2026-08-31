@@ -160,6 +160,20 @@ func TestSingboxParser_ProcessRecognition(t *testing.T) {
 			expectedHost: "198.51.100.22",
 			expectedPort: 80,
 		},
+		{
+			name:         "Sing-box server inbound with username tag and cached from IP",
+			logLine:      "+0000 2026-08-31 11:33:20 INFO [3342564101 42ms] inbound/vless[inbound-8]: [phone] inbound connection to api4.my-ip.io:443",
+			expectedID:   "phone",
+			expectedHost: "api4.my-ip.io",
+			expectedPort: 443,
+		},
+	}
+
+	// Pre-feed the "from" line for connID 3342564101 so parser has cached source IP
+	fromLine := "+0000 2026-08-31 11:33:20 INFO [3342564101 0ms]  inbound/vless[inbound-8]: inbound connection from 192.168.1.1:46980"
+	evFrom, okFrom := parser.ParseLogLine(fromLine)
+	if okFrom || evFrom != nil {
+		t.Errorf("expected from-line to return (nil, false), got (%v, %v)", evFrom, okFrom)
 	}
 
 	for _, tc := range tests {
@@ -177,9 +191,15 @@ func TestSingboxParser_ProcessRecognition(t *testing.T) {
 			if ev.TargetPort != tc.expectedPort {
 				t.Errorf("expected TargetPort %d, got %d", tc.expectedPort, ev.TargetPort)
 			}
+			if tc.name == "Sing-box server inbound with username tag and cached from IP" {
+				if ev.ClientIP != "192.168.1.1" {
+					t.Errorf("expected ClientIP '192.168.1.1', got '%s'", ev.ClientIP)
+				}
+			}
 		})
 	}
 }
+
 
 func TestXrayParser_ProcessRecognition(t *testing.T) {
 	parser := NewXrayParser()
