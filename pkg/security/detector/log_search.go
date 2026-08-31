@@ -229,9 +229,9 @@ func FindEmailInHysteriaLog(lines []string, dstIP string, dstPort int, maxAgeSec
 		}
 
 		destHost := ""
-		if strings.Contains(line, "{") {
+		if idx := strings.Index(line, "{"); idx != -1 {
 			var obj map[string]any
-			if err := json.Unmarshal([]byte(line), &obj); err == nil {
+			if err := json.Unmarshal([]byte(line[idx:]), &obj); err == nil {
 				reqVal, _ := obj["reqAddr"].(string)
 				if reqVal == "" {
 					reqVal, _ = obj["req"].(string)
@@ -271,9 +271,9 @@ func FindClientIPForEmailInHysteriaLog(lines []string, email string, maxAgeSec i
 			continue
 		}
 
-		if strings.Contains(line, "{") {
+		if idx := strings.Index(line, "{"); idx != -1 {
 			var obj map[string]any
-			if err := json.Unmarshal([]byte(line), &obj); err == nil {
+			if err := json.Unmarshal([]byte(line[idx:]), &obj); err == nil {
 				idVal, _ := obj["id"].(string)
 				if idVal == "" {
 					idVal, _ = obj["auth"].(string)
