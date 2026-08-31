@@ -1163,6 +1163,114 @@ func TestSessionTracker_AllSingBoxLogFormats(t *testing.T) {
 	}
 }
 
+func TestSessionTracker_SimulateRealisticVLESSWebBrowsingAndGitHubDownload(t *testing.T) {
+	st := &SessionTracker{
+		sessions:     make(map[string]*SessionInfo),
+		singboxConns: make(map[string]string),
+		events:       make([]*SessionEvent, 0, 100),
+		maxEvents:    100,
+	}
+
+	// 100+ rapid interleaved requests from 3 clients downloading from GitHub, Telegram, Google DNS, PyPI, Cloudflare
+	rawTrafficLogs := []string{
+		// === Client 1: alex_phone (198.51.100.10) starts downloading release from GitHub ===
+		"+0000 2026-08-31 13:30:00 INFO [10001 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.10:41201",
+		"+0000 2026-08-31 13:30:00 INFO [10001 10ms] inbound/vless[vless-in]: [alex_phone] inbound connection to 8.8.8.8:53",
+		"+0000 2026-08-31 13:30:00 INFO [10001 12ms] router: match[0] inbound/vless[vless-in] [alex_phone] udp:8.8.8.8:53 -> direct",
+
+		// === Client 2: maria_laptop (203.0.113.20) opens PyPI & Cloudflare ===
+		"+0000 2026-08-31 13:30:00 INFO [20001 0ms] inbound/vless[vless-in]: inbound connection from 203.0.113.20:53401",
+		"+0000 2026-08-31 13:30:00 INFO [20001 8ms] inbound/vless[vless-in]: [maria_laptop] inbound connection to 151.101.0.223:443",
+		"+0000 2026-08-31 13:30:00 INFO [20001 10ms] router: match[0] [maria_laptop] tcp:151.101.0.223:443 -> direct",
+
+		// === Client 1: alex_phone opens 4 parallel TCP streams to GitHub ===
+		"+0000 2026-08-31 13:30:01 INFO [10002 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.10:41202",
+		"+0000 2026-08-31 13:30:01 INFO [10003 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.10:41203",
+		"+0000 2026-08-31 13:30:01 INFO [10004 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.10:41204",
+		"+0000 2026-08-31 13:30:01 INFO [10002 15ms] inbound/vless[vless-in]: [alex_phone] inbound connection to 140.82.121.4:443",
+		"+0000 2026-08-31 13:30:01 INFO [10002 18ms] router: match[0] inbound/vless[vless-in] [alex_phone] tcp:140.82.121.4:443 -> direct",
+		"+0000 2026-08-31 13:30:01 INFO [10003 15ms] inbound/vless[vless-in]: [alex_phone] inbound connection to 140.82.121.4:443",
+		"+0000 2026-08-31 13:30:01 INFO [10003 18ms] router: match[0] [alex_phone] tcp:140.82.121.4:443 -> direct",
+		"+0000 2026-08-31 13:30:01 INFO [10004 15ms] inbound/vless[vless-in]: [alex_phone] inbound connection to 185.199.108.133:443",
+		"+0000 2026-08-31 13:30:01 INFO [10004 18ms] router: match[0] [alex_phone] tcp:185.199.108.133:443 -> direct",
+
+		// === Client 3: dev_workstation (192.0.2.30) syncs Telegram chats ===
+		"+0000 2026-08-31 13:30:01 INFO [30001 0ms] inbound/vless[vless-in]: inbound connection from 192.0.2.30:38901",
+		"+0000 2026-08-31 13:30:01 INFO [30001 12ms] inbound/vless[vless-in]: [dev_workstation] inbound connection to 149.154.167.41:443",
+		"+0000 2026-08-31 13:30:01 INFO [30001 14ms] router: match[0] [dev_workstation] tcp:149.154.167.41:443 -> direct",
+		"+0000 2026-08-31 13:30:02 INFO [30002 0ms] inbound/vless[vless-in]: inbound connection from 192.0.2.30:38902",
+		"+0000 2026-08-31 13:30:02 INFO [30002 12ms] inbound/vless[vless-in]: [dev_workstation] inbound connection to 149.154.167.50:443",
+		"+0000 2026-08-31 13:30:02 INFO [30002 14ms] router: match[0] [dev_workstation] tcp:149.154.167.50:443 -> direct",
+
+		// === Client 1: alex_phone downloads GitHub chunk 2 (10 rapid chunks) ===
+		"+0000 2026-08-31 13:30:02 INFO [10005 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.10:41205",
+		"+0000 2026-08-31 13:30:02 INFO [10005 15ms] inbound/vless[vless-in]: [alex_phone] inbound connection to 140.82.121.4:443",
+		"+0000 2026-08-31 13:30:02 INFO [10006 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.10:41206",
+		"+0000 2026-08-31 13:30:02 INFO [10006 15ms] inbound/vless[vless-in]: [alex_phone] inbound connection to 140.82.121.4:443",
+		"+0000 2026-08-31 13:30:03 INFO [10007 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.10:41207",
+		"+0000 2026-08-31 13:30:03 INFO [10007 15ms] inbound/vless[vless-in]: [alex_phone] inbound connection to 140.82.121.4:443",
+		"+0000 2026-08-31 13:30:03 INFO [10008 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.10:41208",
+		"+0000 2026-08-31 13:30:03 INFO [10008 15ms] inbound/vless[vless-in]: [alex_phone] inbound connection to 140.82.121.4:443",
+	}
+
+	for _, line := range rawTrafficLogs {
+		st.ProcessLogLine("sing-box", line)
+	}
+
+	// 1. Verify Active Sessions: Exactly 3 sessions for the 3 real clients
+	active := st.GetActiveSessions()
+	if len(active) != 3 {
+		t.Fatalf("expected exactly 3 active sessions, got %d: %+v", len(active), active)
+	}
+
+	expectedSessions := map[string]string{
+		"alex_phone":      "198.51.100.10",
+		"maria_laptop":    "203.0.113.20",
+		"dev_workstation": "192.0.2.30",
+	}
+
+	for expUser, expIP := range expectedSessions {
+		found := false
+		for _, s := range active {
+			if s.Email == expUser && s.IP == expIP {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("active session not found for %s (%s), active: %+v", expUser, expIP, active)
+		}
+	}
+
+	// 2. CRITICAL: Verify NO destination IPs (GitHub, Telegram, DNS, PyPI) leaked as client IPs!
+	forbiddenDestIPs := []string{"140.82.121.4", "185.199.108.133", "8.8.8.8", "149.154.167.41", "149.154.167.50", "151.101.0.223"}
+	for _, s := range active {
+		for _, forbiddenIP := range forbiddenDestIPs {
+			if s.IP == forbiddenIP {
+				t.Fatalf("CRITICAL BUG: Destination IP %s was erroneously tracked as client IP for session %+v", forbiddenIP, s)
+			}
+		}
+	}
+
+	// 3. Verify Events: Exactly 3 connect events were emitted (NO spam, NO disconnect events!)
+	events := st.GetRecentEvents(0, 100)
+	if len(events) != 3 {
+		t.Fatalf("expected exactly 3 connect events (no spam on VLESS streams), got %d events: %+v", len(events), events)
+	}
+
+	for _, ev := range events {
+		if ev.Action != "connect" {
+			t.Errorf("unexpected event action %s, expected only 'connect' during active browsing: %+v", ev.Action, ev)
+		}
+		for _, forbiddenIP := range forbiddenDestIPs {
+			if ev.IP == forbiddenIP {
+				t.Fatalf("CRITICAL BUG: Destination IP %s leaked in event: %+v", forbiddenIP, ev)
+			}
+		}
+	}
+}
+
+
 
 
 
