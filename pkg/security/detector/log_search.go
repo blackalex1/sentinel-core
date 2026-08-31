@@ -23,15 +23,17 @@ var (
 	hyDestHostRegex   = regexp.MustCompile(`->\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\d+`)
 	hyClientConnRegex = regexp.MustCompile(`(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`)
 
-	sbInboundTagRegex = regexp.MustCompile(`(?:inbound/[^:]+|inbound[^:]*):\s*\[([a-zA-Z0-9_\.\-]+)\]\s+inbound connection to`)
-	sbBracketUser     = regexp.MustCompile(`\[([a-zA-Z0-9_\.\-]+)\]\s+inbound connection to`)
-	xrayEmailRegex    = regexp.MustCompile(`email:\s*(\S+)`)
-	xrayAcceptedRegex = regexp.MustCompile(`accepted\s+(?:tcp|udp):\S+\s+\[[^\]]+\]\s+([a-zA-Z0-9_\.\-]+)`)
-	xrayUserTagRegex  = regexp.MustCompile(`(?:user|username|clientUser|auth_user):\s*([^\s,\]]+)`)
-	xrayJSONUserRegex = regexp.MustCompile(`"(?:user|username|id|email|auth)"\s*:\s*"([^"]+)"`)
-	sbConnUserRegex   = regexp.MustCompile(`inbound connection\s+.*?\s+\[([a-zA-Z0-9_\.\-]+)\]`)
-	sbEndUserRegex    = regexp.MustCompile(`\[([a-zA-Z0-9_\.\-]+@[a-zA-Z0-9_\.\-]+|[a-zA-Z0-9_\.\-]+)\]\s*$`)
-	genericEmailRegex = regexp.MustCompile(`([a-zA-Z0-9_\.\-]+@[a-zA-Z0-9_\.\-]+)`)
+	sbInboundTagRegex   = regexp.MustCompile(`(?:inbound/[^:]+|inbound[^:]*):\s*\[([a-zA-Z0-9_\.\-]+)\]\s+inbound connection to`)
+	sbBracketUser       = regexp.MustCompile(`\[([a-zA-Z0-9_\.\-]+)\]\s+inbound connection to`)
+	sbRouterMatchRegex  = regexp.MustCompile(`router:\s*match\[\d+\]\s*(?:inbound/[^\s]+\s+)?\[([a-zA-Z0-9_\.\-]+)\]`)
+	sbAcceptedRegex     = regexp.MustCompile(`accepted\s+(?:tcp|udp):?\S*\s+\[([a-zA-Z0-9_\.\-]+)\]`)
+	xrayEmailRegex      = regexp.MustCompile(`email:\s*(\S+)`)
+	xrayAcceptedRegex   = regexp.MustCompile(`accepted\s+(?:tcp|udp):\S+\s+\[[^\]]+\]\s+([a-zA-Z0-9_\.\-]+)`)
+	xrayUserTagRegex    = regexp.MustCompile(`(?:user|username|clientUser|auth_user):\s*([^\s,\]]+)`)
+	xrayJSONUserRegex   = regexp.MustCompile(`"(?:user|username|id|email|auth)"\s*:\s*"([^"]+)"`)
+	sbConnUserRegex     = regexp.MustCompile(`inbound connection\s+.*?\s+\[([a-zA-Z0-9_\.\-]+)\]`)
+	sbEndUserRegex      = regexp.MustCompile(`\[([a-zA-Z0-9_\.\-]+@[a-zA-Z0-9_\.\-]+|[a-zA-Z0-9_\.\-]+)\]\s*$`)
+	genericEmailRegex   = regexp.MustCompile(`([a-zA-Z0-9_\.\-]+@[a-zA-Z0-9_\.\-]+)`)
 
 	xrayIPAcceptedRegex = regexp.MustCompile(`(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\d+\s+(?:accepted|inbound connection)`)
 	xrayIPFromRegex     = regexp.MustCompile(`from\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`)
@@ -255,11 +257,15 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 	dstPortStr := ":" + strconv.Itoa(dstPort)
 
 	extractInfo := func(line string) (foundEmail, foundIP, foundTag string) {
-		if m := sbInboundTagRegex.FindStringSubmatch(line); len(m) >= 2 {
+		if m := xrayEmailRegex.FindStringSubmatch(line); len(m) >= 2 {
+			foundEmail = m[1]
+		} else if m := sbInboundTagRegex.FindStringSubmatch(line); len(m) >= 2 {
 			foundEmail = m[1]
 		} else if m := sbBracketUser.FindStringSubmatch(line); len(m) >= 2 {
 			foundEmail = m[1]
-		} else if m := xrayEmailRegex.FindStringSubmatch(line); len(m) >= 2 {
+		} else if m := sbRouterMatchRegex.FindStringSubmatch(line); len(m) >= 2 {
+			foundEmail = m[1]
+		} else if m := genericEmailRegex.FindStringSubmatch(line); len(m) >= 2 {
 			foundEmail = m[1]
 		} else if m := xrayAcceptedRegex.FindStringSubmatch(line); len(m) >= 2 {
 			foundEmail = m[1]
@@ -269,9 +275,9 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 			foundEmail = m[1]
 		} else if m := sbConnUserRegex.FindStringSubmatch(line); len(m) >= 2 {
 			foundEmail = m[1]
-		} else if m := sbEndUserRegex.FindStringSubmatch(line); len(m) >= 2 {
+		} else if m := sbAcceptedRegex.FindStringSubmatch(line); len(m) >= 2 {
 			foundEmail = m[1]
-		} else if m := genericEmailRegex.FindStringSubmatch(line); len(m) >= 2 {
+		} else if m := sbEndUserRegex.FindStringSubmatch(line); len(m) >= 2 {
 			foundEmail = m[1]
 		}
 
