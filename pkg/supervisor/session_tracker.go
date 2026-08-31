@@ -114,19 +114,29 @@ func parseCleanIP(raw string) string {
 	return raw
 }
 
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\([a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[0-9]`)
+
+func stripANSI(str string) string {
+	if !strings.Contains(str, "\x1b") {
+		return str
+	}
+	return ansiRegex.ReplaceAllString(str, "")
+}
+
 // ProcessLogLine parses a raw log line from a core and updates session tracking.
 func (st *SessionTracker) ProcessLogLine(coreName, line string) {
 	normCore := normalizeCoreName(coreName)
+	cleanLine := stripANSI(line)
 	now := time.Now().Unix()
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
 
 	switch normCore {
 	case "sing-box", "singbox":
-		st.processSingBoxLine(line, now, nowStr)
+		st.processSingBoxLine(cleanLine, now, nowStr)
 	case "xray":
-		st.processXrayLine(line, now, nowStr)
+		st.processXrayLine(cleanLine, now, nowStr)
 	case "hysteria", "hysteria2":
-		st.processHysteriaLine(line, now, nowStr)
+		st.processHysteriaLine(cleanLine, now, nowStr)
 	}
 }
 
@@ -556,6 +566,15 @@ func (st *SessionTracker) GetRecentEvents(sinceTimestamp int64, limit int) []*Se
 		}
 	}
 	return res
+}
+
+// Clear resets all active sessions, tracked connections, and event history.
+func (st *SessionTracker) Clear() {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.sessions = make(map[string]*SessionInfo)
+	st.singboxConns = make(map[string]string)
+	st.events = make([]*SessionEvent, 0, st.maxEvents)
 }
 
 func (st *SessionTracker) inactivityCleanerLoop() {

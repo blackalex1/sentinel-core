@@ -790,6 +790,34 @@ func TestSessionTracker_Hysteria2ProductionLifecycle(t *testing.T) {
 	}
 }
 
+func TestSessionTracker_RealSingBoxLogLifecycle(t *testing.T) {
+	st := &SessionTracker{
+		sessions:     make(map[string]*SessionInfo),
+		singboxConns: make(map[string]string),
+		events:       make([]*SessionEvent, 0, 100),
+		maxEvents:    100,
+	}
+
+	// 1. Stage 1: Handshake with Source IP
+	st.ProcessLogLine("sing-box", `+0300 2026-08-31 20:05:29 INFO [2594726825 0ms] inbound/vless[vless-in]: inbound connection from 127.0.0.1:54793`)
+	if st.singboxConns["2594726825"] != "127.0.0.1" {
+		t.Fatalf("expected singboxConns[2594726825] == 127.0.0.1, got: %s", st.singboxConns["2594726825"])
+	}
+
+	// 2. Stage 2: User routing
+	st.ProcessLogLine("sing-box", `+0300 2026-08-31 20:05:29 INFO [2594726825 1ms] inbound/vless[vless-in]: [test_client_alpha] inbound connection to 127.0.0.1:54788`)
+
+	active := st.GetActiveSessions()
+	if len(active) != 1 || active[0].Email != "test_client_alpha" || active[0].IP != "127.0.0.1" {
+		t.Fatalf("expected 1 active session for test_client_alpha from 127.0.0.1, got: %+v", active)
+	}
+
+	events := st.GetRecentEvents(0, 100)
+	if len(events) != 1 || events[0].Action != "connect" || events[0].Email != "test_client_alpha" {
+		t.Fatalf("expected connect event, got: %+v", events)
+	}
+}
+
 func TestSessionTracker_SingBoxSpecialEmails(t *testing.T) {
 	st := GetSessionTracker()
 	line1 := "+0000 2026-08-25 19:55:12 INFO [88889999 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.123:33445"
