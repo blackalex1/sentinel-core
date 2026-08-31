@@ -463,7 +463,7 @@ func (st *SessionTracker) GetOnlineEmails() []string {
 	return result
 }
 
-// GetRecentEvents returns the recent connect/disconnect events since a given timestamp.
+// GetRecentEvents returns the recent connect/disconnect events since a given timestamp in chronological order.
 func (st *SessionTracker) GetRecentEvents(sinceTimestamp int64, limit int) []*SessionEvent {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
@@ -473,9 +473,13 @@ func (st *SessionTracker) GetRecentEvents(sinceTimestamp int64, limit int) []*Se
 	}
 
 	res := make([]*SessionEvent, 0, limit)
-	for i := len(st.events) - 1; i >= 0 && len(res) < limit; i-- {
+	startIdx := len(st.events) - limit
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	for i := startIdx; i < len(st.events); i++ {
 		ev := st.events[i]
-		if sinceTimestamp <= 0 || ev.Timestamp > sinceTimestamp {
+		if sinceTimestamp <= 0 || ev.Timestamp >= sinceTimestamp {
 			res = append(res, ev)
 		}
 	}

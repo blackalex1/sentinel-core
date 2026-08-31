@@ -668,12 +668,15 @@ func TestSessionTracker_SingBoxTwoStageLog(t *testing.T) {
 	}
 
 	events := st.GetRecentEvents(0, 10)
-	if len(events) == 0 {
-		t.Fatalf("expected at least 1 connect event")
+	var foundEv bool
+	for _, ev := range events {
+		if ev.Email == "test_client" && ev.IP == "198.51.100.42" && ev.Action == "connect" {
+			foundEv = true
+			break
+		}
 	}
-	ev := events[0]
-	if ev.Email != "test_client" || ev.IP != "198.51.100.42" || ev.Action != "connect" {
-		t.Fatalf("unexpected event: %+v", ev)
+	if !foundEv {
+		t.Fatalf("expected connect event for test_client with IP 198.51.100.42, got: %+v", events)
 	}
 }
 
