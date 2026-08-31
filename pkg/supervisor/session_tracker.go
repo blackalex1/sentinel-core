@@ -221,11 +221,12 @@ func (st *SessionTracker) processXrayLine(line string, now int64, nowStr string)
 }
 
 func (st *SessionTracker) processHysteriaLine(line string, now int64, nowStr string) {
+	lowerLine := strings.ToLower(line)
+
 	// 1. JSON format (Hysteria 2 structured logs)
-	if strings.Contains(line, "{") {
+	if idx := strings.Index(line, "{"); idx != -1 {
 		var obj map[string]any
-		if err := json.Unmarshal([]byte(line), &obj); err == nil {
-			msg, _ := obj["msg"].(string)
+		if err := json.Unmarshal([]byte(line[idx:]), &obj); err == nil {
 			email, _ := obj["id"].(string)
 			if email == "" {
 				email, _ = obj["auth"].(string)
@@ -241,10 +242,23 @@ func (st *SessionTracker) processHysteriaLine(line string, now int64, nowStr str
 				addr, _ = obj["client"].(string)
 			}
 
-			if email != "" && addr != "" && (strings.Contains(msg, "authenticated") || strings.Contains(msg, "connected") || msg == "") {
+			if email != "" && addr != "" {
 				srcIP := parseCleanIP(addr)
 				if srcIP != "" {
-					st.registerConnect("hysteria2", email, srcIP, now, nowStr)
+					// 1. Disconnect event
+					if strings.Contains(lowerLine, "client disconnected") || strings.Contains(lowerLine, "disconnect") {
+						st.registerDisconnect("hysteria2", email, srcIP, now, nowStr)
+						return
+					}
+
+					// 2. Connect / authenticated event
+					if strings.Contains(lowerLine, "client connected") || strings.Contains(lowerLine, "authenticated") {
+						st.registerConnect("hysteria2", email, srcIP, now, nowStr)
+						return
+					}
+
+					// 3. TCP error or TCP request activity: update LastSeenAt on active session
+					st.touchSession("hysteria2", email, srcIP, now)
 					return
 				}
 			}
@@ -279,7 +293,11 @@ func (st *SessionTracker) processHysteriaLine(line string, now int64, nowStr str
 			}
 		}
 		if email != "" && srcIP != "" {
-			st.registerConnect("hysteria2", email, srcIP, now, nowStr)
+			if strings.Contains(lowerLine, "disconnect") {
+				st.registerDisconnect("hysteria2", email, srcIP, now, nowStr)
+			} else {
+				st.registerConnect("hysteria2", email, srcIP, now, nowStr)
+			}
 			return
 		}
 	}
@@ -299,8 +317,62 @@ func (st *SessionTracker) processHysteriaLine(line string, now int64, nowStr str
 			}
 		}
 		if email != "" && srcIP != "" {
-			st.registerConnect("hysteria2", email, srcIP, now, nowStr)
+			if strings.Contains(lowerLine, "disconnect") {
+				st.registerDisconnect("hysteria2", email, srcIP, now, nowStr)
+			} else {
+				st.registerConnect("hysteria2", email, srcIP, now, nowStr)
+			}
 		}
+	}
+}
+
+func (st *SessionTracker) touchSession(core, email, ip string, now int64) {
+	normEmail := strings.ToLower(email)
+	key := core + ":" + normEmail + ":" + ip
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	if sess, exists := st.sessions[key]; exists {
+		sess.LastSeenAt = now
+	}
+}
+
+func (st *SessionTracker) registerDisconnect(core, email, ip string, now int64, nowStr string) {
+	normEmail := strings.ToLower(email)
+	key := core + ":" + normEmail + ":" + ip
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	sess, exists := st.sessions[key]
+	if !exists {
+		// Fallback match: if IP varied slightly or session under core:email
+		for k, s := range st.sessions {
+			if s.Core == core && strings.ToLower(s.Email) == normEmail {
+				key = k
+				sess = s
+				exists = true
+				break
+			}
+		}
+	}
+
+	if exists {
+		durSec := now - sess.StartedAt
+		durStr := formatDuration(durSec)
+		st.events = append(st.events, &SessionEvent{
+			Action:    "disconnect",
+			Core:      core,
+			Email:     sess.Email,
+			IP:        sess.IP,
+			Timestamp: now,
+			TimeStr:   nowStr,
+			Duration:  durStr,
+		})
+		if len(st.events) > st.maxEvents {
+			st.events = st.events[len(st.events)-st.maxEvents:]
+		}
+		delete(st.sessions, key)
+		log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SESSION_DISCONNECTED", core, sess.Email, sess.IP, durStr))
 	}
 }
 

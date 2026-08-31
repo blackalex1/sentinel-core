@@ -748,6 +748,48 @@ func TestSessionTracker_Hysteria2Logs(t *testing.T) {
 	}
 }
 
+func TestSessionTracker_Hysteria2ProductionLifecycle(t *testing.T) {
+	st := &SessionTracker{
+		sessions:     make(map[string]*SessionInfo),
+		singboxConns: make(map[string]string),
+		events:       make([]*SessionEvent, 0, 100),
+		maxEvents:    100,
+	}
+
+	// 1. Client connects
+	st.ProcessLogLine("hysteria2", `2026-08-31T12:19:11Z	INFO	client connected	{"addr": "198.51.100.205:34897", "id": "svatik", "tx": 0}`)
+
+	active := st.GetActiveSessions()
+	if len(active) != 1 || active[0].Email != "svatik" || active[0].IP != "198.51.100.205" {
+		t.Fatalf("expected 1 active session for svatik, got %+v", active)
+	}
+
+	events := st.GetRecentEvents(0, 100)
+	if len(events) != 1 || events[0].Action != "connect" {
+		t.Fatalf("expected 1 connect event, got %+v", events)
+	}
+
+	// 2. TCP error timeout (should NOT create new connect events)
+	st.ProcessLogLine("hysteria2", `2026-08-31T12:21:10Z	WARN	TCP error	{"addr": "198.51.100.205:34897", "id": "svatik", "reqAddr": "8.8.8.8:443", "error": "timeout: no recent network activity"}`)
+	events = st.GetRecentEvents(0, 100)
+	if len(events) != 1 {
+		t.Fatalf("TCP error should not create connect event, got %d events", len(events))
+	}
+
+	// 3. Client disconnects
+	st.ProcessLogLine("hysteria2", `2026-08-31T12:21:10Z	INFO	client disconnected	{"addr": "198.51.100.205:34897", "id": "svatik", "error": "accepting stream failed: timeout: no recent network activity"}`)
+
+	active = st.GetActiveSessions()
+	if len(active) != 0 {
+		t.Fatalf("expected 0 active sessions after disconnect, got %+v", active)
+	}
+
+	events = st.GetRecentEvents(0, 100)
+	if len(events) != 2 || events[1].Action != "disconnect" || events[1].Email != "svatik" {
+		t.Fatalf("expected connect + disconnect events, got %+v", events)
+	}
+}
+
 func TestSessionTracker_SingBoxSpecialEmails(t *testing.T) {
 	st := GetSessionTracker()
 	line1 := "+0000 2026-08-25 19:55:12 INFO [88889999 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.123:33445"
