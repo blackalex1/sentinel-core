@@ -1082,5 +1082,87 @@ func TestProcessManager_PureStdoutPipeStreaming_ZeroDiskIO(t *testing.T) {
 	}
 }
 
+func TestSessionTracker_AllSingBoxLogFormats(t *testing.T) {
+	st := &SessionTracker{
+		sessions:     make(map[string]*SessionInfo),
+		singboxConns: make(map[string]string),
+		events:       make([]*SessionEvent, 0, 100),
+		maxEvents:    100,
+	}
+
+	testCases := []struct {
+		name     string
+		lines    []string
+		expEmail string
+		expIP    string
+	}{
+		{
+			name: "Logrus timestamp prefix with router match",
+			lines: []string{
+				"INFO[0000] [99887766 0ms] inbound/vless[inbound-1]: inbound connection from 198.51.100.33:55443",
+				"INFO[0000] [99887766 12ms] router: match[0] inbound/vless[inbound-1] [user_router@example.com] tcp:1.1.1.1:443 -> direct",
+			},
+			expEmail: "user_router@example.com",
+			expIP:    "198.51.100.33",
+		},
+		{
+			name: "Single-line accepted format",
+			lines: []string{
+				"2026-08-31 13:00:00 INFO accepted tcp:198.51.100.44:54321 [user_single_line]",
+			},
+			expEmail: "user_single_line",
+			expIP:    "198.51.100.44",
+		},
+		{
+			name: "UUID user format",
+			lines: []string{
+				"[44332211 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.55:54321",
+				"[44332211 5ms] inbound/vless[vless-in]: [b7c9f8a0-1234-5678-9abc-def012345678] inbound connection to 1.1.1.1:443",
+			},
+			expEmail: "b7c9f8a0-1234-5678-9abc-def012345678",
+			expIP:    "198.51.100.55",
+		},
+		{
+			name: "Hysteria 2 inbound via Sing-box",
+			lines: []string{
+				"[55667788 0ms] inbound/hysteria2[hy2-in]: inbound connection from 198.51.100.66:43210",
+				"[55667788 10ms] inbound/hysteria2[hy2-in]: [hy2_sb_user@example.com] inbound connection to 1.1.1.1:443",
+			},
+			expEmail: "hy2_sb_user@example.com",
+			expIP:    "198.51.100.66",
+		},
+		{
+			name: "Shadowsocks inbound via Sing-box with router match",
+			lines: []string{
+				"[66778899 0ms] inbound/shadowsocks[ss-in]: inbound connection from 198.51.100.77:33221",
+				"[66778899 8ms] router: match[0] [ss_user] tcp:1.1.1.1:443 -> direct",
+			},
+			expEmail: "ss_user",
+			expIP:    "198.51.100.77",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, line := range tc.lines {
+				st.ProcessLogLine("sing-box", line)
+			}
+
+			active := st.GetActiveSessions()
+			found := false
+			for _, s := range active {
+				if s.Email == tc.expEmail && s.IP == tc.expIP {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("[%s] expected session %s (%s) not found in active: %+v", tc.name, tc.expEmail, tc.expIP, active)
+			}
+		})
+	}
+}
+
+
 
 

@@ -248,7 +248,7 @@ func handleSecurity() {
 
 		if *coreType == "hysteria-ip" || (*coreType == "hysteria" && *emailArg != "") {
 			ip := detector.FindClientIPForEmailInHysteriaLog(lines, *emailArg, *maxAge)
-			b, _ := json.Marshal(map[string]string{"client_ip": ip})
+			b, _ := json.Marshal(map[string]string{"client_ip": ip, "ip": ip})
 			fmt.Println(string(b))
 		} else if *coreType == "hysteria" {
 			email := detector.FindEmailInHysteriaLog(lines, *dstIP, *dpt, *maxAge)

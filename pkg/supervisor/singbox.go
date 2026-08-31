@@ -191,6 +191,9 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		}
 		if srcIP != "" {
 			ipSetByUser[email][srcIP] = true
+			if srcIP != "127.0.0.1" && srcIP != "::1" {
+				GetSessionTracker().RegisterExternalConnect("sing-box", email, srcIP)
+			}
 		}
 	}
 
