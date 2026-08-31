@@ -216,5 +216,12 @@ func TestRouterThreatDetector_Behavioral(t *testing.T) {
 	if !evTelnet.IsThreat || evTelnet.ThreatType != "exploit_port" {
 		t.Errorf("expected exploit_port threat, got %+v", evTelnet)
 	}
+
+	// 5. Normal HTTPS (443) traffic -> Always safe, never flagged as threat even after other events
+	evHTTPS := &RouterEvent{SrcIP: src, DstHost: "198.51.100.44", DstPort: 443, Proto: "TCP"}
+	detector.Evaluate(evHTTPS)
+	if evHTTPS.IsThreat || evHTTPS.ShouldAutoBan {
+		t.Errorf("expected normal HTTPS (443) to never be a threat, got isThreat=%v, autoban=%v", evHTTPS.IsThreat, evHTTPS.ShouldAutoBan)
+	}
 }
 

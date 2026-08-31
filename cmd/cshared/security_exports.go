@@ -5,10 +5,14 @@ package main
 */
 import "C"
 import (
+	"context"
 	"encoding/json"
+	"strings"
+	"time"
 
 	"github.com/blackalex1/sentinel-core/pkg/security"
 	"github.com/blackalex1/sentinel-core/pkg/security/detector"
+	"github.com/blackalex1/sentinel-core/pkg/security/ingest"
 	"github.com/blackalex1/sentinel-core/pkg/security/netfilter"
 	"github.com/blackalex1/sentinel-core/pkg/security/ssh"
 )
@@ -268,3 +272,64 @@ func SentinelParseRouterIptablesLine(line *C.char) *C.char {
 	respBytes, _ := json.Marshal(ev)
 	return C.CString(string(respBytes))
 }
+
+//export SentinelStartSecurityPipeline
+func SentinelStartSecurityPipeline(configJSON *C.char) *C.char {
+	goCfgJSON := safeGoString(configJSON)
+	cfg := ingest.DefaultPipelineConfig()
+	if goCfgJSON != "" {
+		_ = json.Unmarshal([]byte(goCfgJSON), &cfg)
+	}
+
+	pipeline := ingest.GetDefaultSecurityPipeline()
+	pipeline.Configure(cfg)
+	_ = pipeline.Start(context.Background())
+	return C.CString(`{"success": true}`)
+}
+
+//export SentinelPollSecurityEvent
+func SentinelPollSecurityEvent(timeoutMs C.int) *C.char {
+	timeout := time.Duration(int(timeoutMs)) * time.Millisecond
+	dispatcher := ingest.GetDefaultEventDispatcher()
+	jsonStr := dispatcher.PopEventJSON(timeout)
+	return C.CString(jsonStr)
+}
+
+//export SentinelStopSecurityPipeline
+func SentinelStopSecurityPipeline() *C.char {
+	pipeline := ingest.GetDefaultSecurityPipeline()
+	pipeline.Stop()
+	return C.CString(`{"success": true}`)
+}
+
+//export SentinelProcessTrafficLine
+func SentinelProcessTrafficLine(source *C.char, line *C.char) *C.char {
+	goSource := safeGoString(source)
+	goLine := safeGoString(line)
+	pipeline := ingest.GetDefaultSecurityPipeline()
+
+	var ev *ingest.SecurityEvent
+	switch goSource {
+	case "proxmox_iptables":
+		ev = pipeline.ProcessProxmoxIptablesLine(goLine)
+	case "router_conntrack":
+		ev = pipeline.ProcessRouterConntrackLine(goLine)
+	case "router_syslog":
+		ev = pipeline.ProcessRouterIptablesLine(goLine)
+	case "auth_ssh":
+		ev = pipeline.ProcessAuthLogLine(goLine)
+	default:
+		if strings.HasPrefix(goSource, "core:") {
+			coreName := strings.TrimPrefix(goSource, "core:")
+			pipeline.ProcessProxyCoreLine(coreName, goLine)
+			return C.CString(`{"processed": true}`)
+		}
+	}
+
+	if ev == nil {
+		return C.CString("")
+	}
+	respBytes, _ := json.Marshal(ev)
+	return C.CString(string(respBytes))
+}
+

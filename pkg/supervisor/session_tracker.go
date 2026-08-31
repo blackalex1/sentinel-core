@@ -399,6 +399,23 @@ func (st *SessionTracker) GetActiveSessions() []*SessionInfo {
 	return res
 }
 
+// FindClientByIP searches active sessions for an email associated with the given client IP.
+func (st *SessionTracker) FindClientByIP(ip string) string {
+	if ip == "" {
+		return ""
+	}
+	cleanIP := parseCleanIP(ip)
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+
+	for _, s := range st.sessions {
+		if s.IP == cleanIP || s.IP == ip {
+			return s.Email
+		}
+	}
+	return ""
+}
+
 // GetOnlineEmails returns a list of distinct active emails currently online.
 func (st *SessionTracker) GetOnlineEmails() []string {
 	st.mu.RLock()

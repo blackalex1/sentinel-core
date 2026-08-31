@@ -8,6 +8,7 @@ import (
 
 	"github.com/blackalex1/sentinel-core/pkg/security"
 	"github.com/blackalex1/sentinel-core/pkg/security/detector"
+	"github.com/blackalex1/sentinel-core/pkg/security/ingest"
 	"github.com/blackalex1/sentinel-core/pkg/security/netfilter"
 	"github.com/blackalex1/sentinel-core/pkg/security/ssh"
 	"github.com/blackalex1/sentinel-core/pkg/supervisor"
@@ -276,6 +277,32 @@ func handleSecurity() {
 			return
 		}
 		fmt.Println("{}")
+
+	case "process-traffic-line":
+		fs := flag.NewFlagSet("security-process-traffic-line", flag.ExitOnError)
+		source := fs.String("source", "proxmox_iptables", "Log source (proxmox_iptables, router_conntrack, router_syslog, auth_ssh)")
+		line := fs.String("line", "", "Raw log line")
+		_ = fs.Parse(os.Args[3:])
+
+		pipeline := ingest.GetDefaultSecurityPipeline()
+		var ev *ingest.SecurityEvent
+		switch *source {
+		case "proxmox_iptables":
+			ev = pipeline.ProcessProxmoxIptablesLine(*line)
+		case "router_conntrack":
+			ev = pipeline.ProcessRouterConntrackLine(*line)
+		case "router_syslog":
+			ev = pipeline.ProcessRouterIptablesLine(*line)
+		case "auth_ssh":
+			ev = pipeline.ProcessAuthLogLine(*line)
+		}
+
+		if ev != nil {
+			b, _ := json.Marshal(ev)
+			fmt.Println(string(b))
+		} else {
+			fmt.Println("{}")
+		}
 
 	default:
 		fmt.Printf("Unknown security action '%s'\n", action)
