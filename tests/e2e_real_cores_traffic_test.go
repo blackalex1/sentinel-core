@@ -380,3 +380,151 @@ func TestE2E_RealXray_ClientTrafficAndSessionTracking(t *testing.T) {
 	t.Logf("✅ Verified real Xray active session in Sentinel Core: User=%s, IP=%s, Core=%s",
 		matchedSession.Email, matchedSession.IP, matchedSession.Core)
 }
+
+// TestE2E_RealHysteria2_ClientTrafficAndSessionTracking starts a real Hysteria 2 server,
+// passes real traffic from a real client, and verifies session tracking in sentinel-core.
+func TestE2E_RealHysteria2_ClientTrafficAndSessionTracking(t *testing.T) {
+	hyBin := findBinary("hysteria")
+	sbBin := findBinary("sing-box")
+	if hyBin == "" || sbBin == "" {
+		t.Skip("hysteria or sing-box binary not found, skipping real Hysteria e2e traffic test")
+		return
+	}
+
+	pm := supervisor.GetProcessManager()
+	st := supervisor.GetSessionTracker()
+	st.Clear()
+
+	coreName := "hysteria2"
+	pm.ClearInMemoryLogs(coreName)
+
+	serverPort := getFreePort(t)
+	userEmail := "hy_client_gamma"
+	userPassword := "hy_secret_pwd_99"
+
+	certPath := `C:\Users\black\PycharmProjects\panel\bin\hysteria.crt`
+	keyPath := `C:\Users\black\PycharmProjects\panel\bin\hysteria.key`
+
+	serverConfigJSON := fmt.Sprintf(`{
+  "listen": "127.0.0.1:%d",
+  "tls": {
+    "cert": %q,
+    "key": %q
+  },
+  "auth": {
+    "type": "userpass",
+    "userpass": {
+      %q: %q
+    }
+  }
+}`, serverPort, certPath, keyPath, userEmail, userPassword)
+
+	tmpServerConfig, err := os.CreateTemp("", "hy2-server-*.json")
+	if err != nil {
+		t.Fatalf("failed to create server config: %v", err)
+	}
+	defer os.Remove(tmpServerConfig.Name())
+	_, _ = tmpServerConfig.WriteString(serverConfigJSON)
+	tmpServerConfig.Close()
+
+	// Start Hysteria 2 Server via sentinel-core ProcessManager
+	err = pm.StartCore(coreName, hyBin, tmpServerConfig.Name())
+	if err != nil {
+		t.Fatalf("failed to start Hysteria 2 server via supervisor: %v", err)
+	}
+	defer pm.StopCore(coreName)
+
+	time.Sleep(400 * time.Millisecond)
+
+	// Configure Sing-box client with Hysteria 2 outbound
+	clientPort := getFreePort(t)
+	clientConfigJSON := fmt.Sprintf(`{
+		"log": {
+			"level": "warn",
+			"timestamp": true
+		},
+		"inbounds": [
+			{
+				"type": "mixed",
+				"tag": "mixed-in",
+				"listen": "127.0.0.1",
+				"listen_port": %d
+			}
+		],
+		"outbounds": [
+			{
+				"type": "hysteria2",
+				"tag": "hy2-out",
+				"server": "127.0.0.1",
+				"server_port": %d,
+				"password": "%s:%s",
+				"tls": {
+					"enabled": true,
+					"insecure": true
+				}
+			}
+		]
+	}`, clientPort, serverPort, userEmail, userPassword)
+
+	tmpClientConfig, err := os.CreateTemp("", "sb-hy2-client-*.json")
+	if err != nil {
+		t.Fatalf("failed to create client config: %v", err)
+	}
+	defer os.Remove(tmpClientConfig.Name())
+	_, _ = tmpClientConfig.WriteString(clientConfigJSON)
+	tmpClientConfig.Close()
+
+	clientCtx, clientCancel := context.WithCancel(context.Background())
+	defer clientCancel()
+
+	clientCmd := exec.CommandContext(clientCtx, sbBin, "run", "-c", tmpClientConfig.Name())
+	if err := clientCmd.Start(); err != nil {
+		t.Fatalf("failed to start client: %v", err)
+	}
+	defer func() {
+		clientCancel()
+		_ = clientCmd.Process.Kill()
+		_ = clientCmd.Wait()
+	}()
+
+	time.Sleep(400 * time.Millisecond)
+
+	// Send traffic through proxy
+	proxyURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", clientPort))
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		},
+		Timeout: 2 * time.Second,
+	}
+
+	go func() {
+		_, _ = httpClient.Get("http://example.com:80")
+	}()
+
+	// Verify Sentinel Core SessionTracker captured the real Hysteria session
+	var matchedSession *supervisor.SessionInfo
+	deadline := time.Now().Add(3 * time.Second)
+
+	for time.Now().Before(deadline) {
+		active := st.GetActiveSessions()
+		for _, s := range active {
+			if s.Email == userEmail && (s.Core == "hysteria2" || s.Core == "hysteria") {
+				matchedSession = s
+				break
+			}
+		}
+		if matchedSession != nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if matchedSession == nil {
+		logs := pm.GetInMemoryLogs(coreName, 50)
+		t.Fatalf("SessionTracker failed to detect real Hysteria session for %s. Logs:\n%s", userEmail, logs)
+	}
+
+	t.Logf("✅ Verified real Hysteria 2 active session in Sentinel Core: User=%s, IP=%s, Core=%s",
+		matchedSession.Email, matchedSession.IP, matchedSession.Core)
+}
