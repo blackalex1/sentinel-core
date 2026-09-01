@@ -146,12 +146,12 @@ ipv4     2 udp     17 29 src=192.168.1.77 dst=8.8.8.8 sport=33333 dport=53 src=8
 }
 
 func TestRouterParsers(t *testing.T) {
-	ctLine := "[NEW] tcp      6 120 SYN_SENT src=192.168.1.69 dst=5.255.255.242 sport=33296 dport=443 [UNREPLIED]"
+	ctLine := "[NEW] tcp      6 120 SYN_SENT src=192.168.1.100 dst=5.255.255.242 sport=33296 dport=443 [UNREPLIED]"
 	ctEv := ParseRouterConntrackLine(ctLine)
 	if ctEv == nil {
 		t.Fatalf("expected router conntrack event")
 	}
-	if ctEv.SrcIP != "192.168.1.69" || ctEv.DstHost != "5.255.255.242" || ctEv.Proto != "TCP" || ctEv.SrcPort != 33296 || ctEv.DstPort != 443 {
+	if ctEv.SrcIP != "192.168.1.100" || ctEv.DstHost != "5.255.255.242" || ctEv.Proto != "TCP" || ctEv.SrcPort != 33296 || ctEv.DstPort != 443 {
 		t.Errorf("unexpected router conntrack event: %+v", ctEv)
 	}
 
@@ -176,11 +176,11 @@ func TestRouterThreatDetector_Behavioral(t *testing.T) {
 
 	src := "192.168.1.88"
 
-	// 1. Normal traffic to single IP (1-2 attempts) -> Not a threat
+	// 1. Single access to sensitive port (e.g. port 22) -> Flagged as sensitive_port threat for alert, but not autobanned
 	ev1 := &RouterEvent{SrcIP: src, DstHost: "192.0.2.10", DstPort: 22, Proto: "TCP"}
 	detector.Evaluate(ev1)
-	if ev1.IsThreat || ev1.ShouldAutoBan {
-		t.Errorf("expected normal traffic, got threat=%v, ban=%v", ev1.IsThreat, ev1.ShouldAutoBan)
+	if !ev1.IsThreat || ev1.ShouldAutoBan || ev1.ThreatType != "sensitive_port" {
+		t.Errorf("expected sensitive_port alert without autoban, got threat=%v, ban=%v, type=%s", ev1.IsThreat, ev1.ShouldAutoBan, ev1.ThreatType)
 	}
 
 	// 2. Horizontal scan (connecting to 3 distinct IPs on sensitive port) -> Auto-ban
