@@ -333,3 +333,40 @@ func SentinelProcessTrafficLine(source *C.char, line *C.char) *C.char {
 	return C.CString(string(respBytes))
 }
 
+//export SentinelConfigureRouterThreatDetector
+func SentinelConfigureRouterThreatDetector(configJSON *C.char) *C.char {
+	goJSON := safeGoString(configJSON)
+	if strings.TrimSpace(goJSON) == "" {
+		return C.CString(`{"success": true}`)
+	}
+
+	type routerDetectorConfig struct {
+		ScanLimit        int   `json:"scan_limit"`
+		BurstLimit1m     int   `json:"burst_limit_1m"`
+		BurstLimit3m     int   `json:"burst_limit_3m"`
+		TargetBruteLimit int   `json:"target_brute_limit"`
+		WindowMinutes    int   `json:"window_minutes"`
+		SensitivePorts   []int `json:"sensitive_ports"`
+	}
+
+	var cfg routerDetectorConfig
+	if err := json.Unmarshal([]byte(goJSON), &cfg); err != nil {
+		errResp, _ := json.Marshal(map[string]any{"success": false, "error": err.Error()})
+		return C.CString(string(errResp))
+	}
+
+	var win time.Duration
+	if cfg.WindowMinutes > 0 {
+		win = time.Duration(cfg.WindowMinutes) * time.Minute
+	}
+
+	detector := netfilter.GetDefaultRouterThreatDetector()
+	detector.Configure(cfg.ScanLimit, cfg.BurstLimit1m, cfg.BurstLimit3m, cfg.TargetBruteLimit, win, cfg.SensitivePorts)
+	if len(cfg.SensitivePorts) > 0 {
+		detector.SetSensitivePorts(cfg.SensitivePorts)
+	}
+
+	return C.CString(`{"success": true}`)
+}
+
+

@@ -2,6 +2,7 @@ package netfilter
 
 import (
 	"net"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -54,12 +55,44 @@ type RouterConnectionRecord struct {
 
 // RouterThreatDetector implements behavioral IDS/IPS analysis in pure Go with zero whitelists.
 type RouterThreatDetector struct {
-	mu           sync.Mutex
-	history      map[string][]RouterConnectionRecord // srcIP -> records
-	window       time.Duration                       // default 10 min
-	scanLimit    int                                 // default 3 distinct target IPs
-	burstLimit1m int                                 // default 10 connections / min to single target
-	burstLimit3m int                                 // default 15 connections / 3 min to single target
+	mu               sync.Mutex
+	history          map[string][]RouterConnectionRecord // srcIP -> records
+	window           time.Duration                       // default 10 min
+	scanLimit        int                                 // default 3 distinct target IPs
+	burstLimit1m     int                                 // default 10 connections / min to single target
+	burstLimit3m     int                                 // default 15 connections / 3 min to single target
+	targetBruteLimit int                                 // default 5 connections in window to the same target IP
+	sensitivePorts   map[int]bool                        // dynamic set of sensitive ports
+}
+
+func getEnvInt(key string, def int) int {
+	if val := os.Getenv(key); val != "" {
+		if i, err := strconv.Atoi(strings.TrimSpace(val)); err == nil && i > 0 {
+			return i
+		}
+	}
+	return def
+}
+
+func getEnvDurationMinutes(key string, defMinutes int) time.Duration {
+	mins := getEnvInt(key, defMinutes)
+	return time.Duration(mins) * time.Minute
+}
+
+func getEnvSensitivePorts(key string, def map[int]bool) map[int]bool {
+	res := make(map[int]bool)
+	for k, v := range def {
+		res[k] = v
+	}
+	if val := os.Getenv(key); val != "" {
+		for _, part := range strings.Split(val, ",") {
+			p, err := strconv.Atoi(strings.TrimSpace(part))
+			if err == nil && p > 0 && p <= 65535 {
+				res[p] = true
+			}
+		}
+	}
+	return res
 }
 
 var (
@@ -71,14 +104,73 @@ var (
 func GetDefaultRouterThreatDetector() *RouterThreatDetector {
 	defaultDetectorOnce.Do(func() {
 		defaultDetector = &RouterThreatDetector{
-			history:      make(map[string][]RouterConnectionRecord),
-			window:       10 * time.Minute,
-			scanLimit:    3,
-			burstLimit1m: 10,
-			burstLimit3m: 15,
+			history:          make(map[string][]RouterConnectionRecord),
+			window:           getEnvDurationMinutes("ROUTER_WINDOW_MINUTES", 10),
+			scanLimit:        getEnvInt("ROUTER_SCAN_LIMIT", getEnvInt("ROUTER_MAX_VIOLATIONS", 3)),
+			burstLimit1m:     getEnvInt("ROUTER_BURST_LIMIT_1M", 10),
+			burstLimit3m:     getEnvInt("ROUTER_BURST_LIMIT_3M", 15),
+			targetBruteLimit: getEnvInt("ROUTER_MAX_ATTEMPTS_PER_TARGET", getEnvInt("ROUTER_BURST_LIMIT_TARGET", 5)),
+			sensitivePorts:   getEnvSensitivePorts("ROUTER_SENSITIVE_PORTS", defaultSensitivePorts),
 		}
 	})
 	return defaultDetector
+}
+
+// Configure updates the threat detection thresholds, sliding window, and sensitive ports dynamically.
+func (d *RouterThreatDetector) Configure(scanLimit, burst1m, burst3m, targetLimit int, window time.Duration, extraPorts []int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if scanLimit > 0 {
+		d.scanLimit = scanLimit
+	}
+	if burst1m > 0 {
+		d.burstLimit1m = burst1m
+	}
+	if burst3m > 0 {
+		d.burstLimit3m = burst3m
+	}
+	if targetLimit > 0 {
+		d.targetBruteLimit = targetLimit
+	}
+	if window > 0 {
+		d.window = window
+	}
+	if len(extraPorts) > 0 {
+		if d.sensitivePorts == nil {
+			d.sensitivePorts = make(map[int]bool)
+			for k, v := range defaultSensitivePorts {
+				d.sensitivePorts[k] = v
+			}
+		}
+		for _, p := range extraPorts {
+			if p > 0 && p <= 65535 {
+				d.sensitivePorts[p] = true
+			}
+		}
+	}
+}
+
+// SetSensitivePorts replaces the list of sensitive ports.
+func (d *RouterThreatDetector) SetSensitivePorts(ports []int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.sensitivePorts = make(map[int]bool)
+	for _, p := range ports {
+		if p > 0 && p <= 65535 {
+			d.sensitivePorts[p] = true
+		}
+	}
+}
+
+// IsSensitivePort checks whether a port is classified as sensitive.
+func (d *RouterThreatDetector) IsSensitivePort(port int) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.sensitivePorts != nil && d.sensitivePorts[port] {
+		return true
+	}
+	return defaultSensitivePorts[port]
 }
 
 // RouterEvent represents a connection event parsed from router conntrack or iptables logs.
@@ -113,7 +205,7 @@ func IsPrivateOrLocalIP(ipStr string) bool {
 func (d *RouterThreatDetector) Evaluate(ev *RouterEvent) {
 	// Fast-Path: 99.9% of traffic is normal (ports 80, 443, 53, etc.) and not directed to local gateway
 	desc, isExploit := dangerousExploitPorts[ev.DstPort]
-	isSensitive := defaultSensitivePorts[ev.DstPort]
+	isSensitive := d.IsSensitivePort(ev.DstPort)
 	isGatewayTarget := (ev.DstHost == "192.168.1.1" || ev.DstHost == "127.0.0.1" || strings.HasPrefix(ev.DstHost, "192.168.")) && (isSensitive || isExploit)
 
 	if !isExploit && !isSensitive && !isGatewayTarget {
@@ -171,7 +263,7 @@ func (d *RouterThreatDetector) Evaluate(ev *RouterEvent) {
 	if isGatewayTarget {
 		gatewayCount := 0
 		for _, rec := range history {
-			if (rec.DstHost == "192.168.1.1" || rec.DstHost == "127.0.0.1") && (defaultSensitivePorts[rec.DstPort] || dangerousExploitPorts[rec.DstPort] != "") {
+			if (rec.DstHost == "192.168.1.1" || rec.DstHost == "127.0.0.1") && (d.sensitivePorts[rec.DstPort] || defaultSensitivePorts[rec.DstPort] || dangerousExploitPorts[rec.DstPort] != "") {
 				gatewayCount++
 			}
 		}
@@ -184,9 +276,10 @@ func (d *RouterThreatDetector) Evaluate(ev *RouterEvent) {
 		}
 	}
 
-	// 3. Sensitive port analysis (SSH, RDP, Proxmox VE)
+	// 3. Sensitive port analysis (SSH, RDP, Proxmox VE, Custom Sensitive Ports)
 	if isSensitive {
 		distinctMap := make(map[string]bool)
+		sameTargetTotal := 0
 		sameTarget1m := 0
 		sameTarget3m := 0
 		cutoff1m := now.Add(-1 * time.Minute)
@@ -196,6 +289,7 @@ func (d *RouterThreatDetector) Evaluate(ev *RouterEvent) {
 			if rec.DstPort == ev.DstPort {
 				distinctMap[rec.DstHost] = true
 				if rec.DstHost == ev.DstHost {
+					sameTargetTotal++
 					if rec.Timestamp.After(cutoff1m) {
 						sameTarget1m++
 					}
@@ -209,7 +303,7 @@ func (d *RouterThreatDetector) Evaluate(ev *RouterEvent) {
 		ev.DistinctHosts = len(distinctMap)
 		ev.BurstRate1m = sameTarget1m
 
-		// Horizontal scan: 3+ distinct destination IPs on the SAME sensitive port in window
+		// Horizontal scan: N+ distinct destination IPs on the SAME sensitive port in window
 		if len(distinctMap) >= d.scanLimit {
 			ev.IsThreat = true
 			ev.ShouldAutoBan = true
@@ -218,7 +312,7 @@ func (d *RouterThreatDetector) Evaluate(ev *RouterEvent) {
 			return
 		}
 
-		// Vertical brute-force: 10+ conns/min or 15+ conns/3min to single target
+		// Vertical brute-force: N+ conns/min or N+ conns/3min to single target
 		if sameTarget1m >= d.burstLimit1m {
 			ev.IsThreat = true
 			ev.ShouldAutoBan = true
@@ -233,6 +327,16 @@ func (d *RouterThreatDetector) Evaluate(ev *RouterEvent) {
 			ev.Reason = "Брутфорс SSH/портов (" + strconv.Itoa(sameTarget3m) + " подкл/3мин к " + ev.DstHost + ":" + strconv.Itoa(ev.DstPort) + ")"
 			return
 		}
+
+		// Per-target brute force limit across the entire sliding window (e.g. 5+ attempts to same target IP)
+		if d.targetBruteLimit > 0 && sameTargetTotal >= d.targetBruteLimit {
+			ev.IsThreat = true
+			ev.ShouldAutoBan = true
+			ev.ThreatType = "vertical_bruteforce"
+			ev.Reason = "Брутфорс одного IP-адреса (" + strconv.Itoa(sameTargetTotal) + " попыток к " + ev.DstHost + ":" + strconv.Itoa(ev.DstPort) + ")"
+			return
+		}
+
 		// Single sensitive port access: Flag as threat for alerting/monitoring (so user sees even single connection), but do not autoban
 		ev.IsThreat = true
 		ev.ShouldAutoBan = false
