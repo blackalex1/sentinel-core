@@ -367,3 +367,50 @@ func TestUnifiedSecurityEngine_MasqueradingDetection(t *testing.T) {
 		t.Fatalf("fake svchost.exe should be in quarantine registry")
 	}
 }
+
+func TestUnifiedSecurityEngine_HotspotClientIsolation(t *testing.T) {
+	engine := NewUnifiedSecurityEngine(0)
+	defer engine.Stop()
+
+	engine.ConfigurePolicy(SecurityPolicyConfig{
+		Mode:           ModeStrictBlock,
+		BlockThreshold: 1,
+		ProtectedPorts: []int{22, 445, 3389},
+	})
+
+	hotspotClientIP := "192.168.43.88"
+	localAppPkg := "com.android.chrome"
+
+	// 1. Hotspot client connects to sensitive port 22 -> Gets blocked and quarantined
+	hotspotVerdict := engine.AuditConnection(SecurityAuditRequest{
+		CallerID:      hotspotClientIP,
+		DestinationIP: "198.51.100.22",
+		Port:          22,
+		Protocol:      "TCP",
+		Platform:      "android",
+	})
+	if !hotspotVerdict.IsBlocked || !hotspotVerdict.ThreatDetected {
+		t.Fatalf("hotspot client should be blocked on port 22: %+v", hotspotVerdict)
+	}
+
+	if !engine.IsEntityBlocked(hotspotClientIP) {
+		t.Fatalf("hotspot client IP %s should be quarantined", hotspotClientIP)
+	}
+
+	// 2. Local Android phone app (e.g. Chrome) connects to web (443) or permitted ports -> MUST NOT BE BLOCKED!
+	localAppVerdict := engine.AuditConnection(SecurityAuditRequest{
+		CallerID:      localAppPkg,
+		DestinationIP: "142.250.190.46",
+		Port:          443,
+		Protocol:      "TCP",
+		Platform:      "android",
+	})
+	if localAppVerdict.IsBlocked || localAppVerdict.ThreatDetected {
+		t.Fatalf("local app should NOT be blocked despite hotspot client being quarantined: %+v", localAppVerdict)
+	}
+
+	if engine.IsEntityBlocked(localAppPkg) {
+		t.Fatalf("local app %s should NOT be in quarantine", localAppPkg)
+	}
+}
+

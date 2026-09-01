@@ -2,6 +2,7 @@ package detector
 
 import (
 	"encoding/json"
+	"net"
 	"regexp"
 	"strconv"
 	"strings"
@@ -22,6 +23,18 @@ var (
 	// sing-box emits this before the "[user] inbound connection to DST:PORT" line for the same connID.
 	singboxFromClientRegex = regexp.MustCompile(`\[(\d+)\s+[\d.]+(?:ms|µs|us|s|ns|m)\]\s+\S+:\s+inbound connection from\s+([^\s:]+):\d+`)
 )
+
+func isHotspotOrLANClient(ipStr string) bool {
+	if ipStr == "" || ipStr == "127.0.0.1" || ipStr == "::1" || ipStr == "localhost" {
+		return false
+	}
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	return ip.IsPrivate() || strings.HasPrefix(ipStr, "192.168.") || strings.HasPrefix(ipStr, "172.") || strings.HasPrefix(ipStr, "10.")
+}
+
 
 // SingboxParser handles log parsing and connection translation for Sing-box.
 type SingboxParser struct {
@@ -132,6 +145,9 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 		}
 		if identifiedID == "" {
 			identifiedID = extractProcessOrUser(cleanLine)
+			if identifiedID == "" && clientIP != "" {
+				identifiedID = clientIP
+			}
 		}
 
 		if identifiedID == "" && connID != "" && strings.Contains(cleanLine, "inbound connection to") {
@@ -149,7 +165,9 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 		}
 
 		if identifiedID == "" {
-			if fromMatch := regexp.MustCompile(`(?:from|by)\s+([^\s:]+)`).FindStringSubmatch(cleanLine); len(fromMatch) >= 2 {
+			if clientIP != "" {
+				identifiedID = clientIP
+			} else if fromMatch := regexp.MustCompile(`(?:from|by)\s+([^\s:]+)`).FindStringSubmatch(cleanLine); len(fromMatch) >= 2 {
 				identifiedID = fromMatch[1]
 			}
 		}

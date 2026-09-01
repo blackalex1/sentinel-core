@@ -225,3 +225,47 @@ func TestRouterThreatDetector_Behavioral(t *testing.T) {
 	}
 }
 
+func TestRouterThreatDetector_ConfigurableAndPerTargetLimit(t *testing.T) {
+	detector := &RouterThreatDetector{
+		history:          make(map[string][]RouterConnectionRecord),
+		window:           10 * time.Minute,
+		scanLimit:        4,
+		burstLimit1m:     20,
+		burstLimit3m:     30,
+		targetBruteLimit: 4, // 4 attempts to same target in window = ban
+	}
+
+	src := "192.168.1.150"
+	dst := "192.0.2.80"
+
+	// 1. Attempts 1..3 to port 22: Alert only, no autoban
+	for i := 1; i <= 3; i++ {
+		ev := &RouterEvent{SrcIP: src, DstHost: dst, DstPort: 22, Proto: "TCP"}
+		detector.Evaluate(ev)
+		if !ev.IsThreat || ev.ShouldAutoBan {
+			t.Fatalf("attempt %d should be alert only without autoban, got: %+v", i, ev)
+		}
+	}
+
+	// 2. Attempt 4 to same target: Reaches targetBruteLimit (4) -> Auto-ban!
+	ev4 := &RouterEvent{SrcIP: src, DstHost: dst, DstPort: 22, Proto: "TCP"}
+	detector.Evaluate(ev4)
+	if !ev4.IsThreat || !ev4.ShouldAutoBan || ev4.ThreatType != "vertical_bruteforce" {
+		t.Fatalf("attempt 4 should reach targetBruteLimit and trigger autoban, got: %+v", ev4)
+	}
+
+	// 3. Test dynamic Configure & SetSensitivePorts (e.g. adding custom DB port 5432)
+	detector.Configure(5, 10, 15, 3, 5*time.Minute, []int{5432})
+	if !detector.IsSensitivePort(5432) {
+		t.Errorf("expected port 5432 to be classified as sensitive after Configure")
+	}
+
+	dbSrc := "192.168.1.151"
+	evDB1 := &RouterEvent{SrcIP: dbSrc, DstHost: "192.0.2.99", DstPort: 5432, Proto: "TCP"}
+	detector.Evaluate(evDB1)
+	if !evDB1.IsThreat || evDB1.ThreatType != "sensitive_port" {
+		t.Fatalf("expected custom sensitive port 5432 to be flagged as sensitive_port threat, got: %+v", evDB1)
+	}
+}
+
+
