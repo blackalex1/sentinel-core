@@ -233,9 +233,15 @@ func (d *RouterThreatDetector) Evaluate(ev *RouterEvent) {
 			ev.Reason = "Брутфорс SSH/портов (" + strconv.Itoa(sameTarget3m) + " подкл/3мин к " + ev.DstHost + ":" + strconv.Itoa(ev.DstPort) + ")"
 			return
 		}
+		// Single sensitive port access: Flag as threat for alerting/monitoring (so user sees even single connection), but do not autoban
+		ev.IsThreat = true
+		ev.ShouldAutoBan = false
+		ev.ThreatType = "sensitive_port"
+		ev.Reason = "Обращение к чувствительному порту " + strconv.Itoa(ev.DstPort) + " (" + ev.Proto + ")"
+		return
 	}
 
-	// 4. Normal single-host traffic: Not a threat
+	// 4. Normal non-sensitive single-host traffic (80, 443, 53, etc.): Not a threat
 	ev.IsThreat = false
 	ev.ShouldAutoBan = false
 }
