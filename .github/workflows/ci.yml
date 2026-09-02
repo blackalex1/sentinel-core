@@ -27,6 +27,11 @@ jobs:
           cache: true
           cache-dependency-path: go.mod
 
+      - name: Install dependencies (libpcap)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcap-dev
+
       - name: Run Tests with Race Detector (Multi-threaded & Parallel)
         run: |
           echo "Running test suite with race detector (p=2)..."

@@ -30,6 +30,11 @@ jobs:
           cache: true
           cache-dependency-path: go.mod
 
+      - name: Install dependencies (libpcap)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcap-dev
+
       - name: Run Full Test Suite (Multi-threaded & Parallel)
         run: |
           CPU_COUNT=$(nproc 2>/dev/null || echo 4)
