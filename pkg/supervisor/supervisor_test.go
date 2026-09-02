@@ -368,7 +368,7 @@ func TestFetchSingBoxTraffic_EdgeCases(t *testing.T) {
 					"upload":   100,
 					"metadata": map[string]string{
 						"user":     "   ",
-						"sourceIP": "1.2.3.4",
+						"sourceIP": "198.51.100.1",
 					},
 				},
 			},

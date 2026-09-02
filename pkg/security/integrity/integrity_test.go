@@ -32,7 +32,7 @@ func TestEd25519SigningAndVerification(t *testing.T) {
 
 func TestHMACAndChecksum(t *testing.T) {
 	secret := []byte("sentinel-master-secret-key-32b!")
-	payload := []byte("vless://user@1.2.3.4:443?type=tcp&security=reality")
+	payload := []byte("vless://user@198.51.100.1:443?type=tcp&security=reality")
 
 	mac := ComputeHMACSHA256(payload, secret)
 	if !VerifyHMACSHA256(payload, mac, secret) {

@@ -171,6 +171,12 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 	strategy := "ipv4_only"
 
 	if spec.DNS != nil {
+		if len(spec.DNS.Servers) > 0 {
+			remoteDNS = spec.DNS.Servers[0]
+			if len(spec.DNS.Servers) > 1 {
+				directDNS = spec.DNS.Servers[1]
+			}
+		}
 		if spec.DNS.RemoteServer != "" {
 			remoteDNS = spec.DNS.RemoteServer
 		}

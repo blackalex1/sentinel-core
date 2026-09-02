@@ -42,7 +42,7 @@ func TestProcessWhitelist(t *testing.T) {
 	if !wl.IsIPProtected("192.168.1.50") {
 		t.Fatalf("expected custom IP to be protected")
 	}
-	if wl.IsIPProtected("1.2.3.4") {
+	if wl.IsIPProtected("198.51.100.1") {
 		t.Fatalf("expected external IP to NOT be protected")
 	}
 }

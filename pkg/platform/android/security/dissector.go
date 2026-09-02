@@ -104,7 +104,7 @@ func DissectPacket(rawBytes []byte) (*DissectedPacket, error) {
 	case 6: // TCP
 		res.Protocol = "TCP"
 		if len(transportBytes) < 20 {
-			return res, nil
+			return nil, fmt.Errorf("truncated TCP header (len %d < 20)", len(transportBytes))
 		}
 		res.SourcePort = int(binary.BigEndian.Uint16(transportBytes[0:2]))
 		res.DestinationPort = int(binary.BigEndian.Uint16(transportBytes[2:4]))
@@ -143,7 +143,7 @@ func DissectPacket(rawBytes []byte) (*DissectedPacket, error) {
 	case 17: // UDP
 		res.Protocol = "UDP"
 		if len(transportBytes) < 8 {
-			return res, nil
+			return nil, fmt.Errorf("truncated UDP header (len %d < 8)", len(transportBytes))
 		}
 		res.SourcePort = int(binary.BigEndian.Uint16(transportBytes[0:2]))
 		res.DestinationPort = int(binary.BigEndian.Uint16(transportBytes[2:4]))
@@ -153,13 +153,10 @@ func DissectPacket(rawBytes []byte) (*DissectedPacket, error) {
 
 	case 1: // ICMP
 		res.Protocol = "ICMP"
-		if len(transportBytes) > 0 {
-			payload = transportBytes
-		}
+		return nil, fmt.Errorf("unsupported transport protocol ICMP (1)")
 
 	default:
-		res.Protocol = fmt.Sprintf("IP-Proto-%d", protoNum)
-		payload = transportBytes
+		return nil, fmt.Errorf("unsupported transport protocol: %d", protoNum)
 	}
 
 	res.PayloadLength = len(payload)

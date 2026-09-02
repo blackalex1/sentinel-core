@@ -127,7 +127,7 @@ func TestUnifiedSecurityEngine_SafeTrafficWhitelist(t *testing.T) {
 	// Port 443 HTTPS
 	vWeb := engine.AuditConnection(SecurityAuditRequest{
 		CallerID:      "chrome",
-		DestinationIP: "142.250.190.46",
+		DestinationIP: "198.51.100.46",
 		Port:          443,
 		Protocol:      "TCP",
 		AuditPorts:    []int{22, 445, 3389},
@@ -220,7 +220,7 @@ func TestUnifiedSecurityEngine_QuarantineAndUnblock(t *testing.T) {
 	// Attempt 3 on safe web port 80: must still be blocked due to Zero Trust isolation!
 	v3 := engine.AuditConnection(SecurityAuditRequest{
 		CallerID:      "bad_process.exe",
-		DestinationIP: "93.184.216.34",
+		DestinationIP: "198.51.100.34",
 		Port:          80,
 		Protocol:      "TCP",
 	})
@@ -340,7 +340,7 @@ func TestUnifiedSecurityEngine_MasqueradingDetection(t *testing.T) {
 	legitVerdict := engine.AuditConnection(SecurityAuditRequest{
 		CallerID:       "svchost.exe",
 		ExecutablePath: "C:\\Windows\\System32\\svchost.exe",
-		DestinationIP:  "4.207.247.137",
+		DestinationIP:  "198.51.100.137",
 		Port:           443,
 		Protocol:       "TCP",
 		Platform:       "windows",
@@ -400,7 +400,7 @@ func TestUnifiedSecurityEngine_HotspotClientIsolation(t *testing.T) {
 	// 2. Local Android phone app (e.g. Chrome) connects to web (443) or permitted ports -> MUST NOT BE BLOCKED!
 	localAppVerdict := engine.AuditConnection(SecurityAuditRequest{
 		CallerID:      localAppPkg,
-		DestinationIP: "142.250.190.46",
+		DestinationIP: "198.51.100.46",
 		Port:          443,
 		Protocol:      "TCP",
 		Platform:      "android",

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 
 	androidSec "github.com/blackalex1/sentinel-core/pkg/platform/android/security"
+	"github.com/blackalex1/sentinel-core/pkg/security"
 )
 
 //export SentinelAndroidWritePcap
@@ -104,6 +105,7 @@ func SentinelAndroidBlockApp(pkgName *C.char) *C.char {
 	goPkg := safeGoString(pkgName)
 	if goPkg != "" {
 		androidSec.GetDefaultEngine().BlockApp(goPkg)
+		security.GetDefaultSecurityEngine().BanEntity(goPkg, security.ThreatCoreBlocked, "Quarantined by Android manager")
 	}
 	return C.CString(`{"success": true}`)
 }
@@ -113,6 +115,7 @@ func SentinelAndroidUnblockApp(pkgName *C.char) *C.char {
 	goPkg := safeGoString(pkgName)
 	if goPkg != "" {
 		androidSec.GetDefaultEngine().UnblockApp(goPkg)
+		security.GetDefaultSecurityEngine().UnblockEntity(goPkg)
 	}
 	return C.CString(`{"success": true}`)
 }
@@ -122,7 +125,7 @@ func SentinelAndroidIsAppBlocked(pkgName *C.char) *C.char {
 	goPkg := safeGoString(pkgName)
 	blocked := false
 	if goPkg != "" {
-		blocked = androidSec.GetDefaultEngine().IsAppBlocked(goPkg)
+		blocked = androidSec.GetDefaultEngine().IsAppBlocked(goPkg) || security.GetDefaultSecurityEngine().IsEntityBlocked(goPkg)
 	}
 	resp, _ := json.Marshal(map[string]bool{"blocked": blocked})
 	return C.CString(string(resp))
@@ -142,6 +145,7 @@ func SentinelAndroidGetBlockedApps() *C.char {
 //export SentinelAndroidClearThreats
 func SentinelAndroidClearThreats() *C.char {
 	androidSec.GetDefaultEngine().ClearAll()
+	security.GetDefaultSecurityEngine().UnblockAllEntities()
 	return C.CString(`{"success": true}`)
 }
 

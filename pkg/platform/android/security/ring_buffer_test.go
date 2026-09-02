@@ -14,7 +14,7 @@ func TestAndroidLogRingBuffer(t *testing.T) {
 		buf.Push(AndroidLogEntry{
 			PackageName:     fmt.Sprintf("org.telegram.messenger.%d", i),
 			AppName:         "Telegram",
-			DestinationIP:   "149.154.167.50",
+			DestinationIP:   "198.51.100.50",
 			DestinationPort: 443,
 			Protocol:        "TCP",
 			Timestamp:       time.Now().UnixMilli() + int64(i),
@@ -41,7 +41,7 @@ func TestAndroidLogRingBuffer(t *testing.T) {
 	buf.Push(AndroidLogEntry{
 		PackageName:     "com.google.android.youtube",
 		AppName:         "YouTube",
-		DestinationIP:   "172.217.16.206",
+		DestinationIP:   "198.51.100.206",
 		DestinationPort: 80,
 		Protocol:        "TCP",
 	})

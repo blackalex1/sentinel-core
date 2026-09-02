@@ -229,7 +229,7 @@ func TestBuildClientConfig_CompilationFailureEvent(t *testing.T) {
 		StrictMode: true,
 		ServerNode: &ast.ServerProfile{
 			Protocol: "invalid_proto_strict",
-			Address:  "1.2.3.4",
+			Address:  "198.51.100.1",
 			Port:     443,
 		},
 	}
@@ -358,7 +358,7 @@ func TestBuildFailoverClientConfig_RealBinaryVerification(t *testing.T) {
 		{
 			Protocol:    ast.ProtoVLESS,
 			Name:        "Romania-VLESS",
-			Address:     "185.199.109.133",
+			Address:     "198.51.100.133",
 			Port:        443,
 			UUID:        "e99dc462-8409-4e45-bf28-665544332211",
 			Security:    ast.SecurityReality,

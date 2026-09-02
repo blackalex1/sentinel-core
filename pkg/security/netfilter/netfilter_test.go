@@ -146,12 +146,12 @@ ipv4     2 udp     17 29 src=192.168.1.77 dst=8.8.8.8 sport=33333 dport=53 src=8
 }
 
 func TestRouterParsers(t *testing.T) {
-	ctLine := "[NEW] tcp      6 120 SYN_SENT src=192.168.1.100 dst=5.255.255.242 sport=33296 dport=443 [UNREPLIED]"
+	ctLine := "[NEW] tcp      6 120 SYN_SENT src=192.168.1.100 dst=198.51.100.242 sport=33296 dport=443 [UNREPLIED]"
 	ctEv := ParseRouterConntrackLine(ctLine)
 	if ctEv == nil {
 		t.Fatalf("expected router conntrack event")
 	}
-	if ctEv.SrcIP != "192.168.1.100" || ctEv.DstHost != "5.255.255.242" || ctEv.Proto != "TCP" || ctEv.SrcPort != 33296 || ctEv.DstPort != 443 {
+	if ctEv.SrcIP != "192.168.1.100" || ctEv.DstHost != "198.51.100.242" || ctEv.Proto != "TCP" || ctEv.SrcPort != 33296 || ctEv.DstPort != 443 {
 		t.Errorf("unexpected router conntrack event: %+v", ctEv)
 	}
 

@@ -10,7 +10,7 @@ func TestIngestDBNode_Plain(t *testing.T) {
 		ID:        "node-1",
 		Name:      "Test VLESS Node",
 		Protocol:  "vless",
-		Address:   "1.2.3.4",
+		Address:   "198.51.100.1",
 		Port:      443,
 		Transport: "tcp",
 		Security:  "reality",
@@ -34,7 +34,7 @@ func TestIngestDBNode_Plain(t *testing.T) {
 		t.Fatalf("failed to ingest DB node: %v", err)
 	}
 
-	if profile.Protocol != "vless" || profile.Address != "1.2.3.4" || profile.Port != 443 {
+	if profile.Protocol != "vless" || profile.Address != "198.51.100.1" || profile.Port != 443 {
 		t.Fatalf("unexpected profile values: %+v", profile)
 	}
 	if profile.UUID != "a6c8e874-a4ee-4c38-89c0-6d427d1421bf" || profile.PublicKey != "myPublicKey123" {
@@ -66,7 +66,7 @@ func TestIngestDBNode_Encrypted(t *testing.T) {
 		ID:         "node-enc-1",
 		Name:       "Encrypted Node",
 		Protocol:   "vless",
-		Address:    "5.6.7.8",
+		Address:    "198.51.100.2",
 		Port:       443,
 		Parameters: encParams,
 	}
@@ -100,7 +100,7 @@ func TestIngestDBNode_RawJSONStringParams(t *testing.T) {
 		ID:         "node-json-str",
 		Name:       "JSON String Params",
 		Protocol:   "trojan",
-		Address:    "9.10.11.12",
+		Address:    "198.51.100.3",
 		Port:       443,
 		Parameters: `{"password": "trojan-pass-123", "service_name": "grpc-svc", "alpn": "h2,http/1.1"}`,
 	}
@@ -118,7 +118,7 @@ func TestIngestDBNode_RawJSONStringParams(t *testing.T) {
 	rawInvalid := &RawDBNode{
 		ID:         "node-invalid-json",
 		Protocol:   "trojan",
-		Address:    "9.10.11.12",
+		Address:    "198.51.100.3",
 		Port:       443,
 		Parameters: `{invalid-json-string`,
 	}
@@ -186,7 +186,7 @@ func TestIngestDBNode_AllProtocolsAndFields(t *testing.T) {
 	// 1. Shadowsocks & ShadowTLS
 	ssNode := &RawDBNode{
 		Protocol: "shadowsocks",
-		Address:  "1.2.3.4",
+		Address:  "198.51.100.1",
 		Port:     8388,
 		Parameters: map[string]interface{}{
 			"password":            "ss-secret",
@@ -207,7 +207,7 @@ func TestIngestDBNode_AllProtocolsAndFields(t *testing.T) {
 	// 2. Hysteria 2
 	hyNode := &RawDBNode{
 		Protocol: "hysteria2",
-		Address:  "1.2.3.4",
+		Address:  "198.51.100.1",
 		Port:     443,
 		Parameters: map[string]interface{}{
 			"password":       "hy2-secret",
@@ -229,7 +229,7 @@ func TestIngestDBNode_AllProtocolsAndFields(t *testing.T) {
 	// 3. TUIC
 	tuicNode := &RawDBNode{
 		Protocol: "tuic",
-		Address:  "1.2.3.4",
+		Address:  "198.51.100.1",
 		Port:     443,
 		Parameters: map[string]interface{}{
 			"uuid":                "tuic-uuid-1234",
@@ -250,7 +250,7 @@ func TestIngestDBNode_AllProtocolsAndFields(t *testing.T) {
 	// 4. WireGuard
 	wgNode := &RawDBNode{
 		Protocol: "wireguard",
-		Address:  "1.2.3.4",
+		Address:  "198.51.100.1",
 		Port:     51820,
 		Parameters: map[string]interface{}{
 			"private_key":     "priv-wg-key",
@@ -271,7 +271,7 @@ func TestIngestDBNode_AllProtocolsAndFields(t *testing.T) {
 	// 5. VMess with Path & Username
 	vmessNode := &RawDBNode{
 		Protocol: "vmess",
-		Address:  "1.2.3.4",
+		Address:  "198.51.100.1",
 		Port:     443,
 		Parameters: map[string]interface{}{
 			"uuid":     "vmess-uuid-1234",
@@ -315,7 +315,7 @@ func TestIngestFromJSON(t *testing.T) {
 		"id": "json-node-1",
 		"name": "JSON VLESS",
 		"protocol": "vless",
-		"address": "1.2.3.4",
+		"address": "198.51.100.1",
 		"port": 443,
 		"parameters": {
 			"uuid": "a6c8e874-a4ee-4c38-89c0-6d427d1421bf",
