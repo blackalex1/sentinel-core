@@ -14,6 +14,8 @@ var (
 	sbTrafficMu      sync.RWMutex
 	sbUserCumulative = make(map[string]map[string]*ClientTraffic) // clashAddr -> email -> *ClientTraffic
 	sbLastConnStats  = make(map[string][2]int64)                  // connID -> [upload, download]
+	sbLastTotals     = make(map[string][2]int64)                  // clashAddr -> [uploadTotal, downloadTotal]
+	sbLastSeenUser   = make(map[string]string)                   // clashAddr -> lastActiveEmail
 )
 
 // ResetSingBoxCumulativeTraffic clears in-memory cumulative traffic for Sing-box.
@@ -22,6 +24,8 @@ func ResetSingBoxCumulativeTraffic() {
 	defer sbTrafficMu.Unlock()
 	sbUserCumulative = make(map[string]map[string]*ClientTraffic)
 	sbLastConnStats = make(map[string][2]int64)
+	sbLastTotals = make(map[string][2]int64)
+	sbLastSeenUser = make(map[string]string)
 }
 
 // CheckSingBoxStatus checks if Sing-box Clash API is responding.
@@ -69,6 +73,8 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 	}
 
 	var data struct {
+		DownloadTotal int64 `json:"downloadTotal"`
+		UploadTotal   int64 `json:"uploadTotal"`
 		Connections []struct {
 			ID       string `json:"id"`
 			Download int64  `json:"download"`
@@ -76,6 +82,7 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 			User     string `json:"user"`
 			Username string `json:"username"`
 			Email    string `json:"email"`
+			UUID     string `json:"uuid"`
 			Metadata struct {
 				User        string `json:"user"`
 				InboundUser string `json:"inboundUser"`
@@ -85,6 +92,7 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 				Name        string `json:"name"`
 				Email       string `json:"email"`
 				Client      string `json:"client"`
+				UUID        string `json:"uuid"`
 				SourceIP    string `json:"sourceIP"`
 				Source_IP   string `json:"source_ip"`
 				ClientIP    string `json:"clientIP"`
@@ -107,6 +115,8 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		addrMap = make(map[string]*ClientTraffic)
 		sbUserCumulative[clashAddr] = addrMap
 	}
+
+	var activeDeltasUp, activeDeltasDown int64
 
 	for _, conn := range data.Connections {
 		connID := conn.ID
@@ -137,6 +147,9 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 			email = conn.Metadata.Client
 		}
 		if email == "" {
+			email = conn.Metadata.UUID
+		}
+		if email == "" {
 			email = conn.User
 		}
 		if email == "" {
@@ -145,12 +158,16 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		if email == "" {
 			email = conn.Email
 		}
+		if email == "" {
+			email = conn.UUID
+		}
 		email = strings.TrimSpace(email)
 		if email == "" {
 			continue
 		}
 
 		liveUsers[email]++
+		sbLastSeenUser[clashAddr] = email
 
 		prev := sbLastConnStats[connID]
 		prevUp, prevDown := prev[0], prev[1]
@@ -168,6 +185,8 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		}
 
 		sbLastConnStats[connID] = [2]int64{conn.Upload, conn.Download}
+		activeDeltasUp += deltaUp
+		activeDeltasDown += deltaDown
 
 		ct, ctExists := addrMap[email]
 		if !ctExists {
@@ -176,6 +195,25 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		}
 		ct.UpBytes += deltaUp
 		ct.DownBytes += deltaDown
+
+		// Attribute traffic to specific outbound / fallback tag if present
+		outboundTag := conn.Metadata.Outbound
+		if outboundTag == "" && len(conn.Chains) > 0 {
+			outboundTag = conn.Chains[len(conn.Chains)-1]
+		}
+		if outboundTag == "" && len(conn.Metadata.Chains) > 0 {
+			outboundTag = conn.Metadata.Chains[len(conn.Metadata.Chains)-1]
+		}
+		if outboundTag != "" && outboundTag != "direct" && outboundTag != "block" && outboundTag != "blocked" {
+			outboundKey := "outbound:" + outboundTag
+			obCt, obExists := addrMap[outboundKey]
+			if !obExists {
+				obCt = &ClientTraffic{Email: outboundKey}
+				addrMap[outboundKey] = obCt
+			}
+			obCt.UpBytes += deltaUp
+			obCt.DownBytes += deltaDown
+		}
 
 		srcIP := conn.Metadata.SourceIP
 		if srcIP == "" {
@@ -193,6 +231,51 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 			ipSetByUser[email][srcIP] = true
 			if srcIP != "127.0.0.1" && srcIP != "::1" {
 				GetSessionTracker().RegisterExternalConnect("sing-box", email, srcIP)
+			}
+		}
+	}
+
+	// Calculate closed connections delta from DownloadTotal / UploadTotal
+	if data.DownloadTotal > 0 || data.UploadTotal > 0 {
+		prevTotals := sbLastTotals[clashAddr]
+		prevUpTotal, prevDownTotal := prevTotals[0], prevTotals[1]
+
+		var deltaTotalUp, deltaTotalDown int64
+		if data.UploadTotal >= prevUpTotal {
+			deltaTotalUp = data.UploadTotal - prevUpTotal
+		} else {
+			deltaTotalUp = data.UploadTotal
+		}
+		if data.DownloadTotal >= prevDownTotal {
+			deltaTotalDown = data.DownloadTotal - prevDownTotal
+		} else {
+			deltaTotalDown = data.DownloadTotal
+		}
+		sbLastTotals[clashAddr] = [2]int64{data.UploadTotal, data.DownloadTotal}
+
+		unaccountedUp := deltaTotalUp - activeDeltasUp
+		unaccountedDown := deltaTotalDown - activeDeltasDown
+
+		if unaccountedUp > 0 || unaccountedDown > 0 {
+			targetEmail := sbLastSeenUser[clashAddr]
+			if targetEmail == "" && len(addrMap) == 1 {
+				for em := range addrMap {
+					targetEmail = em
+					break
+				}
+			}
+			if targetEmail != "" {
+				ct, ctExists := addrMap[targetEmail]
+				if !ctExists {
+					ct = &ClientTraffic{Email: targetEmail}
+					addrMap[targetEmail] = ct
+				}
+				if unaccountedUp > 0 {
+					ct.UpBytes += unaccountedUp
+				}
+				if unaccountedDown > 0 {
+					ct.DownBytes += unaccountedDown
+				}
 			}
 		}
 	}
