@@ -76,27 +76,30 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		DownloadTotal int64 `json:"downloadTotal"`
 		UploadTotal   int64 `json:"uploadTotal"`
 		Connections []struct {
-			ID       string `json:"id"`
-			Download int64  `json:"download"`
-			Upload   int64  `json:"upload"`
-			User     string `json:"user"`
-			Username string `json:"username"`
-			Email    string `json:"email"`
-			UUID     string `json:"uuid"`
+			ID       string   `json:"id"`
+			Download int64    `json:"download"`
+			Upload   int64    `json:"upload"`
+			User     string   `json:"user"`
+			Username string   `json:"username"`
+			Email    string   `json:"email"`
+			UUID     string   `json:"uuid"`
+			Chains   []string `json:"chains"`
 			Metadata struct {
-				User        string `json:"user"`
-				InboundUser string `json:"inboundUser"`
-				ClientUser  string `json:"clientUser"`
-				Username    string `json:"username"`
-				AuthUser    string `json:"auth_user"`
-				Name        string `json:"name"`
-				Email       string `json:"email"`
-				Client      string `json:"client"`
-				UUID        string `json:"uuid"`
-				SourceIP    string `json:"sourceIP"`
-				Source_IP   string `json:"source_ip"`
-				ClientIP    string `json:"clientIP"`
-				RemoteHost  string `json:"host"`
+				User        string   `json:"user"`
+				InboundUser string   `json:"inboundUser"`
+				ClientUser  string   `json:"clientUser"`
+				Username    string   `json:"username"`
+				AuthUser    string   `json:"auth_user"`
+				Name        string   `json:"name"`
+				Email       string   `json:"email"`
+				Client      string   `json:"client"`
+				UUID        string   `json:"uuid"`
+				Outbound    string   `json:"outbound"`
+				Chains      []string `json:"chains"`
+				SourceIP    string   `json:"sourceIP"`
+				Source_IP   string   `json:"source_ip"`
+				ClientIP    string   `json:"clientIP"`
+				RemoteHost  string   `json:"host"`
 			} `json:"metadata"`
 		} `json:"connections"`
 	}
