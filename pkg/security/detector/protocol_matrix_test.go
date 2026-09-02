@@ -11,6 +11,7 @@ import (
 func TestAllProtocolLogsAttributionMatrix(t *testing.T) {
 	nowStr := time.Now().Format("2006/01/02 15:04:05")
 	nowISO := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	sbTime := time.Now().Format("-0700 2006-01-02 15:04:05")
 	dstIP := "203.0.113.80"
 	dstPort := 22
 
@@ -134,8 +135,8 @@ func TestAllProtocolLogsAttributionMatrix(t *testing.T) {
 			core:     "singbox",
 			protocol: "vless",
 			logs: []string{
-				fmt.Sprintf("+0300 %s INFO [2001 0ms] inbound/vless[sb-vless-in]: inbound connection from 192.168.1.21:52001", nowStr),
-				fmt.Sprintf("+0300 %s INFO [2001 10ms] inbound/vless[sb-vless-in]: [sb_vless_user@test.lan] inbound connection to %s:%d", nowStr, dstIP, dstPort),
+				fmt.Sprintf("%s INFO [2001 0ms] inbound/vless[sb-vless-in]: inbound connection from 192.168.1.21:52001", sbTime),
+				fmt.Sprintf("%s INFO [2001 10ms] inbound/vless[sb-vless-in]: [sb_vless_user@test.lan] inbound connection to %s:%d", sbTime, dstIP, dstPort),
 			},
 			expectedUser: "sb_vless_user@test.lan",
 			expectedIP:   "192.168.1.21",
@@ -145,8 +146,8 @@ func TestAllProtocolLogsAttributionMatrix(t *testing.T) {
 			core:     "singbox",
 			protocol: "shadowsocks",
 			logs: []string{
-				fmt.Sprintf("+0300 %s INFO [2002 0ms] inbound/shadowsocks[sb-ss-in]: inbound connection from 192.168.1.22:52002", nowStr),
-				fmt.Sprintf("+0300 %s INFO [2002 12ms] inbound/shadowsocks[sb-ss-in]: [sb_ss_user@test.lan] inbound connection to %s:%d", nowStr, dstIP, dstPort),
+				fmt.Sprintf("%s INFO [2002 0ms] inbound/shadowsocks[sb-ss-in]: inbound connection from 192.168.1.22:52002", sbTime),
+				fmt.Sprintf("%s INFO [2002 12ms] inbound/shadowsocks[sb-ss-in]: [sb_ss_user@test.lan] inbound connection to %s:%d", sbTime, dstIP, dstPort),
 			},
 			expectedUser: "sb_ss_user@test.lan",
 			expectedIP:   "192.168.1.22",
@@ -156,8 +157,8 @@ func TestAllProtocolLogsAttributionMatrix(t *testing.T) {
 			core:     "singbox",
 			protocol: "tuic",
 			logs: []string{
-				fmt.Sprintf("+0300 %s INFO [2003 0ms] inbound/tuic[sb-tuic-in]: inbound connection from 192.168.1.23:52003", nowStr),
-				fmt.Sprintf("+0300 %s INFO [2003 14ms] inbound/tuic[sb-tuic-in]: [sb_tuic_user@test.lan] inbound connection to %s:%d", nowStr, dstIP, dstPort),
+				fmt.Sprintf("%s INFO [2003 0ms] inbound/tuic[sb-tuic-in]: inbound connection from 192.168.1.23:52003", sbTime),
+				fmt.Sprintf("%s INFO [2003 14ms] inbound/tuic[sb-tuic-in]: [sb_tuic_user@test.lan] inbound connection to %s:%d", sbTime, dstIP, dstPort),
 			},
 			expectedUser: "sb_tuic_user@test.lan",
 			expectedIP:   "192.168.1.23",
@@ -167,8 +168,8 @@ func TestAllProtocolLogsAttributionMatrix(t *testing.T) {
 			core:     "singbox",
 			protocol: "hysteria2",
 			logs: []string{
-				fmt.Sprintf("+0300 %s INFO [2004 0ms] inbound/hysteria2[sb-hy2-in]: inbound connection from 192.168.1.24:52004", nowStr),
-				fmt.Sprintf("+0300 %s INFO [2004 15ms] inbound/hysteria2[sb-hy2-in]: [sb_hy2_user@test.lan] inbound connection to %s:%d", nowStr, dstIP, dstPort),
+				fmt.Sprintf("%s INFO [2004 0ms] inbound/hysteria2[sb-hy2-in]: inbound connection from 192.168.1.24:52004", sbTime),
+				fmt.Sprintf("%s INFO [2004 15ms] inbound/hysteria2[sb-hy2-in]: [sb_hy2_user@test.lan] inbound connection to %s:%d", sbTime, dstIP, dstPort),
 			},
 			expectedUser: "sb_hy2_user@test.lan",
 			expectedIP:   "192.168.1.24",
@@ -178,8 +179,8 @@ func TestAllProtocolLogsAttributionMatrix(t *testing.T) {
 			core:     "singbox",
 			protocol: "mixed",
 			logs: []string{
-				fmt.Sprintf("+0300 %s INFO [2005 0ms] inbound/mixed[sb-mixed-in]: inbound connection from 192.168.1.25:52005", nowStr),
-				fmt.Sprintf("+0300 %s INFO [2005 8ms] inbound/mixed[sb-mixed-in]: [sb_mixed_user@test.lan] inbound connection to %s:%d", nowStr, dstIP, dstPort),
+				fmt.Sprintf("%s INFO [2005 0ms] inbound/mixed[sb-mixed-in]: inbound connection from 192.168.1.25:52005", sbTime),
+				fmt.Sprintf("%s INFO [2005 8ms] inbound/mixed[sb-mixed-in]: [sb_mixed_user@test.lan] inbound connection to %s:%d", sbTime, dstIP, dstPort),
 			},
 			expectedUser: "sb_mixed_user@test.lan",
 			expectedIP:   "192.168.1.25",
