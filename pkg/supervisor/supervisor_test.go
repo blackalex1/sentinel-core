@@ -1405,8 +1405,8 @@ func TestSessionTracker_RealProductionHandshakeWithUntrustedIP(t *testing.T) {
 
 	rawLogs := []string{
 		"+0000 2026-08-31 15:02:11 INFO [3250429930 0ms] inbound/vless[inbound-8]: inbound connection from 198.51.100.89:3144",
-		"+0000 2026-08-31 15:02:11 INFO [3250429930 109ms] inbound/vless[inbound-8]: [phone] inbound connection to mtalk.google.com:5228",
-		"+0000 2026-08-31 15:02:11 INFO [3250429930 109ms] outbound/hysteria2[hysteria2-cybergrid-servequake-com-primary]: outbound connection to mtalk.google.com:5228",
+		"+0000 2026-08-31 15:02:11 INFO [3250429930 109ms] inbound/vless[inbound-8]: [phone] inbound connection to example.org:443",
+		"+0000 2026-08-31 15:02:11 INFO [3250429930 109ms] outbound/hysteria2[hysteria2-primary-outbound]: outbound connection to example.org:443",
 	}
 
 	for _, l := range rawLogs {

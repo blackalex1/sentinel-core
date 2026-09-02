@@ -25,6 +25,7 @@ func findXrayBinary() string {
 	}
 
 	searchPaths := []string{
+		"/app/bin/xray", "/app/bin/xray.exe",
 		"bin/xray.exe", "bin/xray",
 		"backend/bin/xray.exe", "backend/bin/xray",
 		"../bin/xray.exe", "../bin/xray",
@@ -76,18 +77,31 @@ func QueryXrayStats(statsAddr string) (map[string]ClientTraffic, error) {
 
 	for _, item := range data.Stat {
 		parts := strings.Split(item.Name, ">>>")
-		if len(parts) >= 4 && parts[0] == "user" {
-			email := parts[1]
+		if len(parts) >= 4 {
+			metricType := parts[0]
+			target := parts[1]
 			direction := parts[3]
 
-			entry := result[email]
-			entry.Email = email
-			if direction == "uplink" {
-				entry.UpBytes = item.Value
-			} else if direction == "downlink" {
-				entry.DownBytes = item.Value
+			if metricType == "user" {
+				entry := result[target]
+				entry.Email = target
+				if direction == "uplink" {
+					entry.UpBytes = item.Value
+				} else if direction == "downlink" {
+					entry.DownBytes = item.Value
+				}
+				result[target] = entry
+			} else if metricType == "outbound" {
+				outboundKey := "outbound:" + target
+				entry := result[outboundKey]
+				entry.Email = outboundKey
+				if direction == "uplink" {
+					entry.UpBytes = item.Value
+				} else if direction == "downlink" {
+					entry.DownBytes = item.Value
+				}
+				result[outboundKey] = entry
 			}
-			result[email] = entry
 		}
 	}
 
