@@ -90,7 +90,12 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 	}
 
 	cmd := exec.Command(binPath, args...)
-	cmd.Dir = filepath.Dir(binPath)
+	binDir := filepath.Dir(binPath)
+	cmd.Dir = binDir
+	cmd.Env = append(os.Environ(),
+		"XRAY_LOCATION_ASSET="+binDir,
+		"V2RAY_LOCATION_ASSET="+binDir,
+	)
 	stdoutPipe, errOut := cmd.StdoutPipe()
 	stderrPipe, errErr := cmd.StderrPipe()
 	setSysProcAttr(cmd)
@@ -334,7 +339,12 @@ func (pm *ProcessManager) ValidateCoreConfig(coreName, binPath, configPath strin
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, binPath, args...)
-	cmd.Dir = filepath.Dir(binPath)
+	binDir := filepath.Dir(binPath)
+	cmd.Dir = binDir
+	cmd.Env = append(os.Environ(),
+		"XRAY_LOCATION_ASSET="+binDir,
+		"V2RAY_LOCATION_ASSET="+binDir,
+	)
 	out, err := cmd.CombinedOutput()
 	outStr := string(out)
 

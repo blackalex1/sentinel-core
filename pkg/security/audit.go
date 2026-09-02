@@ -89,12 +89,15 @@ func DefaultSecurityPolicy() SecurityPolicyConfig {
 // SecurityAuditRequest represents a unified connection audit payload for both Android and PC.
 type SecurityAuditRequest struct {
 	CallerID        string                `json:"caller_id"`        // Android: package/UID, PC: process_name/user
+	PackageName     string                `json:"package_name,omitempty"` // Android alias for CallerID
+	AppName         string                `json:"app_name,omitempty"`
 	ExecutablePath  string                `json:"executable_path,omitempty"` // Absolute disk path of binary (e.g. C:\Windows\System32\svchost.exe)
 	DestinationIP   string                `json:"destination_ip"`
 	DestinationHost string                `json:"destination_host,omitempty"`
 	Port            int                   `json:"port"`
 	Protocol        string                `json:"protocol"`         // "TCP", "UDP", "ICMP"
 	AuditPorts      []int                 `json:"audit_ports,omitempty"`
+	MaxThreshold    int                   `json:"max_threshold,omitempty"`
 	IsExplicitBlock bool                  `json:"is_explicit_block,omitempty"`
 	Platform        string                `json:"platform,omitempty"` // "windows", "android", "linux"
 	PolicyOverride  *SecurityPolicyConfig `json:"policy_override,omitempty"`
@@ -102,18 +105,20 @@ type SecurityAuditRequest struct {
 
 // SecurityAuditVerdict contains the unified security verdict.
 type SecurityAuditVerdict struct {
-	IsBlocked      bool                 `json:"is_blocked"`
-	ShouldBlock    bool                 `json:"should_block"`
-	ThreatDetected bool                 `json:"threat_detected"`
-	ThreatType     ThreatClassification `json:"threat_type"`
-	Description    string               `json:"description"`
-	Action         string               `json:"action"` // "BLOCK", "ALLOW", "ALERT"
-	RiskScore      int                  `json:"risk_score"`
-	AttemptCount   int                  `json:"attempt_count"`
-	Threshold      int                  `json:"threshold"`
-	Timestamp      int64                `json:"timestamp"`
-	PcapCaptured   bool                 `json:"pcap_captured,omitempty"`
-	PcapFilePath   string               `json:"pcap_file_path,omitempty"`
+	IsBlocked       bool                 `json:"is_blocked"`
+	ShouldBlock     bool                 `json:"should_block"`
+	IsSystemFlagged bool                 `json:"is_system_flagged"`
+	ThreatDetected  bool                 `json:"threat_detected"`
+	ThreatType      ThreatClassification `json:"threat_type"`
+	Description     string               `json:"description"`
+	Action          string               `json:"action"` // "BLOCK", "ALLOW", "ALERT", "FLAG_SYSTEM"
+	RiskScore       int                  `json:"risk_score"`
+	AttemptCount    int                  `json:"attempt_count"`
+	AttemptsCount   int                  `json:"attempts_count"`
+	Threshold       int                  `json:"threshold"`
+	Timestamp       int64                `json:"timestamp"`
+	PcapCaptured    bool                 `json:"pcap_captured,omitempty"`
+	PcapFilePath    string               `json:"pcap_file_path,omitempty"`
 }
 
 type entityConnEntry struct {
@@ -246,6 +251,18 @@ func (e *UnifiedSecurityEngine) GetBlockedEntities() []*BannedEntity {
 	return list
 }
 
+// BanEntity explicitly adds an entity to the quarantine list.
+func (e *UnifiedSecurityEngine) BanEntity(callerID string, reason ThreatClassification, desc string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.bannedEntities[callerID] = &BannedEntity{
+		CallerID:  callerID,
+		BlockedAt: time.Now(),
+		Reason:    desc,
+		RiskScore: 100,
+	}
+}
+
 // UnblockEntity removes a quarantined entity by caller ID.
 func (e *UnifiedSecurityEngine) UnblockEntity(callerID string) {
 	e.mu.Lock()
@@ -257,15 +274,12 @@ func (e *UnifiedSecurityEngine) UnblockEntity(callerID string) {
 	}
 }
 
-// UnblockAllEntities clears all quarantines.
+// UnblockAllEntities clears all quarantines and resets all entity profiles.
 func (e *UnifiedSecurityEngine) UnblockAllEntities() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.bannedEntities = make(map[string]*BannedEntity)
-	for _, p := range e.profiles {
-		p.ThreatCount = 0
-		p.RiskScore = 0
-	}
+	e.profiles = make(map[string]*entitySecurityProfile)
 }
 
 // IsEntityBlocked checks if an entity is currently quarantined.
@@ -491,6 +505,13 @@ func isProtectedSystemEntity(caller, execPath string) bool {
 	clean := strings.ToLower(strings.TrimSpace(caller))
 	p := strings.ToLower(strings.ReplaceAll(execPath, "\\", "/"))
 
+	if clean == "android" || clean == "android.system.kernel" ||
+		strings.HasPrefix(clean, "android.system.") ||
+		strings.HasPrefix(clean, "android.uid.") ||
+		strings.HasPrefix(clean, "unknown.uid.") {
+		return true
+	}
+
 	switch clean {
 	case "", "defaultentity", "unknown", "pending", "127.0.0.1", "::1":
 		return true
@@ -512,6 +533,9 @@ func (e *UnifiedSecurityEngine) AuditConnection(req SecurityAuditRequest) Securi
 
 	caller := strings.TrimSpace(req.CallerID)
 	if caller == "" {
+		caller = strings.TrimSpace(req.PackageName)
+	}
+	if caller == "" {
 		caller = "DefaultEntity"
 	}
 	isSystem := isProtectedSystemEntity(caller, req.ExecutablePath)
@@ -532,14 +556,17 @@ func (e *UnifiedSecurityEngine) AuditConnection(req SecurityAuditRequest) Securi
 	// 0. Check if entity is already quarantined in Zero Trust registry
 	if e.IsEntityBlocked(caller) {
 		v := SecurityAuditVerdict{
-			IsBlocked:      true,
-			ShouldBlock:    true,
-			ThreatDetected: true,
-			ThreatType:     ThreatCoreBlocked,
-			Description:    fmt.Sprintf("Process '%s' is in Zero Trust isolation", caller),
-			Action:         "BLOCK",
-			RiskScore:      100,
-			Timestamp:      nowMs,
+			IsBlocked:       true,
+			ShouldBlock:     false,
+			IsSystemFlagged: false,
+			ThreatDetected:  true,
+			ThreatType:      ThreatCoreBlocked,
+			Description:     fmt.Sprintf("Process '%s' is in Zero Trust isolation", caller),
+			Action:          "BLOCK",
+			RiskScore:       100,
+			AttemptCount:    1,
+			AttemptsCount:   1,
+			Timestamp:       nowMs,
 		}
 		e.handlePcapAndProfile(caller, &v, req, policy, now, nowMs)
 		return v
@@ -687,55 +714,56 @@ func (e *UnifiedSecurityEngine) AuditConnection(req SecurityAuditRequest) Securi
 
 		attemptCount := profile.ThreatCount
 		blockLimit := policy.BlockThreshold
+		if req.MaxThreshold > 0 {
+			blockLimit = req.MaxThreshold
+		}
 		if blockLimit <= 0 {
 			blockLimit = 3
 		}
 
-		shouldBlock := false
-		action := "ALERT"
-
-		switch policy.Mode {
-		case ModeStrictBlock:
-			shouldBlock = true
-			action = "BLOCK"
-		case ModeAlertOnly:
-			shouldBlock = false
-			action = "ALERT"
-		case ModeThresholdBlock:
-			fallthrough
-		default:
-			if attemptCount >= blockLimit {
-				shouldBlock = true
-				action = "BLOCK"
-			} else {
-				shouldBlock = false
-				action = "ALERT"
-			}
+		isExceeded := (req.MaxThreshold > 0 && attemptCount > blockLimit) || (req.MaxThreshold <= 0 && attemptCount >= blockLimit)
+		if policy.Mode == ModeStrictBlock {
+			isExceeded = true
+		} else if policy.Mode == ModeAlertOnly {
+			isExceeded = false
 		}
 
-		if isSystem {
-			shouldBlock = false
-			action = "ALERT"
+		shouldBlock := isExceeded && !isSystem
+		isSystemFlagged := isSystem && isExceeded
+		action := "ALERT"
+		if shouldBlock {
+			action = "BLOCK"
+		} else if isSystemFlagged {
+			action = "FLAG_SYSTEM"
 		}
 
 		var desc string
 		if shouldBlock {
 			desc = fmt.Sprintf("Shielded sensitive port %d blocked (policy %s: attempt %d/%d)", req.Port, policy.Mode, attemptCount, blockLimit)
+		} else if isSystemFlagged {
+			desc = fmt.Sprintf("System entity '%s' probed sensitive port %d (flagged)", caller, req.Port)
 		} else {
 			desc = fmt.Sprintf("Shielded sensitive port %d probe detected (attempt %d/%d)", req.Port, attemptCount, blockLimit)
 		}
 
+		threatType := ThreatSensitivePort
+		if isSystemFlagged {
+			threatType = ThreatHighFrequency
+		}
+
 		verdict = SecurityAuditVerdict{
-			IsBlocked:      shouldBlock,
-			ShouldBlock:    shouldBlock,
-			ThreatDetected: true,
-			ThreatType:     ThreatSensitivePort,
-			Description:    desc,
-			Action:         action,
-			RiskScore:      profile.RiskScore,
-			AttemptCount:   attemptCount,
-			Threshold:      blockLimit,
-			Timestamp:      nowMs,
+			IsBlocked:       shouldBlock,
+			ShouldBlock:     shouldBlock,
+			IsSystemFlagged: isSystemFlagged,
+			ThreatDetected:  true,
+			ThreatType:      threatType,
+			Description:     desc,
+			Action:          action,
+			RiskScore:       profile.RiskScore,
+			AttemptCount:    attemptCount,
+			AttemptsCount:   attemptCount,
+			Threshold:       blockLimit,
+			Timestamp:       nowMs,
 		}
 	} else if len(profile.ProbedPorts) >= policy.PortScanThreshold && policy.PortScanThreshold > 0 {
 		// Port scan threshold reached

@@ -162,12 +162,12 @@ func TestCLI_Main_Dispatch(t *testing.T) {
 	}
 
 	// 10. parse via main()
-	uri := "vless://a6c8e874-a4ee-4c38-89c0-6d427d1421bf@1.2.3.4:443?security=reality&sni=example.com&fp=chrome&pbk=myPublicKey123&type=tcp#TestNode"
+	uri := "vless://a6c8e874-a4ee-4c38-89c0-6d427d1421bf@198.51.100.1:443?security=reality&sni=example.com&fp=chrome&pbk=myPublicKey123&type=tcp#TestNode"
 	os.Args = []string{"sentinel-core", "parse", "--uri", uri}
 	outParse := captureOutput(func() {
 		main()
 	})
-	if !strings.Contains(outParse, "1.2.3.4") {
+	if !strings.Contains(outParse, "198.51.100.1") {
 		t.Errorf("expected parse output from main, got: %s", outParse)
 	}
 
@@ -204,7 +204,7 @@ func TestCLI_Build_OptionsAndWarnings(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
-	trojanURI := "trojan://password123@1.2.3.4:443?security=reality&pbk=pubkey123&sni=example.com#TrojanReality"
+	trojanURI := "trojan://password123@198.51.100.1:443?security=reality&pbk=pubkey123&sni=example.com#TrojanReality"
 	os.Args = []string{"sentinel-core", "build", "--uri", trojanURI, "--core", "singbox", "--block-ads=true", "--bypass-ru=true"}
 	out := captureOutput(func() {
 		handleBuild()
@@ -247,7 +247,7 @@ func TestCLI_Generate_Stdin(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
-	profileJSON := `{"protocol":"vless","address":"1.2.3.4","port":443,"uuid":"a6c8e874-a4ee-4c38-89c0-6d427d1421bf","security":"reality","sni":"example.com","public_key":"myPublicKey123"}`
+	profileJSON := `{"protocol":"vless","address":"198.51.100.1","port":443,"uuid":"a6c8e874-a4ee-4c38-89c0-6d427d1421bf","security":"reality","sni":"example.com","public_key":"myPublicKey123"}`
 	os.Args = []string{"sentinel-core", "generate"}
 
 	var out string
@@ -262,7 +262,7 @@ func TestCLI_Generate_Stdin(t *testing.T) {
 	}
 
 	// Generate with unsupported protocol
-	badProfileJSON := `{"protocol":"unsupported-protocol","address":"1.2.3.4","port":443}`
+	badProfileJSON := `{"protocol":"unsupported-protocol","address":"198.51.100.1","port":443}`
 	os.Args = []string{"sentinel-core", "generate", "--profile", badProfileJSON}
 	code, outBad := runWithExitCapture(func() {
 		handleGenerate()
@@ -417,7 +417,7 @@ func TestCLI_ErrorBranches(t *testing.T) {
 	}
 
 	// 7. build invalid preset file
-	vlessURI := "vless://a6c8e874-a4ee-4c38-89c0-6d427d1421bf@1.2.3.4:443?security=reality&sni=example.com&fp=chrome&pbk=myPublicKey123&type=tcp"
+	vlessURI := "vless://a6c8e874-a4ee-4c38-89c0-6d427d1421bf@198.51.100.1:443?security=reality&sni=example.com&fp=chrome&pbk=myPublicKey123&type=tcp"
 	os.Args = []string{"sentinel-core", "build", "--uri", vlessURI, "--preset", "non_existent_preset_xyz.json"}
 	code, _ = runWithExitCapture(func() { handleBuild() })
 	if code != 1 {

@@ -28,7 +28,7 @@ func TestParseURI_EmptyAndWhitespace(t *testing.T) {
 
 func TestParseAndGenerate_VLESS_Comprehensive(t *testing.T) {
 	// Full VLESS Reality URI with all query parameters
-	raw := "vless://a6c8e874-a4ee-4c38-89c0-6d427d1421bf@1.2.3.4:443?type=tcp&security=reality&flow=xtls-rprx-vision&sni=example.com&fp=chrome&pbk=publicKey123&sid=abcdef12&spx=%2F&path=%2Fws&host=example.com&serviceName=my-grpc&alpn=h2%2Chttp%2F1.1&allowInsecure=1&pq=1&mux=1#MyVLESS"
+	raw := "vless://a6c8e874-a4ee-4c38-89c0-6d427d1421bf@198.51.100.1:443?type=tcp&security=reality&flow=xtls-rprx-vision&sni=example.com&fp=chrome&pbk=publicKey123&sid=abcdef12&spx=%2F&path=%2Fws&host=example.com&serviceName=my-grpc&alpn=h2%2Chttp%2F1.1&allowInsecure=1&pq=1&mux=1#MyVLESS"
 	p, err := ParseURI(raw)
 	if err != nil {
 		t.Fatalf("failed to parse VLESS URI: %v", err)
@@ -40,7 +40,7 @@ func TestParseAndGenerate_VLESS_Comprehensive(t *testing.T) {
 	if p.UUID != "a6c8e874-a4ee-4c38-89c0-6d427d1421bf" {
 		t.Errorf("unexpected uuid: %s", p.UUID)
 	}
-	if p.Address != "1.2.3.4" || p.Port != 443 {
+	if p.Address != "198.51.100.1" || p.Port != 443 {
 		t.Errorf("unexpected host/port: %s:%d", p.Address, p.Port)
 	}
 	if p.Security != ast.SecurityReality || p.PublicKey != "publicKey123" || p.ShortID != "abcdef12" || p.SpiderX != "/" {

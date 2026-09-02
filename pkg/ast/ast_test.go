@@ -9,7 +9,7 @@ func TestServerProfile_Normalize_Comprehensive(t *testing.T) {
 	// 1. Reality inference from PublicKey
 	pReality := &ServerProfile{
 		Protocol:  "  VLESS  ",
-		Address:   "  1.2.3.4  ",
+		Address:   "  198.51.100.1  ",
 		Port:      443,
 		PublicKey: "pubKey123",
 	}
@@ -18,8 +18,8 @@ func TestServerProfile_Normalize_Comprehensive(t *testing.T) {
 	if pReality.Protocol != "vless" {
 		t.Errorf("expected normalized protocol 'vless', got '%s'", pReality.Protocol)
 	}
-	if pReality.Address != "1.2.3.4" {
-		t.Errorf("expected trimmed address '1.2.3.4', got '%s'", pReality.Address)
+	if pReality.Address != "198.51.100.1" {
+		t.Errorf("expected trimmed address '198.51.100.1', got '%s'", pReality.Address)
 	}
 	if pReality.Transport != TransportTCP {
 		t.Errorf("expected default transport 'tcp', got '%s'", pReality.Transport)
@@ -146,7 +146,7 @@ func TestServerProfile_ToJSON_Comprehensive(t *testing.T) {
 		ID:                "node-uuid-1234",
 		Name:              "Test Node",
 		Protocol:          ProtoVLESS,
-		Address:           "1.2.3.4",
+		Address:           "198.51.100.1",
 		Port:              443,
 		Transport:         TransportTCP,
 		Security:          SecurityReality,

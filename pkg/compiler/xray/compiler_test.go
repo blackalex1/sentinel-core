@@ -22,7 +22,7 @@ func TestXrayCompiler_ServerNodeNegotiationFailure(t *testing.T) {
 		StrictMode: true,
 		ServerNode: &ast.ServerProfile{
 			Protocol: "unsupported_protocol_xyz",
-			Address:  "1.2.3.4",
+			Address:  "198.51.100.1",
 			Port:     443,
 		},
 	}
@@ -586,7 +586,7 @@ func TestXrayCompiler_AdditionalBranches(t *testing.T) {
 					"settings": map[string]interface{}{
 						"vnext": []interface{}{
 							map[string]interface{}{
-								"address": "2.2.2.2",
+								"address": "198.51.100.2",
 								"port":    443,
 								"users": []interface{}{
 									map[string]interface{}{"id": "my-user-id"},
@@ -641,7 +641,7 @@ func TestXrayCompiler_FallbackBalancer(t *testing.T) {
 						"health_check_interval": 15,
 						"vnext": []interface{}{
 							map[string]interface{}{
-								"address": "1.1.1.1",
+								"address": "198.51.100.1",
 								"port":    443,
 								"users": []interface{}{
 									map[string]interface{}{"id": "e99dc462-8409-4e45-bf28-665544332211"},
@@ -656,7 +656,7 @@ func TestXrayCompiler_FallbackBalancer(t *testing.T) {
 					"settings": map[string]interface{}{
 						"vnext": []interface{}{
 							map[string]interface{}{
-								"address": "2.2.2.2",
+								"address": "198.51.100.2",
 								"port":    443,
 								"users": []interface{}{
 									map[string]interface{}{"id": "e99dc462-8409-4e45-bf28-665544332222"},
@@ -847,7 +847,7 @@ func TestXrayCompiler_AllInboundProtocols(t *testing.T) {
 					"settings": map[string]interface{}{
 						"vnext": []interface{}{
 							map[string]interface{}{
-								"address": "1.2.3.4",
+								"address": "198.51.100.1",
 								"port":    443,
 								"users": []interface{}{
 									map[string]interface{}{
