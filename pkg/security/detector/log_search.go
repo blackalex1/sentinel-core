@@ -38,6 +38,7 @@ var (
 	xrayIPAcceptedRegex = regexp.MustCompile(`(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\d+\s+(?:accepted|inbound connection)`)
 	xrayIPFromRegex     = regexp.MustCompile(`from\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`)
 	xrayTagMatchRegex   = regexp.MustCompile(`(?:accepted|connection)\s+(?:tcp|udp):\S+\s+\[([^\]]+)\]`)
+	sbInboundTagFromPrefix = regexp.MustCompile(`inbound/[a-zA-Z0-9_\.\-]+\[([a-zA-Z0-9_\.\-]+)\]`)
 	sbInboundConnTag    = regexp.MustCompile(`\[([^\]]+)\]\s+inbound connection`)
 	xrayDestMatchRegex  = regexp.MustCompile(`(?:accepted|connection)\s+(?:tcp|udp):([^:]+):`)
 	ipv4CheckRegex      = regexp.MustCompile(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$`)
@@ -105,7 +106,6 @@ func ParseXrayTimestamp(line string) *time.Time {
 }
 
 // checkAge returns true if the log timestamp is within maxAgeSec seconds of now.
-// logTime must be in UTC (as returned by ParseXrayTimestamp / ParseHysteriaTimestamp).
 func checkAge(logTime *time.Time, maxAgeSec int) bool {
 	if logTime == nil || maxAgeSec <= 0 {
 		return true
@@ -114,7 +114,17 @@ func checkAge(logTime *time.Time, maxAgeSec int) bool {
 	if diff < 0 {
 		diff = -diff
 	}
-	return diff <= time.Duration(maxAgeSec)*time.Second
+	if diff <= time.Duration(maxAgeSec)*time.Second {
+		return true
+	}
+
+	// Fallback for timezone differences (e.g. log wrote local time formatted with Z or UTC vs Local)
+	locTime := time.Date(logTime.Year(), logTime.Month(), logTime.Day(), logTime.Hour(), logTime.Minute(), logTime.Second(), 0, time.Local)
+	diffLoc := time.Since(locTime)
+	if diffLoc < 0 {
+		diffLoc = -diffLoc
+	}
+	return diffLoc <= time.Duration(maxAgeSec)*time.Second
 }
 
 
@@ -195,40 +205,7 @@ func FindEmailInHysteriaLog(lines []string, dstIP string, dstPort int, maxAgeSec
 		return ""
 	}
 
-	// Pass 1: Match port and IP (main search from newest to oldest)
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := lines[i]
-		t := ParseHysteriaTimestamp(line)
-		if !checkAge(t, maxAgeSec) {
-			continue
-		}
-
-		if !strings.Contains(line, dstPortStr) {
-			continue
-		}
-
-		if dstIP != "" && !strings.Contains(line, dstIP) {
-			continue
-		}
-
-		if email := extractEmail(line); email != "" {
-			return email
-		}
-	}
-
-	// Pass 2: Match port only with destination IP verification fallback
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := lines[i]
-		t := ParseHysteriaTimestamp(line)
-		if !checkAge(t, maxAgeSec) {
-			continue
-		}
-
-		if !strings.Contains(line, dstPortStr) {
-			continue
-		}
-
-		destHost := ""
+	extractDestHost := func(line string) string {
 		if idx := strings.Index(line, "{"); idx != -1 {
 			var obj map[string]any
 			if err := json.Unmarshal([]byte(line[idx:]), &obj); err == nil {
@@ -237,19 +214,34 @@ func FindEmailInHysteriaLog(lines []string, dstIP string, dstPort int, maxAgeSec
 					reqVal, _ = obj["req"].(string)
 				}
 				if reqVal != "" && strings.Contains(reqVal, ":") {
-					destHost = strings.Trim(strings.Split(reqVal, ":")[0], "[]")
+					return strings.Trim(strings.Split(reqVal, ":")[0], "[]")
 				}
 			}
 		}
+		if m := hyDestHostRegex.FindStringSubmatch(line); len(m) >= 2 {
+			return strings.Trim(m[1], "[]")
+		}
+		return ""
+	}
 
-		if destHost == "" {
-			if m := hyDestHostRegex.FindStringSubmatch(line); len(m) >= 2 {
-				destHost = strings.Trim(m[1], "[]")
-			}
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		t := ParseHysteriaTimestamp(line)
+		if !checkAge(t, maxAgeSec) {
+			continue
 		}
 
-		if destHost != "" && dstIP != "" && ipv4CheckRegex.MatchString(destHost) {
-			if destHost != dstIP {
+		if !strings.Contains(line, dstPortStr) {
+			continue
+		}
+
+		if dstIP != "" {
+			destHost := extractDestHost(line)
+			if destHost != "" {
+				if destHost != dstIP {
+					continue
+				}
+			} else if !strings.Contains(line, dstIP) {
 				continue
 			}
 		}
@@ -344,7 +336,9 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 			foundIP = clientIP
 		}
 
-		if m := xrayTagMatchRegex.FindStringSubmatch(line); len(m) >= 2 {
+		if m := sbInboundTagFromPrefix.FindStringSubmatch(line); len(m) >= 2 {
+			foundTag = m[1]
+		} else if m := xrayTagMatchRegex.FindStringSubmatch(line); len(m) >= 2 {
 			foundTag = m[1]
 		} else if m := sbInboundConnTag.FindStringSubmatch(line); len(m) >= 2 {
 			foundTag = m[1]
@@ -355,11 +349,20 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 		return foundEmail, foundIP, foundTag
 	}
 
+	extractDestHost := func(line string) string {
+		if m := xrayDestMatchRegex.FindStringSubmatch(line); len(m) >= 2 {
+			return strings.Trim(m[1], "[]")
+		}
+		if idx := strings.Index(line, "inbound connection to "); idx != -1 {
+			rem := line[idx+len("inbound connection to "):]
+			if parts := strings.Split(rem, ":"); len(parts) >= 2 {
+				return strings.Trim(parts[0], "[] \t")
+			}
+		}
+		return ""
+	}
+
 	// Pre-compute connID→clientIP map for sing-box two-line log format.
-	// Sing-box splits source IP and username across two lines sharing the same connID:
-	//   [338227781 0ms]  inbound/vless[..]: inbound connection from 1.2.3.4:PORT   ← IP here
-	//   [338227781 42ms] inbound/vless[..]: [phone] inbound connection to DST:PORT  ← username here
-	// Without this map the Pass 1 IP filter drops the username line.
 	connIDToIP := make(map[string]string)
 	for _, l := range lines {
 		if m := sbFromIPLineRegex.FindStringSubmatch(l); len(m) >= 3 {
@@ -367,7 +370,6 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 		}
 	}
 
-	// Pass 1: Match port and IP/client_ip
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := lines[i]
 		t := ParseXrayTimestamp(line)
@@ -379,60 +381,37 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 			continue
 		}
 
-		matchIP := (dstIP != "" && strings.Contains(line, dstIP)) || (clientIP != "" && strings.Contains(line, clientIP)) || dstIP == ""
-
-		// Augmented match for sing-box: check if this line's connID maps to the requested clientIP.
-		if !matchIP && clientIP != "" {
-			if m := sbConnIDLineRegex.FindStringSubmatch(line); len(m) >= 2 {
-				if cachedIP, ok := connIDToIP[m[1]]; ok && cachedIP == clientIP {
-					matchIP = true
+		// Verify dstIP strictly if specified
+		if dstIP != "" {
+			destHost := extractDestHost(line)
+			if destHost != "" {
+				if destHost != dstIP {
+					continue
 				}
+			} else if !strings.Contains(line, dstIP) {
+				continue
 			}
 		}
 
-		if !matchIP {
-			continue
+		// Verify clientIP if specified
+		if clientIP != "" {
+			matchClient := strings.Contains(line, clientIP)
+			if !matchClient {
+				if m := sbConnIDLineRegex.FindStringSubmatch(line); len(m) >= 2 {
+					if cachedIP, ok := connIDToIP[m[1]]; ok && cachedIP == clientIP {
+						matchClient = true
+					}
+				}
+			}
+			if !matchClient {
+				continue
+			}
 		}
 
 		e, p, tag := extractInfo(line)
 		if e != "" {
 			// If IP not found in this line, fill from connID cache.
 			if p == "" || p == clientIP {
-				if m := sbConnIDLineRegex.FindStringSubmatch(line); len(m) >= 2 {
-					if cachedIP, ok := connIDToIP[m[1]]; ok {
-						p = cachedIP
-					}
-				}
-			}
-			return e, p, tag
-		}
-	}
-
-	// Pass 2: Match port only with destination verification fallback
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := lines[i]
-		t := ParseXrayTimestamp(line)
-		if !checkAge(t, maxAgeSec) {
-			continue
-		}
-
-		if !strings.Contains(line, dstPortStr) {
-			continue
-		}
-
-		if m := xrayDestMatchRegex.FindStringSubmatch(line); len(m) >= 2 {
-			destHost := strings.Trim(m[1], "[]")
-			if dstIP != "" && ipv4CheckRegex.MatchString(destHost) {
-				if destHost != dstIP {
-					continue
-				}
-			}
-		}
-
-		e, p, tag := extractInfo(line)
-		if e != "" {
-			// Fill IP from connID cache if missing.
-			if p == "" {
 				if m := sbConnIDLineRegex.FindStringSubmatch(line); len(m) >= 2 {
 					if cachedIP, ok := connIDToIP[m[1]]; ok {
 						p = cachedIP
