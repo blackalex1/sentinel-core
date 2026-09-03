@@ -1,6 +1,9 @@
 package android
 
 import (
+	"net"
+	"strings"
+
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 )
 
@@ -13,6 +16,30 @@ const (
 	DefaultClientIPv4   = "10.0.0.2/24"
 	DefaultClientIPv6   = "fd00::2/64"
 )
+
+// ClassifySource determines whether a source IP originated locally from the Android device
+// (Loopback or TUN interface) or from a Tethering / Hotspot client.
+func ClassifySource(srcIP string) (isHotspot bool, sourceType string) {
+	cleanIP := strings.Trim(srcIP, "[]")
+	if cleanIP == "" || cleanIP == "localhost" || cleanIP == "::1" || strings.HasPrefix(cleanIP, "127.") {
+		return false, "loopback"
+	}
+	if strings.HasPrefix(cleanIP, "10.0.0.") || strings.HasPrefix(strings.ToLower(cleanIP), "fd00:") {
+		return false, "local_tun"
+	}
+	parsed := net.ParseIP(cleanIP)
+	if parsed != nil {
+		if parsed.IsLoopback() {
+			return false, "loopback"
+		}
+		_, tun4Net, _ := net.ParseCIDR(DefaultClientIPv4)
+		_, tun6Net, _ := net.ParseCIDR(DefaultClientIPv6)
+		if (tun4Net != nil && tun4Net.Contains(parsed)) || (tun6Net != nil && tun6Net.Contains(parsed)) {
+			return false, "local_tun"
+		}
+	}
+	return true, "hotspot"
+}
 
 // DefaultTunSpec returns a standard Android VpnService TUN inbound configuration
 func DefaultTunSpec() ast.ClientInboundSpec {
