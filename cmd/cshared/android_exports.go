@@ -6,7 +6,11 @@ package main
 import "C"
 import (
 	"encoding/json"
+	"regexp"
+	"strconv"
+	"strings"
 
+	"github.com/blackalex1/sentinel-core/pkg/platform/android"
 	androidSec "github.com/blackalex1/sentinel-core/pkg/platform/android/security"
 	"github.com/blackalex1/sentinel-core/pkg/security"
 )
@@ -181,3 +185,33 @@ func SentinelAndroidClearLogs() *C.char {
 	androidSec.GetGlobalLogBuffer().Clear()
 	return C.CString(`{"success": true}`)
 }
+
+var xrayConnRegex = regexp.MustCompile(`(?i)(?:from\s+)?(tcp|udp):(\[[a-fA-F0-9:]+\]|[^\s:]+):(\d+)\s+accepted\s+(?:tcp|udp):(\[[a-fA-F0-9:]+\]|[^\s:]+):(\d+)`)
+
+//export SentinelAndroidParseConnectionLog
+func SentinelAndroidParseConnectionLog(logLine *C.char) *C.char {
+	line := safeGoString(logLine)
+	matches := xrayConnRegex.FindStringSubmatch(line)
+	if len(matches) < 6 {
+		return C.CString("")
+	}
+	srcPort, _ := strconv.Atoi(matches[3])
+	destPort, _ := strconv.Atoi(matches[5])
+	srcIP := strings.Trim(matches[2], "[]")
+	destIP := strings.Trim(matches[4], "[]")
+
+	isHotspot, sourceType := android.ClassifySource(srcIP)
+
+	res := map[string]any{
+		"protocol":    strings.ToUpper(matches[1]),
+		"src_ip":      srcIP,
+		"src_port":    srcPort,
+		"dest_ip":     destIP,
+		"dest_port":   destPort,
+		"is_hotspot":  isHotspot,
+		"source_type": sourceType,
+	}
+	bytes, _ := json.Marshal(res)
+	return C.CString(string(bytes))
+}
+
