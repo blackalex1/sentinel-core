@@ -214,18 +214,34 @@ func TestXrayCompiler_BuildXrayOutbound_Protocols(t *testing.T) {
 		t.Errorf("expected wireguard protocol: %+v", obWg)
 	}
 
-	// 9. Hysteria 2 Outbound
-	hy2Node := &ast.ServerProfile{
+	// 9. Hysteria 2 Outbound (Local SOCKS vs Native Remote)
+	hy2NodeLocal := &ast.ServerProfile{
 		Protocol: ast.ProtoHysteria2,
 		Address:  "127.0.0.1",
 		Port:     20808,
 	}
-	obHy2, err := BuildXrayOutbound(hy2Node)
+	obHy2Local, err := BuildXrayOutbound(hy2NodeLocal)
 	if err != nil {
-		t.Fatalf("failed to build Hysteria2 outbound: %v", err)
+		t.Fatalf("failed to build Hysteria2 local outbound: %v", err)
 	}
-	if obHy2["protocol"] != "socks" {
-		t.Errorf("expected socks protocol for hy2 outbound: %+v", obHy2)
+	if obHy2Local["protocol"] != "socks" {
+		t.Errorf("expected socks protocol for hy2 local outbound: %+v", obHy2Local)
+	}
+
+	hy2NodeRemote := &ast.ServerProfile{
+		Protocol:             ast.ProtoHysteria2,
+		Address:              "hy2.example.com",
+		Port:                 8443,
+		Password:             "dummy_secret_password_123",
+		SNI:                  "sni.example.com",
+		PinnedPeerCertSha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+	}
+	obHy2Remote, err := BuildXrayOutbound(hy2NodeRemote)
+	if err != nil {
+		t.Fatalf("failed to build Hysteria2 remote outbound: %v", err)
+	}
+	if obHy2Remote["protocol"] != "hysteria" {
+		t.Errorf("expected hysteria protocol for hy2 remote outbound: %+v", obHy2Remote)
 	}
 
 	// 10. Direct and Block

@@ -65,7 +65,7 @@ func BuildXrayDesktopTunInbound(cb *ast.ClientInboundSpec) map[string]interface{
 		"settings": tunSettings,
 		"sniffing": map[string]interface{}{
 			"enabled":      true,
-			"destOverride": []string{"http", "tls", "quic", "fakedns"},
+			"destOverride": []string{"http", "tls", "quic"},
 			"routeOnly":    false,
 		},
 	}

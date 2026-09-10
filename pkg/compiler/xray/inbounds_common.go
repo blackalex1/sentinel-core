@@ -8,7 +8,7 @@ import (
 func buildInboundSniffing(sb *ast.ServerInboundSpec) map[string]interface{} {
 	sniffing := map[string]interface{}{
 		"enabled":      true,
-		"destOverride": []string{"http", "tls", "quic", "fakedns"},
+		"destOverride": []string{"http", "tls", "quic"},
 		"routeOnly":    false,
 	}
 	if sb.Sniffing != nil && len(sb.Sniffing) > 0 {

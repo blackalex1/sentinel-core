@@ -55,9 +55,8 @@ func buildXrayStreamSettings(node *ast.ServerProfile) map[string]interface{} {
 		stream["realitySettings"] = realitySettings
 	} else if security == "tls" {
 		tlsSettings := map[string]interface{}{
-			"allowInsecure": node.Insecure,
-			"fingerprint":   fp,
-			"serverName":    node.SNI,
+			"fingerprint": fp,
+			"serverName":  node.SNI,
 		}
 		if len(node.ALPN) > 0 {
 			tlsSettings["alpn"] = node.ALPN

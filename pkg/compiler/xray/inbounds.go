@@ -33,7 +33,7 @@ func BuildXrayInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 				},
 				"sniffing": map[string]interface{}{
 					"enabled":      true,
-					"destOverride": []string{"http", "tls", "quic", "fakedns"},
+					"destOverride": []string{"http", "tls", "quic"},
 					"routeOnly":    false,
 				},
 			}
@@ -66,7 +66,7 @@ func BuildXrayInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 				},
 				"sniffing": map[string]interface{}{
 					"enabled":      true,
-					"destOverride": []string{"http", "tls", "quic", "fakedns"},
+					"destOverride": []string{"http", "tls", "quic"},
 				},
 			})
 		}
@@ -180,7 +180,7 @@ func BuildXrayInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 			},
 			"sniffing": map[string]interface{}{
 				"enabled":      true,
-				"destOverride": []string{"http", "tls", "quic", "fakedns"},
+				"destOverride": []string{"http", "tls", "quic"},
 			},
 		})
 	}
