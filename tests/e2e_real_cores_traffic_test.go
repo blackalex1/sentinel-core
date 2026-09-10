@@ -402,8 +402,8 @@ func TestE2E_RealHysteria2_ClientTrafficAndSessionTracking(t *testing.T) {
 	userEmail := "hy_client_gamma"
 	userPassword := "hy_secret_pwd_99"
 
-	certPath := `C:\Users\black\PycharmProjects\panel\bin\hysteria.crt`
-	keyPath := `C:\Users\black\PycharmProjects\panel\bin\hysteria.key`
+	certPath, keyPath, cleanupCert := createTestCertAndKey(t)
+	defer cleanupCert()
 
 	serverConfigJSON := fmt.Sprintf(`{
   "listen": "127.0.0.1:%d",

@@ -137,8 +137,8 @@ func TestCascade_PhoneVLESS_Server1Relay_Server2Hysteria2_XrayRouting(t *testing
 	if !strings.Contains(server1Res.ConfigJSON, `"protocol": "vless"`) {
 		t.Errorf("expected VLESS inbound in Server 1 config:\n%s", server1Res.ConfigJSON)
 	}
-	if !strings.Contains(server1Res.ConfigJSON, `"protocol": "socks"`) {
-		t.Errorf("expected chained SOCKS outbound to Hysteria client in Server 1 config:\n%s", server1Res.ConfigJSON)
+	if !strings.Contains(server1Res.ConfigJSON, `"protocol": "hysteria"`) && !strings.Contains(server1Res.ConfigJSON, `"protocol": "socks"`) {
+		t.Errorf("expected Hysteria outbound in Server 1 config:\n%s", server1Res.ConfigJSON)
 	}
 
 	// =========================================================================

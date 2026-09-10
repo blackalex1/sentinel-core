@@ -67,8 +67,15 @@ func TestLiveCores_LogStreaming_And_SecurityPipeline(t *testing.T) {
 	defer pm.StopCore(coreName)
 
 	// Verify that logs flow into broadcaster
-	time.Sleep(300 * time.Millisecond)
-	logs := pm.GetInMemoryLogs(coreName, 50)
+	var logs []string
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		logs = pm.GetInMemoryLogs(coreName, 50)
+		if len(logs) > 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if len(logs) == 0 {
 		t.Fatalf("expected in-memory logs to be populated from real Sing-box binary")
 	}
