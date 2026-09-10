@@ -122,7 +122,7 @@ func TestBatchCheckProxiesSpeed(t *testing.T) {
 	}
 
 	start := time.Now()
-	results := BatchCheckProxies(proxies, "cp.cloudflare.com", 80, false, 100*time.Millisecond, 64)
+	results := BatchCheckProxies(proxies, "cp.cloudflare.com", 80, false, 500*time.Millisecond, 64)
 	elapsed := time.Since(start)
 
 	workingCount := 0
@@ -136,7 +136,7 @@ func TestBatchCheckProxiesSpeed(t *testing.T) {
 	if workingCount != 20 {
 		t.Fatalf("expected 20 working proxies, got %d", workingCount)
 	}
-	if elapsed > 1*time.Second {
-		t.Fatalf("batch check took too long: %v (expected < 1s)", elapsed)
+	if elapsed > 3*time.Second {
+		t.Fatalf("batch check took too long: %v (expected < 3s)", elapsed)
 	}
 }

@@ -81,3 +81,22 @@ func TestXray_Level2_uTLS_Fingerprints(t *testing.T) {
 		})
 	}
 }
+
+// Level 2: Native Hysteria2 QUIC Transport on Xray
+func TestXray_Level2_Hysteria2_NativeTransport(t *testing.T) {
+	raw := "hysteria2://test_user:test_secret_pass_123@hy2.example.com:8443?sni=download.example.com&pinSHA256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef&insecure=1&up=1000&down=1000&obfs=salamander&obfs-password=dummy_obfs_pass_123&hop=8443-20443&mport=8443-20443&ports=8443-20443#Hyst2-TestNode"
+	profile, err := parser.ParseURI(raw)
+	if err != nil {
+		t.Fatalf("ParseURI failed for Hysteria2: %v", err)
+	}
+
+	spec := buildClientTestSpec(profile)
+	res, err := builder.BuildClientConfig(spec)
+	if err != nil {
+		t.Fatalf("BuildClientConfig failed: %v", err)
+	}
+
+	runXraySyntaxCheck(t, "Level 2 Hysteria2 Native Transport", res.ConfigJSON)
+	t.Logf("✅ Level 2: Native Hysteria2 QUIC transport verified on real Xray")
+}
+
