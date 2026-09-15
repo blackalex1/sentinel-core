@@ -151,7 +151,7 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 					}
 				}
 				if len(r.Users) > 0 {
-					base["user"] = r.Users
+					base["auth_user"] = r.Users
 				}
 				if len(r.PackageUIDs) > 0 {
 					base["user_id"] = r.PackageUIDs
