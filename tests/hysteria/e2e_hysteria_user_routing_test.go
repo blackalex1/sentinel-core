@@ -1,10 +1,11 @@
-package tests
+package hysteria_test
 
 import (
 	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +18,16 @@ import (
 	"github.com/blackalex1/sentinel-core/pkg/builder"
 )
 
+func getFreePort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to get free port: %v", err)
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
+}
+
 // TestE2E_RealHysteria2_PerClientRouting_BlockGoogleForSingleUser starts a real Sing-box server with
 // Hysteria 2 inbound, compiled via Sentinel-Core builder with a per-user routing rule:
 // - User "blocked_user@test.lan" is BLOCKED from accessing Google.
@@ -24,7 +35,7 @@ import (
 // Two real Sing-box client binaries are launched (compiled via Sentinel-Core) connecting via Hysteria 2,
 // and real traffic is sent through both tunnels to verify the selective routing behavior.
 func TestE2E_RealHysteria2_PerClientRouting_BlockGoogleForSingleUser(t *testing.T) {
-	sbBin := findBinary("sing-box")
+	sbBin := findCoreBin("sing-box")
 	if sbBin == "" {
 		t.Skip("sing-box binary not found, skipping real core test")
 		return
@@ -256,7 +267,7 @@ func TestE2E_RealHysteria2_PerClientRouting_BlockGoogleForSingleUser(t *testing.
 		body1, _ := io.ReadAll(resp1.Body)
 		if resp1.StatusCode == http.StatusOK {
 			t.Fatalf("EXPECTED BLOCK for Client 1 on google.com, but got HTTP 200 OK: %s\nServer Config:\n%s\nServer Logs:\n%s",
-				string(body1[:100]), serverConfigJSON, serverLogBuf.String())
+				string(body1[:min(len(body1), 100)]), serverConfigJSON, serverLogBuf.String())
 		}
 		t.Logf("Client 1 was blocked with response: %s", resp1.Status)
 	} else {
