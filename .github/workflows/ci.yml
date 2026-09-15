@@ -32,10 +32,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libpcap-dev
 
-      - name: Run Tests with Race Detector (Multi-threaded & Parallel)
+      - name: Run Tests with Race Detector (Sequential Package Execution to prevent OOM)
         run: |
-          echo "Running test suite with race detector (p=2)..."
-          go test -v -race -p 2 ./...
+          echo "Running test suite with race detector (p=1)..."
+          go test -v -race -p 1 ./...
 
       - name: Verify CLI Compilation
         run: go build -v -o /dev/null ./cmd/cli
