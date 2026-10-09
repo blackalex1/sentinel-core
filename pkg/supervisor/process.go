@@ -241,6 +241,9 @@ func (pm *ProcessManager) StopCore(coreName string) error {
 		_ = exec.Command("killall", "-9", binBase).Run()
 		_ = exec.Command("pkill", "-9", "-f", binBase).Run()
 	}
+	if normName == "hysteria2" {
+		ResetHysteriaCumulativeTraffic()
+	}
 	time.Sleep(100 * time.Millisecond)
 
 	return nil

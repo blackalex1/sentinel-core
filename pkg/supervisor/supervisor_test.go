@@ -188,6 +188,52 @@ func TestController_GetUnifiedTraffic(t *testing.T) {
 	}
 }
 
+func TestFetchHysteriaTraffic_ConsecutivePollsNoCompounding(t *testing.T) {
+	ResetHysteriaCumulativeTraffic()
+	defer ResetHysteriaCumulativeTraffic()
+
+	hyListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
+	hyPort := hyListener.Addr().(*net.TCPAddr).Port
+
+	hyMux := http.NewServeMux()
+	hyMux.HandleFunc("/traffic", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"user1@test.com": map[string]int64{"tx": 5000, "rx": 2500},
+		})
+	})
+	hyMux.HandleFunc("/online", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]int{
+			"user1@test.com": 1,
+		})
+	})
+	hyServer := &http.Server{Handler: hyMux}
+	go func() { _ = hyServer.Serve(hyListener) }()
+	defer hyServer.Close()
+
+	// Simulate 5 consecutive 5-second polling intervals with static traffic
+	for i := 1; i <= 5; i++ {
+		traffic, err := FetchHysteriaTraffic(hyPort)
+		if err != nil {
+			t.Fatalf("poll %d failed: %v", i, err)
+		}
+		u, ok := traffic["user1@test.com"]
+		if !ok {
+			t.Fatalf("poll %d: user1@test.com not found", i)
+		}
+		if u.DownBytes != 5000 {
+			t.Errorf("poll %d: expected DownBytes=5000, got %d (compounding bug detected!)", i, u.DownBytes)
+		}
+		if u.UpBytes != 2500 {
+			t.Errorf("poll %d: expected UpBytes=2500, got %d (compounding bug detected!)", i, u.UpBytes)
+		}
+	}
+}
+
 func TestController_KickClient(t *testing.T) {
 	var sbClosedID string
 	var hyKickedEmail string
