@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -490,6 +491,65 @@ func TestProcessManager_ValidateCoreConfig(t *testing.T) {
 	valid, out, err = pm.ValidateCoreConfig("hysteria2", selfExe, validCfg)
 	if err != nil || !valid || out != "OK" {
 		t.Errorf("expected valid config OK, got valid=%v, out=%s, err=%v", valid, out, err)
+	}
+}
+
+func TestProcessManager_EnsureSingboxRuleStubs(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "singbox.json")
+	cfgJSON := `{
+		"route": {
+			"rule_set": [
+				{
+					"tag": "geosite-ru",
+					"initial_path": "rules/geosite-ru.srs"
+				},
+				{
+					"tag": "geoip-ru",
+					"initial_path": "rules/geoip-ru.srs"
+				}
+			]
+		}
+	}`
+	if err := os.WriteFile(cfgPath, []byte(cfgJSON), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	binDir := filepath.Join(tmpDir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("failed to create binDir: %v", err)
+	}
+
+	// Run stub generator on empty directory
+	ensureSingboxRuleStubs(cfgPath, binDir)
+
+	geositeStub := filepath.Join(binDir, "rules", "geosite-ru.srs")
+	geoipStub := filepath.Join(binDir, "rules", "geoip-ru.srs")
+
+	data1, err1 := os.ReadFile(geositeStub)
+	if err1 != nil {
+		t.Fatalf("expected geosite stub to exist: %v", err1)
+	}
+	if len(data1) != 17 || !bytes.Equal(data1, emptySrsStub) {
+		t.Fatalf("expected 17-byte empty stub, got %d bytes", len(data1))
+	}
+
+	data2, err2 := os.ReadFile(geoipStub)
+	if err2 != nil {
+		t.Fatalf("expected geoip stub to exist: %v", err2)
+	}
+	if len(data2) != 17 || !bytes.Equal(data2, emptySrsStub) {
+		t.Fatalf("expected 17-byte empty stub, got %d bytes", len(data2))
+	}
+
+	// Ensure calling again does NOT overwrite existing files (e.g. if updated)
+	customData := []byte("already-downloaded-content")
+	_ = os.WriteFile(geositeStub, customData, 0644)
+	ensureSingboxRuleStubs(cfgPath, binDir)
+
+	dataAfter, _ := os.ReadFile(geositeStub)
+	if !bytes.Equal(dataAfter, customData) {
+		t.Errorf("expected existing file to be preserved, but was overwritten")
 	}
 }
 

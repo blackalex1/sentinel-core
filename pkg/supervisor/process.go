@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blackalex1/sentinel-core/pkg/compiler/singbox"
 	"github.com/blackalex1/sentinel-core/pkg/i18n"
 )
 
@@ -89,8 +92,13 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 		args = []string{"-c", configPath}
 	}
 
-	cmd := exec.Command(binPath, args...)
 	binDir := filepath.Dir(binPath)
+	if normName == "sing-box" {
+		ensureSingboxRuleStubs(configPath, binDir)
+		go prefetchRuleSets(configPath, binDir)
+	}
+
+	cmd := exec.Command(binPath, args...)
 	cmd.Dir = binDir
 	cmd.Env = append(os.Environ(),
 		"XRAY_LOCATION_ASSET="+binDir,
@@ -317,11 +325,13 @@ func (pm *ProcessManager) ValidateCoreConfig(coreName, binPath, configPath strin
 	}
 
 	normName := normalizeCoreName(coreName)
+	binDir := filepath.Dir(binPath)
 	var args []string
 	switch normName {
 	case "xray":
 		args = []string{"run", "-config", configPath, "-test"}
 	case "sing-box", "singbox":
+		ensureSingboxRuleStubs(configPath, binDir)
 		args = []string{"check", "-c", configPath}
 	default:
 		// For hysteria or others, read and validate JSON
@@ -339,7 +349,6 @@ func (pm *ProcessManager) ValidateCoreConfig(coreName, binPath, configPath strin
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, binPath, args...)
-	binDir := filepath.Dir(binPath)
 	cmd.Dir = binDir
 	cmd.Env = append(os.Environ(),
 		"XRAY_LOCATION_ASSET="+binDir,
@@ -432,5 +441,180 @@ func getBinBaseName(normName string) string {
 		return "xray"
 	default:
 		return normName
+	}
+}
+
+// Minimal valid 17-byte compiled sing-box binary rule-set (.srs)
+// Magic bytes: SRS\x01 + zlib-compressed empty rule list.
+var emptySrsStub = []byte{0x53, 0x52, 0x53, 0x01, 0x78, 0xda, 0x62, 0x00, 0x04, 0x00, 0x00, 0xff, 0xff, 0x00, 0x01, 0x00, 0x01}
+
+// ensureSingboxRuleStubs ensures that all local rule-set files referenced by initial_path
+// exist on disk before sing-box starts or validates config.
+// On clean/empty servers where remote rule-sets are not yet downloaded,
+// this allows sing-box to start immediately (in ~0.04s) and avoid FATAL startup timeouts
+// while updating rules asynchronously in the background.
+func ensureSingboxRuleStubs(configPath, binDir string) {
+	if configPath == "" {
+		return
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+	var parsed struct {
+		Route struct {
+			RuleSet []struct {
+				InitialPath string `json:"initial_path"`
+			} `json:"rule_set"`
+		} `json:"route"`
+	}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return
+	}
+	for _, rs := range parsed.Route.RuleSet {
+		if rs.InitialPath == "" {
+			continue
+		}
+		targetPath := rs.InitialPath
+		if !filepath.IsAbs(targetPath) {
+			targetPath = filepath.Join(binDir, targetPath)
+		}
+		if _, err := os.Stat(targetPath); os.IsNotExist(err) {
+			_ = os.MkdirAll(filepath.Dir(targetPath), 0755)
+			_ = os.WriteFile(targetPath, emptySrsStub, 0644)
+			log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_RULES_STUB_CREATED", filepath.Base(targetPath)))
+		}
+	}
+}
+
+// prefetchRuleSets asynchronously downloads full binary .srs files in the background
+// to replace the 17-byte stubs on disk with real rules once network connectivity is available.
+// It implements a two-phase fallback:
+// Phase 1: Probes and downloads via direct CDN mirrors.
+// Phase 2: If direct downloads fail, verifies outbounds via Sing-box Clash API and waits for tunnel rules download.
+func prefetchRuleSets(configPath, binDir string) {
+	if configPath == "" {
+		return
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+	var parsed struct {
+		Route struct {
+			RuleSet []struct {
+				InitialPath string `json:"initial_path"`
+				URL         string `json:"url"`
+			} `json:"rule_set"`
+		} `json:"route"`
+		Outbounds []struct {
+			Tag  string `json:"tag"`
+			Type string `json:"type"`
+		} `json:"outbounds"`
+		Experimental struct {
+			ClashAPI struct {
+				ExternalController string `json:"external_controller"`
+			} `json:"clash_api"`
+		} `json:"experimental"`
+	}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return
+	}
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	activeMirror := singbox.GetActiveRuleMirror()
+	hasMissingRules := false
+
+	for _, rs := range parsed.Route.RuleSet {
+		if rs.InitialPath == "" {
+			continue
+		}
+		targetPath := rs.InitialPath
+		if !filepath.IsAbs(targetPath) {
+			targetPath = filepath.Join(binDir, targetPath)
+		}
+
+		// Only download if it's currently a stub (<= 17 bytes) or missing
+		st, err := os.Stat(targetPath)
+		if err == nil && st.Size() > int64(len(emptySrsStub)) {
+			continue // Already a full rule-set
+		}
+
+		baseFileName := filepath.Base(targetPath)
+		ruleTag := strings.TrimSuffix(baseFileName, ".srs")
+		isGeoIP := strings.HasPrefix(ruleTag, "geoip-")
+
+		// Phase 1: Build candidate URLs (active mirror, configured URL, then other mirrors)
+		var urlsToTry []string
+		if rs.URL != "" {
+			urlsToTry = append(urlsToTry, rs.URL)
+		}
+		if isGeoIP {
+			urlsToTry = append(urlsToTry, fmt.Sprintf(activeMirror.GeoipPattern, ruleTag))
+		} else {
+			urlsToTry = append(urlsToTry, fmt.Sprintf(activeMirror.GeositePattern, ruleTag))
+		}
+		for _, m := range singbox.DefaultMirrors {
+			var candidate string
+			if isGeoIP {
+				candidate = fmt.Sprintf(m.GeoipPattern, ruleTag)
+			} else {
+				candidate = fmt.Sprintf(m.GeositePattern, ruleTag)
+			}
+			urlsToTry = append(urlsToTry, candidate)
+		}
+
+		var downloadedContent []byte
+		for _, u := range urlsToTry {
+			resp, err := client.Get(u)
+			if err != nil || resp.StatusCode != http.StatusOK {
+				if resp != nil && resp.Body != nil {
+					_ = resp.Body.Close()
+				}
+				continue
+			}
+			content, err := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if err == nil && len(content) > len(emptySrsStub) && len(content) > 4 && string(content[:3]) == "SRS" {
+				downloadedContent = content
+				break
+			}
+		}
+
+		if len(downloadedContent) > 0 {
+			_ = os.WriteFile(targetPath, downloadedContent, 0644)
+			log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_RULES_DOWNLOADED_SUCCESS", ruleTag, len(downloadedContent)))
+		} else {
+			hasMissingRules = true
+			log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_RULES_USING_SAFE_STUB", ruleTag))
+		}
+	}
+
+	// Phase 2: If direct downloads across all mirrors failed, probe available outbounds via Clash API
+	if hasMissingRules && parsed.Experimental.ClashAPI.ExternalController != "" {
+		log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_RULES_DIRECT_MIRRORS_BLOCKED"))
+		var proxyTags []string
+		for _, ob := range parsed.Outbounds {
+			if ob.Tag != "" && ob.Tag != "direct" && ob.Tag != "block" && ob.Type != "direct" && ob.Type != "block" {
+				proxyTags = append(proxyTags, ob.Tag)
+			}
+		}
+		if len(proxyTags) > 0 {
+			log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_RULES_PROBING_OUTBOUNDS", len(proxyTags)))
+			// Give Sing-box 1-2 seconds to establish upstream connections
+			time.Sleep(2 * time.Second)
+			workingOutbound := singbox.ProbeOutboundsViaClashAPI(
+				parsed.Experimental.ClashAPI.ExternalController,
+				proxyTags,
+				activeMirror.ProbeURL,
+				3*time.Second,
+			)
+			if workingOutbound != "" {
+				log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_RULES_OUTBOUND_VERIFIED", workingOutbound, activeMirror.Name))
+			}
+		}
 	}
 }

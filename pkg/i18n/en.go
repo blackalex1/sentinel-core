@@ -268,4 +268,16 @@ var enTranslations = map[string]string{
 	"LOG_SUPERVISOR_FINISHED":    "[Supervisor] Core %s process finished (exit=%v)",
 	"LOG_SUPERVISOR_DROPPED_ALL": "[Supervisor] Dropped all client sessions across all cores",
 	"LOG_SUPERVISOR_DROPPED_USER": "[Supervisor] Dropped sessions for user %s across all cores",
+
+	// Rule-Sets Delivery & Mirror Health Logs
+	"LOG_RULES_CHECKING_DIRECT_MIRRORS": "[RuleSet] Checking availability of CDN mirrors directly...",
+	"LOG_RULES_DIRECT_MIRROR_OK":        "[RuleSet] Direct mirror '%s' is reachable (latency: %dms)",
+	"LOG_RULES_DIRECT_MIRRORS_BLOCKED":  "[RuleSet] [WARN] Direct CDN mirrors unavailable (possible ISP block). Switching to probe via Sing-box outbound tunnels...",
+	"LOG_RULES_PROBING_OUTBOUNDS":       "[RuleSet] Testing %d outbounds via Clash API...",
+	"LOG_RULES_OUTBOUND_VERIFIED":       "[RuleSet] Outbound '%s' successfully connected to mirror '%s'",
+	"LOG_RULES_DOWNLOADING":             "[RuleSet] Downloading rule-set '%s' via mirror '%s'...",
+	"LOG_RULES_DOWNLOADED_SUCCESS":      "[RuleSet] Rule '%s' successfully downloaded (%d bytes) and saved to rules/",
+	"LOG_RULES_USING_SAFE_STUB":         "[RuleSet] [WARN] Failed to download rule '%s', using safe local stub. Sing-box remains operational",
+	"LOG_RULES_STUB_CREATED":            "[RuleSet] Created temporary stub for rule '%s' (instant core startup)",
+	"WARN_RULES_DIRECT_MIRRORS_FAILED":  "[RuleSet] Direct CDN mirrors unavailable, rule download routed via outbound '%s'",
 }

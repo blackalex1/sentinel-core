@@ -268,4 +268,16 @@ var ruTranslations = map[string]string{
 	"LOG_SUPERVISOR_FINISHED":    "[Supervisor] Процесс движка %s завершился (код выхода=%v)",
 	"LOG_SUPERVISOR_DROPPED_ALL": "[Supervisor] Сброшены все сессии клиентов на всех движках",
 	"LOG_SUPERVISOR_DROPPED_USER": "[Supervisor] Сброшены сессии пользователя %s на всех движках",
+
+	// Rule-Sets Delivery & Mirror Health Logs
+	"LOG_RULES_CHECKING_DIRECT_MIRRORS": "[RuleSet] Проверка доступности CDN-зеркал напрямую...",
+	"LOG_RULES_DIRECT_MIRROR_OK":        "[RuleSet] Прямое зеркало '%s' доступно (ответ за %dмс)",
+	"LOG_RULES_DIRECT_MIRRORS_BLOCKED":  "[RuleSet] [WARN] Прямые CDN-зеркала недоступны (возможна блокировка провайдером). Переход к проверке через исходящие туннели...",
+	"LOG_RULES_PROBING_OUTBOUNDS":       "[RuleSet] Тестирование %d исходящих узлов (outbounds) через Clash API...",
+	"LOG_RULES_OUTBOUND_VERIFIED":       "[RuleSet] Исходящий узел '%s' успешно подключен к зеркалу '%s'",
+	"LOG_RULES_DOWNLOADING":             "[RuleSet] Загрузка набора правил '%s' через зеркало '%s'...",
+	"LOG_RULES_DOWNLOADED_SUCCESS":      "[RuleSet] Правило '%s' успешно загружено (%d байт) и сохранено в rules/",
+	"LOG_RULES_USING_SAFE_STUB":         "[RuleSet] [WARN] Не удалось загрузить правило '%s', используется безопасная локальная заглушка. Sing-box работает без падений",
+	"LOG_RULES_STUB_CREATED":            "[RuleSet] Создана временная заглушка для правила '%s' (мгновенный старт ядра)",
+	"WARN_RULES_DIRECT_MIRRORS_FAILED":  "[RuleSet] Прямые CDN-зеркала недоступны, скачивание правил направлено через узел '%s'",
 }
