@@ -472,6 +472,113 @@ func TestSingboxCompiler_RoutingAndRuleSets(t *testing.T) {
 	}
 }
 
+func TestSingboxCompiler_RuleSets_V114_Modern(t *testing.T) {
+	c := NewCompiler()
+
+	spec := &ast.ConfigSpec{
+		TargetCore:  ast.CoreSingBox,
+		CoreVersion: "1.14.0",
+		ServerNode: &ast.ServerProfile{
+			Protocol: ast.ProtoVLESS,
+			Address:  "vless.example.com",
+			Port:     443,
+			UUID:     "uuid-vless",
+		},
+		Routing: &ast.RoutingSpec{
+			DefaultAction: ast.ActionProxy,
+			Rules: []ast.RoutingRule{
+				{
+					Action:  ast.ActionDirect,
+					Domains: []string{"geosite:ru"},
+					IPs:     []string{"geoip:ru"},
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile modern sing-box config: %v", err)
+	}
+
+	// In 1.14+, legacy download_detour MUST NOT be present
+	if strings.Contains(cfg, `"download_detour"`) {
+		t.Errorf("expected no legacy download_detour in 1.14+ config, but found it:\n%s", cfg)
+	}
+
+	expectedSnippets := []string{
+		`"http_clients"`,
+		`"tag": "rules-client"`,
+		`"default_http_client": "rules-client"`,
+		`"http_client": "rules-client"`,
+		`"initial_path": "rules/geosite-ru.srs"`,
+		`"initial_path": "rules/geoip-ru.srs"`,
+		"geosite-ru.srs",
+		"geoip-ru.srs",
+	}
+
+	for _, s := range expectedSnippets {
+		if !strings.Contains(cfg, s) {
+			t.Errorf("expected snippet %q in 1.14+ config, got:\n%s", s, cfg)
+		}
+	}
+}
+
+func TestSingboxCompiler_ServerWithProxyOutbounds_AutoDetour(t *testing.T) {
+	c := NewCompiler()
+
+	spec := &ast.ConfigSpec{
+		TargetCore:  ast.CoreSingBox,
+		CoreVersion: "1.14.0",
+		ServerInbounds: []ast.ServerInboundSpec{
+			{
+				Port:     10443,
+				Protocol: "vless",
+				Tag:      "inbound-test",
+			},
+		},
+		Routing: &ast.RoutingSpec{
+			Outbounds: []map[string]interface{}{
+				{"tag": "direct", "type": "direct"},
+				{"tag": "block", "type": "block"},
+				{"tag": "proxy-backup", "type": "hysteria2"},
+				{
+					"tag":  "proxy-urltest-group",
+					"type": "urltest",
+					"outbounds": []interface{}{
+						"proxy-primary",
+						"proxy-backup",
+					},
+				},
+			},
+			Rules: []ast.RoutingRule{
+				{
+					Action:      ast.ActionDirect,
+					Domains:     []string{"geosite:category-ru"},
+					IPs:         []string{"geoip:ru"},
+					OutboundTag: "direct",
+				},
+				{
+					Action:      ast.ActionProxy,
+					InboundTags: []string{"inbound-test"},
+					OutboundTag: "proxy-urltest-group",
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile server config with proxy outbounds: %v", err)
+	}
+
+	// It must automatically select urltest or proxy outbound as detour for rules-client!
+	if !strings.Contains(cfg, `"detour": "proxy-urltest-group"`) {
+		t.Errorf("expected automatic detour to urltest proxy outbound, got config:\n%s", cfg)
+	}
+}
+
+
 func TestSingboxCompiler_LogLevelsAndPaths(t *testing.T) {
 	c := NewCompiler()
 

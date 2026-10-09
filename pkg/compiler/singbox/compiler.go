@@ -119,7 +119,7 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 
 	// 5. Build Routing
 	isV112 := strings.HasPrefix(spec.CoreVersion, "1.12") || strings.HasPrefix(spec.CoreVersion, "v1.12") || strings.HasPrefix(spec.CoreVersion, "1.13")
-	routeConfig := BuildSingBoxRoute(spec, isV112)
+	routeConfig, httpClients := BuildSingBoxRoute(spec, isV112)
 
 	// 6. Log Level
 	logLevel := strings.ToLower(strings.TrimSpace(spec.LogLevel))
@@ -144,18 +144,27 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		"route":     routeConfig,
 	}
 
+	if len(httpClients) > 0 {
+		configObj["http_clients"] = httpClients
+	}
+
 	if len(endpoints) > 0 {
 		configObj["endpoints"] = endpoints
 	}
 
-	// 7. Clash API / External Controller
+	// 7. Experimental block (Cache File & Clash API)
+	expObj := map[string]interface{}{
+		"cache_file": map[string]interface{}{
+			"enabled": true,
+			"path":    "cache.db",
+		},
+	}
 	if spec.ClashAPIAddress != "" {
-		configObj["experimental"] = map[string]interface{}{
-			"clash_api": map[string]interface{}{
-				"external_controller": spec.ClashAPIAddress,
-			},
+		expObj["clash_api"] = map[string]interface{}{
+			"external_controller": spec.ClashAPIAddress,
 		}
 	}
+	configObj["experimental"] = expObj
 
 	jsonBytes, err := json.MarshalIndent(configObj, "", "  ")
 	if err != nil {

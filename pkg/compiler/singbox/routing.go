@@ -7,8 +7,23 @@ import (
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 )
 
-// BuildSingBoxRoute generates the route object for Sing-box
-func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{} {
+func isSingbox114OrNewer(version string) bool {
+	if version == "" {
+		return true // Default to modern sing-box (1.14+)
+	}
+	v := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(version)), "v")
+	if strings.HasPrefix(v, "1.10") || strings.HasPrefix(v, "1.11") || strings.HasPrefix(v, "1.12") || strings.HasPrefix(v, "1.13") {
+		return false
+	}
+	return true
+}
+
+// BuildSingBoxRoute generates the route object and any required top-level http_clients for Sing-box
+func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{}, []map[string]interface{}) {
+	isV114 := isSingbox114OrNewer(spec.CoreVersion)
+	activeMirror := GetActiveRuleMirror()
+	var httpClients []map[string]interface{}
+
 	route := map[string]interface{}{
 		"auto_detect_interface":   true,
 		"default_domain_resolver": "dns-direct",
@@ -85,6 +100,31 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 			downloadDetour = spec.ServerNode.Name
 		} else {
 			downloadDetour = "proxy"
+		}
+	} else if spec.Routing != nil {
+		// Server mode with upstream proxy outbounds (cascade / relay / warp):
+		// Automatically select the first available upstream proxy outbound as download detour
+		for _, ob := range spec.Routing.Outbounds {
+			tag, _ := ob["tag"].(string)
+			obType, _ := ob["type"].(string)
+			if tag == "" || tag == "direct" || tag == "block" || obType == "direct" || obType == "block" {
+				continue
+			}
+			if obType == "urltest" || obType == "selector" {
+				downloadDetour = tag
+				break
+			}
+			if downloadDetour == "direct" {
+				downloadDetour = tag
+			}
+		}
+		if downloadDetour == "direct" {
+			for _, r := range spec.Routing.Rules {
+				if r.OutboundTag != "" && r.OutboundTag != "direct" && r.OutboundTag != "block" {
+					downloadDetour = r.OutboundTag
+					break
+				}
+			}
 		}
 	}
 
@@ -176,13 +216,19 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 						tag := "geosite-" + strings.TrimPrefix(d, "geosite:")
 						domainRuleSets = append(domainRuleSets, tag)
 						if _, exists := ruleSetMap[tag]; !exists {
-							ruleSetMap[tag] = map[string]interface{}{
-								"tag":             tag,
-								"type":            "remote",
-								"format":          "binary",
-								"url":             fmt.Sprintf("https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/%s.srs", tag),
-								"download_detour": downloadDetour,
+							rs := map[string]interface{}{
+								"tag":    tag,
+								"type":   "remote",
+								"format": "binary",
+								"url":    fmt.Sprintf(activeMirror.GeositePattern, tag),
 							}
+							if isV114 {
+								rs["http_client"] = "rules-client"
+								rs["initial_path"] = fmt.Sprintf("rules/%s.srs", tag)
+							} else {
+								rs["download_detour"] = downloadDetour
+							}
+							ruleSetMap[tag] = rs
 						}
 					} else if strings.HasPrefix(d, "regexp:") {
 						regexList = append(regexList, strings.TrimPrefix(d, "regexp:"))
@@ -220,13 +266,19 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 							tag := "geoip-" + country
 							ipRuleSets = append(ipRuleSets, tag)
 							if _, exists := ruleSetMap[tag]; !exists {
-								ruleSetMap[tag] = map[string]interface{}{
-									"tag":             tag,
-									"type":            "remote",
-									"format":          "binary",
-									"url":             fmt.Sprintf("https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/%s.srs", tag),
-									"download_detour": downloadDetour,
+								rs := map[string]interface{}{
+									"tag":    tag,
+									"type":   "remote",
+									"format": "binary",
+									"url":    fmt.Sprintf(activeMirror.GeoipPattern, tag),
 								}
+								if isV114 {
+									rs["http_client"] = "rules-client"
+									rs["initial_path"] = fmt.Sprintf("rules/%s.srs", tag)
+								} else {
+									rs["download_detour"] = downloadDetour
+								}
+								ruleSetMap[tag] = rs
 							}
 						}
 					} else if strings.HasPrefix(ip, "ip:") {
@@ -319,7 +371,18 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) map[string]interface{}
 			ruleSets = append(ruleSets, rs)
 		}
 		route["rule_set"] = ruleSets
+
+		if isV114 {
+			route["default_http_client"] = "rules-client"
+			clientObj := map[string]interface{}{
+				"tag": "rules-client",
+			}
+			if downloadDetour != "direct" && downloadDetour != "" {
+				clientObj["detour"] = downloadDetour
+			}
+			httpClients = append(httpClients, clientObj)
+		}
 	}
 
-	return route
+	return route, httpClients
 }
