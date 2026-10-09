@@ -42,7 +42,7 @@ func FetchHysteriaTraffic(adminPort int) (map[string]ClientTraffic, error) {
 		return result, nil
 	}
 
-	// 1. Fetch /traffic (Hysteria resets its internal counters on read, so we accumulate them per port)
+	// 1. Fetch /traffic (Hysteria 2 returns lifetime cumulative tx/rx bytes since process start; assign directly without += accumulation)
 	trafficURL := fmt.Sprintf("http://127.0.0.1:%d/traffic", adminPort)
 	resp, err := localHTTPClient.Get(trafficURL)
 	if err == nil && resp.StatusCode == http.StatusOK {
@@ -65,8 +65,8 @@ func FetchHysteriaTraffic(adminPort int) (map[string]ClientTraffic, error) {
 					ct = &ClientTraffic{Email: email}
 					portMap[email] = ct
 				}
-				ct.DownBytes += t.Tx
-				ct.UpBytes += t.Rx
+				ct.DownBytes = t.Tx
+				ct.UpBytes = t.Rx
 			}
 			hyTrafficMu.Unlock()
 		}
