@@ -432,6 +432,216 @@ func TestFetchSingBoxTraffic_EdgeCases(t *testing.T) {
 	}
 }
 
+func TestFetchSingBoxTraffic_SessionTrackerResolution(t *testing.T) {
+	ResetSingBoxCumulativeTraffic()
+	st := GetSessionTracker()
+	st.Clear()
+
+	// 1. Process Sing-box connection logs for test user
+	st.ProcessLogLine("sing-box", `INFO [958638302 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.42:54321`)
+	st.ProcessLogLine("sing-box", `INFO [958638302 0ms] inbound/vless[vless-in]: [test_singbox_user] inbound connection to 1.1.1.1:443`)
+
+	// 2. Mock Sing-box Clash API: connection has NO user in metadata (sing-box standard behavior),
+	// but has sourceIP: "198.51.100.42" and sourcePort: "54321"
+	apiMux := http.NewServeMux()
+	currentDlTotal := int64(5000)
+	currentUpTotal := int64(1000)
+	hasActive := true
+
+	apiMux.HandleFunc("/connections", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		conns := []map[string]any{}
+		if hasActive {
+			conns = append(conns, map[string]any{
+				"id":       "conn-test-1",
+				"download": 5000,
+				"upload":   1000,
+				"metadata": map[string]string{
+					"sourceIP":   "198.51.100.42",
+					"sourcePort": "54321",
+					"type":       "vless/vless-in",
+				},
+			})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"downloadTotal": currentDlTotal,
+			"uploadTotal":   currentUpTotal,
+			"connections":   conns,
+		})
+	})
+
+	server := httptest.NewServer(apiMux)
+	defer server.Close()
+
+	// Phase 1: Active connection
+	traffic, err := FetchSingBoxTraffic(server.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	userTraffic, ok := traffic["test_singbox_user"]
+	if !ok {
+		t.Fatalf("expected traffic for user 'test_singbox_user' resolved via SessionTracker, got: %v", traffic)
+	}
+	if userTraffic.DownBytes != 5000 || userTraffic.UpBytes != 1000 {
+		t.Errorf("expected 5000 down, 1000 up, got: %+v", userTraffic)
+	}
+	if !userTraffic.Online {
+		t.Errorf("expected test_singbox_user to be online during active connection")
+	}
+
+	// Phase 2: Connection closes, but downloadTotal/uploadTotal accumulated additional 2000 down, 500 up
+	hasActive = false
+	currentDlTotal += 2000
+	currentUpTotal += 500
+
+	traffic2, err := FetchSingBoxTraffic(server.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	userTraffic2, ok := traffic2["test_singbox_user"]
+	if !ok {
+		t.Fatalf("expected traffic for user 'test_singbox_user' retained across closed connections, got: %v", traffic2)
+	}
+	if userTraffic2.DownBytes != 7000 || userTraffic2.UpBytes != 1500 {
+		t.Errorf("expected 7000 down, 1500 up total, got: %+v", userTraffic2)
+	}
+}
+
+func TestFetchSingBoxTraffic_MultipleConcurrentClients(t *testing.T) {
+	ResetSingBoxCumulativeTraffic()
+	st := GetSessionTracker()
+	st.Clear()
+
+	// 1. Client logs processing for 3 concurrent users
+	// User Alpha (2 connections: 10001, 10002)
+	st.ProcessLogLine("sing-box", `INFO [100 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.10:10001`)
+	st.ProcessLogLine("sing-box", `INFO [100 0ms] inbound/vless[vless-in]: [user_alpha] inbound connection to 1.1.1.1:443`)
+	st.ProcessLogLine("sing-box", `INFO [101 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.10:10002`)
+	st.ProcessLogLine("sing-box", `INFO [101 0ms] inbound/vless[vless-in]: [user_alpha] inbound connection to 8.8.8.8:443`)
+
+	// User Beta (1 connection: 20001)
+	st.ProcessLogLine("sing-box", `INFO [200 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.20:20001`)
+	st.ProcessLogLine("sing-box", `INFO [200 0ms] inbound/vless[vless-in]: [user_beta] inbound connection to 9.9.9.9:443`)
+
+	// User Gamma (1 connection: 30001)
+	st.ProcessLogLine("sing-box", `INFO [300 0ms] inbound/vless[vless-in]: inbound connection from 198.51.100.30:30001`)
+	st.ProcessLogLine("sing-box", `INFO [300 0ms] inbound/vless[vless-in]: [user_gamma] inbound connection to 1.0.0.1:443`)
+
+	apiMux := http.NewServeMux()
+	var currentDlTotal, currentUpTotal int64
+	var activeConns []map[string]any
+
+	apiMux.HandleFunc("/connections", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"downloadTotal": currentDlTotal,
+			"uploadTotal":   currentUpTotal,
+			"connections":   activeConns,
+		})
+	})
+
+	server := httptest.NewServer(apiMux)
+	defer server.Close()
+
+	// --- PHASE 1: All 3 clients pushing traffic concurrently ---
+	// Alpha: conn-a1: 7MB down, 700KB up; conn-a2: 3MB down, 300KB up => 10MB down, 1MB up
+	// Beta: conn-b1: 5MB down, 500KB up
+	// Gamma: conn-g1: 2MB down, 200KB up
+	// Grand total: 17MB down, 1.7MB up
+	currentDlTotal = 17 * 1024 * 1024
+	currentUpTotal = 1700 * 1024
+	activeConns = []map[string]any{
+		{
+			"id": "conn-a1", "download": 7 * 1024 * 1024, "upload": 700 * 1024,
+			"metadata": map[string]string{"sourceIP": "198.51.100.10", "sourcePort": "10001", "type": "vless/vless-in"},
+		},
+		{
+			"id": "conn-a2", "download": 3 * 1024 * 1024, "upload": 300 * 1024,
+			"metadata": map[string]string{"sourceIP": "198.51.100.10", "sourcePort": "10002", "type": "vless/vless-in"},
+		},
+		{
+			"id": "conn-b1", "download": 5 * 1024 * 1024, "upload": 500 * 1024,
+			"metadata": map[string]string{"sourceIP": "198.51.100.20", "sourcePort": "20001", "type": "vless/vless-in"},
+		},
+		{
+			"id": "conn-g1", "download": 2 * 1024 * 1024, "upload": 200 * 1024,
+			"metadata": map[string]string{"sourceIP": "198.51.100.30", "sourcePort": "30001", "type": "vless/vless-in"},
+		},
+	}
+
+	t1, err := FetchSingBoxTraffic(server.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("Phase 1 error: %v", err)
+	}
+
+	if t1["user_alpha"].DownBytes != 10*1024*1024 || t1["user_alpha"].UpBytes != 1000*1024 || !t1["user_alpha"].Online {
+		t.Errorf("Phase 1 user_alpha unexpected: %+v", t1["user_alpha"])
+	}
+	if t1["user_beta"].DownBytes != 5*1024*1024 || t1["user_beta"].UpBytes != 500*1024 || !t1["user_beta"].Online {
+		t.Errorf("Phase 1 user_beta unexpected: %+v", t1["user_beta"])
+	}
+	if t1["user_gamma"].DownBytes != 2*1024*1024 || t1["user_gamma"].UpBytes != 200*1024 || !t1["user_gamma"].Online {
+		t.Errorf("Phase 1 user_gamma unexpected: %+v", t1["user_gamma"])
+	}
+
+	// --- PHASE 2: Incremental streaming while Gamma closes connection ---
+	// Alpha adds +5MB down (conn-a1 +3MB -> 10MB, conn-a2 +2MB -> 5MB)
+	// Beta adds +5MB down (conn-b1 +5MB -> 10MB)
+	// Gamma transfers +3MB and CLOSES conn-g1! (conn-g1 removed from active connections, totals increase by 3MB down, 300KB up)
+	// Delta totals: +5MB (alpha) + 5MB (beta) + 3MB (gamma) = +13MB down, +1.3MB up
+	currentDlTotal += 13 * 1024 * 1024
+	currentUpTotal += 1300 * 1024
+
+	activeConns = []map[string]any{
+		{
+			"id": "conn-a1", "download": 10 * 1024 * 1024, "upload": 1000 * 1024,
+			"metadata": map[string]string{"sourceIP": "198.51.100.10", "sourcePort": "10001", "type": "vless/vless-in"},
+		},
+		{
+			"id": "conn-a2", "download": 5 * 1024 * 1024, "upload": 500 * 1024,
+			"metadata": map[string]string{"sourceIP": "198.51.100.10", "sourcePort": "10002", "type": "vless/vless-in"},
+		},
+		{
+			"id": "conn-b1", "download": 10 * 1024 * 1024, "upload": 1000 * 1024,
+			"metadata": map[string]string{"sourceIP": "198.51.100.20", "sourcePort": "20001", "type": "vless/vless-in"},
+		},
+		// conn-g1 is GONE!
+	}
+
+	t2, err := FetchSingBoxTraffic(server.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("Phase 2 error: %v", err)
+	}
+
+	// Verify exact isolation:
+	// Alpha total: 10MB + 5MB = 15MB down, 1.5MB up
+	if t2["user_alpha"].DownBytes != 15*1024*1024 || t2["user_alpha"].UpBytes != 1500*1024 || !t2["user_alpha"].Online {
+		t.Errorf("Phase 2 user_alpha expected 15MB down, 1.5MB up, got: %+v", t2["user_alpha"])
+	}
+	// Beta total: 5MB + 5MB = 10MB down, 1MB up
+	if t2["user_beta"].DownBytes != 10*1024*1024 || t2["user_beta"].UpBytes != 1000*1024 || !t2["user_beta"].Online {
+		t.Errorf("Phase 2 user_beta expected 10MB down, 1MB up, got: %+v", t2["user_beta"])
+	}
+	// Gamma total: 2MB + 3MB (closed delta!) = 5MB down, 500KB up, Online: false
+	if t2["user_gamma"].DownBytes != 5*1024*1024 || t2["user_gamma"].UpBytes != 500*1024 {
+		t.Errorf("Phase 2 user_gamma expected 5MB down, 500KB up, got: %+v", t2["user_gamma"])
+	}
+	if t2["user_gamma"].Online {
+		t.Errorf("Phase 2 user_gamma expected offline after conn closed, got online")
+	}
+
+	// Grand check: sum across all users == currentDlTotal
+	var sumDown, sumUp int64
+	for _, ct := range t2 {
+		sumDown += ct.DownBytes
+		sumUp += ct.UpBytes
+	}
+	if sumDown != currentDlTotal || sumUp != currentUpTotal {
+		t.Errorf("Grand total mismatch: expected (%d down, %d up), got (%d down, %d up)",
+			currentDlTotal, currentUpTotal, sumDown, sumUp)
+	}
+}
+
 func TestReadCoreLogs_Advanced(t *testing.T) {
 	// Non-existent file
 	lines, err := ReadCoreLogs("non_existent_file_path_12345.log", 10)
@@ -863,11 +1073,11 @@ func TestSessionTracker_Hysteria2ProductionLifecycle(t *testing.T) {
 	}
 
 	// 1. Client connects
-	st.ProcessLogLine("hysteria2", `2026-08-31T12:19:11Z	INFO	client connected	{"addr": "198.51.100.205:34897", "id": "svatik", "tx": 0}`)
+	st.ProcessLogLine("hysteria2", `2026-08-31T12:19:11Z	INFO	client connected	{"addr": "198.51.100.205:34897", "id": "test_hy2_client", "tx": 0}`)
 
 	active := st.GetActiveSessions()
-	if len(active) != 1 || active[0].Email != "svatik" || active[0].IP != "198.51.100.205" {
-		t.Fatalf("expected 1 active session for svatik, got %+v", active)
+	if len(active) != 1 || active[0].Email != "test_hy2_client" || active[0].IP != "198.51.100.205" {
+		t.Fatalf("expected 1 active session for test_hy2_client, got %+v", active)
 	}
 
 	events := st.GetRecentEvents(0, 100)
@@ -876,14 +1086,14 @@ func TestSessionTracker_Hysteria2ProductionLifecycle(t *testing.T) {
 	}
 
 	// 2. TCP error timeout (should NOT create new connect events)
-	st.ProcessLogLine("hysteria2", `2026-08-31T12:21:10Z	WARN	TCP error	{"addr": "198.51.100.205:34897", "id": "svatik", "reqAddr": "8.8.8.8:443", "error": "timeout: no recent network activity"}`)
+	st.ProcessLogLine("hysteria2", `2026-08-31T12:21:10Z	WARN	TCP error	{"addr": "198.51.100.205:34897", "id": "test_hy2_client", "reqAddr": "8.8.8.8:443", "error": "timeout: no recent network activity"}`)
 	events = st.GetRecentEvents(0, 100)
 	if len(events) != 1 {
 		t.Fatalf("TCP error should not create connect event, got %d events", len(events))
 	}
 
 	// 3. Client disconnects
-	st.ProcessLogLine("hysteria2", `2026-08-31T12:21:10Z	INFO	client disconnected	{"addr": "198.51.100.205:34897", "id": "svatik", "error": "accepting stream failed: timeout: no recent network activity"}`)
+	st.ProcessLogLine("hysteria2", `2026-08-31T12:21:10Z	INFO	client disconnected	{"addr": "198.51.100.205:34897", "id": "test_hy2_client", "error": "accepting stream failed: timeout: no recent network activity"}`)
 
 	active = st.GetActiveSessions()
 	if len(active) != 0 {
@@ -891,7 +1101,7 @@ func TestSessionTracker_Hysteria2ProductionLifecycle(t *testing.T) {
 	}
 
 	events = st.GetRecentEvents(0, 100)
-	if len(events) != 2 || events[1].Action != "disconnect" || events[1].Email != "svatik" {
+	if len(events) != 2 || events[1].Action != "disconnect" || events[1].Email != "test_hy2_client" {
 		t.Fatalf("expected connect + disconnect events, got %+v", events)
 	}
 }

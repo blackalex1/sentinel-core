@@ -38,11 +38,14 @@ type SessionEvent struct {
 
 // SessionTracker coordinates session tracking and log parsing across all VPN cores.
 type SessionTracker struct {
-	mu           sync.RWMutex
-	sessions     map[string]*SessionInfo // key: "core:email:ip"
-	singboxConns map[string]string       // connID -> srcIP
-	events       []*SessionEvent
-	maxEvents    int
+	mu               sync.RWMutex
+	sessions         map[string]*SessionInfo // key: "core:email:ip"
+	singboxConns     map[string]string       // connID -> srcAddr (IP:Port or IP)
+	singboxAddrUsers map[string]string       // "srcIP:srcPort" -> email
+	singboxIPUsers   map[string]string       // "srcIP" -> email
+	singboxLastUser  string
+	events           []*SessionEvent
+	maxEvents        int
 }
 
 var (
@@ -50,7 +53,7 @@ var (
 	defaultTrackerOnce sync.Once
 
 	singboxConnIDPattern = regexp.MustCompile(`\[(?:conn-)?([0-9]{1,16})\s+[0-9\.]+(?:ms|µs|us|s|ns|m)\]|\[(?:conn-)?([0-9]{5,16})\]`)
-	singboxFromPattern   = regexp.MustCompile(`(?:from|client|accepted(?:\s+(?:tcp|udp):?)?)\s*(?:tcp:|udp:)?\[?([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|[0-9a-fA-F:]{3,39})\]?(?::\d+)?`)
+	singboxFromPattern   = regexp.MustCompile(`(?:from|client|accepted(?:\s+(?:tcp|udp):?)?)\s*(?:tcp:|udp:)?\[?([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|[0-9a-fA-F:]{3,39})\]?(?::(\d+))?`)
 	singboxUserPattern   = regexp.MustCompile(`(?:inbound/[^:]+|inbound[^:]*):\s*\[([a-zA-Z0-9_.+@-]+)\]|router:\s*match\[\d+\]\s*(?:inbound/[^\s]+\s+)?\[([a-zA-Z0-9_.+@-]+)\]|\[([a-zA-Z0-9_.+@-]+)\]\s+(?:inbound connection|accepted|router|route|match|connection closed)|accepted\s+(?:tcp|udp):?\S*\s+\[([a-zA-Z0-9_.+@-]+)\]|(?:user|email|client|username|auth)[:=\s]+([a-zA-Z0-9_.+@-]+)|\[([a-zA-Z0-9_.+@-]+@[a-zA-Z0-9_.+@-]+)\]`)
 	xrayAcceptedPattern  = regexp.MustCompile(`(?:from\s+)?(?:tcp:|udp:)?\[?([0-9a-fA-F.:]+)\]?(?::\d+)?\s+accepted`)
 	xrayEmailPattern     = regexp.MustCompile(`email:\s+([^\s,\]]+)`)
@@ -81,10 +84,12 @@ func isIgnoredTagOrLevel(val string) bool {
 func GetSessionTracker() *SessionTracker {
 	defaultTrackerOnce.Do(func() {
 		defaultTracker = &SessionTracker{
-			sessions:     make(map[string]*SessionInfo),
-			singboxConns: make(map[string]string),
-			events:       make([]*SessionEvent, 0, 1000),
-			maxEvents:    1000,
+			sessions:         make(map[string]*SessionInfo),
+			singboxConns:     make(map[string]string),
+			singboxAddrUsers: make(map[string]string),
+			singboxIPUsers:   make(map[string]string),
+			events:           make([]*SessionEvent, 0, 1000),
+			maxEvents:        1000,
 		}
 		go defaultTracker.inactivityCleanerLoop()
 	})
@@ -156,18 +161,32 @@ func (st *SessionTracker) processSingBoxLine(line string, now int64, nowStr stri
 		}
 	}
 
-	var fromIP string
+	var fromIP, fromPort string
 	if m := singboxFromPattern.FindStringSubmatch(line); len(m) > 1 {
 		fromIP = parseCleanIP(m[1])
+		if len(m) > 2 {
+			fromPort = m[2]
+		}
 	}
 	if fromIP == "" && (strings.Contains(line, "inbound connection from") || strings.Contains(line, "accepted")) {
 		fromIP = extractAnyNonLoopbackIP(line)
 	}
 
-	// 1. Stage 1: Handshake with Source IP
+	fullAddr := fromIP
+	if fromIP != "" && fromPort != "" {
+		fullAddr = fromIP + ":" + fromPort
+	}
+
+	// 1. Stage 1: Handshake with Source IP / Address
 	if fromIP != "" && connID != "" {
 		st.mu.Lock()
+		if st.singboxConns == nil {
+			st.singboxConns = make(map[string]string)
+		}
 		st.singboxConns[connID] = fromIP
+		if fullAddr != fromIP {
+			st.singboxConns[connID+"_addr"] = fullAddr
+		}
 		if len(st.singboxConns) > 5000 {
 			count := 0
 			for k := range st.singboxConns {
@@ -197,17 +216,55 @@ func (st *SessionTracker) processSingBoxLine(line string, now int64, nowStr stri
 	}
 
 	if email != "" {
-		var srcIP string
+		var srcIP, srcAddr string
 		if fromIP != "" {
 			srcIP = fromIP
+			srcAddr = fullAddr
 		} else if connID != "" {
 			st.mu.RLock()
 			srcIP = st.singboxConns[connID]
+			srcAddr = st.singboxConns[connID+"_addr"]
+			if srcAddr == "" {
+				srcAddr = srcIP
+			}
 			st.mu.RUnlock()
 		}
 
 		if srcIP != "" {
 			st.registerConnect("sing-box", email, srcIP, now, nowStr)
+			st.mu.Lock()
+			if st.singboxAddrUsers == nil {
+				st.singboxAddrUsers = make(map[string]string)
+			}
+			if st.singboxIPUsers == nil {
+				st.singboxIPUsers = make(map[string]string)
+			}
+			if srcAddr != "" {
+				st.singboxAddrUsers[srcAddr] = email
+			}
+			st.singboxIPUsers[srcIP] = email
+			st.singboxLastUser = email
+			if len(st.singboxAddrUsers) > 5000 {
+				cnt := 0
+				for k := range st.singboxAddrUsers {
+					delete(st.singboxAddrUsers, k)
+					cnt++
+					if cnt >= 2500 {
+						break
+					}
+				}
+			}
+			if len(st.singboxIPUsers) > 2000 {
+				cnt := 0
+				for k := range st.singboxIPUsers {
+					delete(st.singboxIPUsers, k)
+					cnt++
+					if cnt >= 1000 {
+						break
+					}
+				}
+			}
+			st.mu.Unlock()
 		}
 	}
 }
@@ -574,7 +631,45 @@ func (st *SessionTracker) Clear() {
 	defer st.mu.Unlock()
 	st.sessions = make(map[string]*SessionInfo)
 	st.singboxConns = make(map[string]string)
+	st.singboxAddrUsers = make(map[string]string)
+	st.singboxIPUsers = make(map[string]string)
+	st.singboxLastUser = ""
 	st.events = make([]*SessionEvent, 0, st.maxEvents)
+}
+
+// ResolveSingBoxUser attempts to identify the client email associated with a Sing-box connection.
+func (st *SessionTracker) ResolveSingBoxUser(srcIP, srcPort string) string {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+
+	if srcIP != "" && srcPort != "" {
+		addr := fmt.Sprintf("%s:%s", srcIP, srcPort)
+		if u, ok := st.singboxAddrUsers[addr]; ok && u != "" {
+			return u
+		}
+	}
+	if srcIP != "" {
+		if u, ok := st.singboxIPUsers[srcIP]; ok && u != "" {
+			return u
+		}
+	}
+	// Check if only one user is currently active in Sing-box sessions
+	var singleUser string
+	userCount := 0
+	for _, sess := range st.sessions {
+		if (sess.Core == "sing-box" || sess.Core == "singbox") && sess.Email != "" {
+			if singleUser == "" || singleUser == sess.Email {
+				singleUser = sess.Email
+				userCount++
+			} else {
+				userCount++
+			}
+		}
+	}
+	if userCount > 0 && singleUser != "" {
+		return singleUser
+	}
+	return st.singboxLastUser
 }
 
 func (st *SessionTracker) inactivityCleanerLoop() {

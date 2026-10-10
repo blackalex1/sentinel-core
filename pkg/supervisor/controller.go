@@ -127,11 +127,53 @@ func (c *Controller) getActiveHysteriaPorts() []int {
 	return result
 }
 
-// GetStatus returns the operational status of all core engines
-func (c *Controller) GetStatus() map[string]CoreStatus {
+func (c *Controller) getActiveClashAddr() string {
 	c.mu.RLock()
 	clashAddr := c.clashAPIAddr
 	c.mu.RUnlock()
+
+	searchDirs := []string{
+		".", "bin", "config", "../bin", "../config",
+		"backend/bin", "../backend/bin", "../../backend/bin",
+		"/opt/sentinel/backend/bin", "/app/backend/bin", "/var/lib/sentinel/bin",
+	}
+	if envBin := os.Getenv("SENTINEL_BIN_DIR"); envBin != "" {
+		searchDirs = append(searchDirs, envBin)
+	}
+	for _, dir := range searchDirs {
+		matches, err := filepath.Glob(filepath.Join(dir, "singbox*.json"))
+		if err != nil {
+			continue
+		}
+		for _, m := range matches {
+			if data, err := os.ReadFile(m); err == nil {
+				var cfg struct {
+					Experimental struct {
+						ClashAPI struct {
+							ExternalController string `json:"external_controller"`
+						} `json:"clash_api"`
+					} `json:"experimental"`
+				}
+				if err := json.Unmarshal(data, &cfg); err == nil && cfg.Experimental.ClashAPI.ExternalController != "" {
+					addr := cfg.Experimental.ClashAPI.ExternalController
+					if strings.HasPrefix(addr, ":") {
+						return "127.0.0.1" + addr
+					}
+					return addr
+				}
+			}
+		}
+	}
+
+	if clashAddr != "" {
+		return clashAddr
+	}
+	return "127.0.0.1:9090"
+}
+
+// GetStatus returns the operational status of all core engines
+func (c *Controller) GetStatus() map[string]CoreStatus {
+	clashAddr := c.getActiveClashAddr()
 
 	status := make(map[string]CoreStatus)
 	pm := GetProcessManager()
@@ -176,10 +218,7 @@ func (c *Controller) GetStatus() map[string]CoreStatus {
 
 // GetUnifiedTraffic collects and aggregates traffic from all active engines
 func (c *Controller) GetUnifiedTraffic() (map[string]ClientTraffic, error) {
-	c.mu.RLock()
-	clashAddr := c.clashAPIAddr
-	c.mu.RUnlock()
-
+	clashAddr := c.getActiveClashAddr()
 	hyPorts := c.getActiveHysteriaPorts()
 
 	aggregated := make(map[string]ClientTraffic)
