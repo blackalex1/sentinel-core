@@ -14,6 +14,7 @@ var (
 	sbTrafficMu      sync.RWMutex
 	sbUserCumulative = make(map[string]map[string]*ClientTraffic) // clashAddr -> email -> *ClientTraffic
 	sbLastConnStats  = make(map[string][2]int64)                  // connID -> [upload, download]
+	sbConnUser       = make(map[string]string)                   // connID -> email
 	sbLastTotals     = make(map[string][2]int64)                  // clashAddr -> [uploadTotal, downloadTotal]
 	sbLastSeenUser   = make(map[string]string)                   // clashAddr -> lastActiveEmail
 )
@@ -24,6 +25,7 @@ func ResetSingBoxCumulativeTraffic() {
 	defer sbTrafficMu.Unlock()
 	sbUserCumulative = make(map[string]map[string]*ClientTraffic)
 	sbLastConnStats = make(map[string][2]int64)
+	sbConnUser = make(map[string]string)
 	sbLastTotals = make(map[string][2]int64)
 	sbLastSeenUser = make(map[string]string)
 }
@@ -97,6 +99,7 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 				Outbound    string   `json:"outbound"`
 				Chains      []string `json:"chains"`
 				SourceIP    string   `json:"sourceIP"`
+				SourcePort  string   `json:"sourcePort"`
 				Source_IP   string   `json:"source_ip"`
 				ClientIP    string   `json:"clientIP"`
 				RemoteHost  string   `json:"host"`
@@ -159,18 +162,24 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 			email = conn.Username
 		}
 		if email == "" {
-			email = conn.Email
-		}
-		if email == "" {
 			email = conn.UUID
 		}
+		if email == "" {
+			email = GetSessionTracker().ResolveSingBoxUser(conn.Metadata.SourceIP, conn.Metadata.SourcePort)
+		}
 		email = strings.TrimSpace(email)
+		if email == "" {
+			email = sbLastSeenUser[clashAddr]
+		}
 		if email == "" {
 			continue
 		}
 
 		liveUsers[email]++
 		sbLastSeenUser[clashAddr] = email
+		if connID != "" {
+			sbConnUser[connID] = email
+		}
 
 		prev := sbLastConnStats[connID]
 		prevUp, prevDown := prev[0], prev[1]
@@ -238,6 +247,18 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		}
 	}
 
+	// Detect connections that closed during this polling interval
+	var closedUsers []string
+	for cID, prevEmail := range sbConnUser {
+		if !activeConnIDs[cID] {
+			if prevEmail != "" && !containsString(closedUsers, prevEmail) {
+				closedUsers = append(closedUsers, prevEmail)
+			}
+			delete(sbConnUser, cID)
+			delete(sbLastConnStats, cID)
+		}
+	}
+
 	// Calculate closed connections delta from DownloadTotal / UploadTotal
 	if data.DownloadTotal > 0 || data.UploadTotal > 0 {
 		prevTotals := sbLastTotals[clashAddr]
@@ -260,24 +281,42 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		unaccountedDown := deltaTotalDown - activeDeltasDown
 
 		if unaccountedUp > 0 || unaccountedDown > 0 {
-			targetEmail := sbLastSeenUser[clashAddr]
-			if targetEmail == "" && len(addrMap) == 1 {
+			var targetEmails []string
+			if len(closedUsers) > 0 {
+				targetEmails = closedUsers
+			} else if lastEmail := sbLastSeenUser[clashAddr]; lastEmail != "" {
+				targetEmails = []string{lastEmail}
+			} else if len(addrMap) == 1 {
 				for em := range addrMap {
-					targetEmail = em
+					targetEmails = []string{em}
 					break
 				}
+			} else if resolved := GetSessionTracker().ResolveSingBoxUser("", ""); resolved != "" {
+				targetEmails = []string{resolved}
 			}
-			if targetEmail != "" {
-				ct, ctExists := addrMap[targetEmail]
-				if !ctExists {
-					ct = &ClientTraffic{Email: targetEmail}
-					addrMap[targetEmail] = ct
-				}
-				if unaccountedUp > 0 {
-					ct.UpBytes += unaccountedUp
-				}
-				if unaccountedDown > 0 {
-					ct.DownBytes += unaccountedDown
+
+			if len(targetEmails) > 0 {
+				perUp := unaccountedUp / int64(len(targetEmails))
+				remUp := unaccountedUp % int64(len(targetEmails))
+				perDown := unaccountedDown / int64(len(targetEmails))
+				remDown := unaccountedDown % int64(len(targetEmails))
+
+				for i, targetEmail := range targetEmails {
+					ct, ctExists := addrMap[targetEmail]
+					if !ctExists {
+						ct = &ClientTraffic{Email: targetEmail}
+						addrMap[targetEmail] = ct
+					}
+					addUp := perUp
+					if i == 0 {
+						addUp += remUp
+					}
+					addDown := perDown
+					if i == 0 {
+						addDown += remDown
+					}
+					ct.UpBytes += addUp
+					ct.DownBytes += addDown
 				}
 			}
 		}
