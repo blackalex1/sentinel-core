@@ -16,9 +16,11 @@ func CheckHysteriaStatus(adminPort int) bool {
 		return false
 	}
 	resp, err := localHTTPClient.Get(fmt.Sprintf("http://127.0.0.1:%d/traffic", adminPort))
-	if err == nil && resp.StatusCode == http.StatusOK {
-		resp.Body.Close()
-		return true
+	if err == nil {
+		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			return true
+		}
 	}
 	return false
 }
@@ -45,30 +47,32 @@ func FetchHysteriaTraffic(adminPort int) (map[string]ClientTraffic, error) {
 	// 1. Fetch /traffic (Hysteria 2 returns lifetime cumulative tx/rx bytes since process start; assign directly without += accumulation)
 	trafficURL := fmt.Sprintf("http://127.0.0.1:%d/traffic", adminPort)
 	resp, err := localHTTPClient.Get(trafficURL)
-	if err == nil && resp.StatusCode == http.StatusOK {
+	if err == nil {
 		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		var rawTraffic map[string]struct {
-			Tx int64 `json:"tx"`
-			Rx int64 `json:"rx"`
-		}
-		if err := json.Unmarshal(body, &rawTraffic); err == nil && len(rawTraffic) > 0 {
-			hyTrafficMu.Lock()
-			portMap, exists := hyCumulativeTraffic[adminPort]
-			if !exists {
-				portMap = make(map[string]*ClientTraffic)
-				hyCumulativeTraffic[adminPort] = portMap
+		if resp.StatusCode == http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			var rawTraffic map[string]struct {
+				Tx int64 `json:"tx"`
+				Rx int64 `json:"rx"`
 			}
-			for email, t := range rawTraffic {
-				ct, exists := portMap[email]
+			if err := json.Unmarshal(body, &rawTraffic); err == nil && len(rawTraffic) > 0 {
+				hyTrafficMu.Lock()
+				portMap, exists := hyCumulativeTraffic[adminPort]
 				if !exists {
-					ct = &ClientTraffic{Email: email}
-					portMap[email] = ct
+					portMap = make(map[string]*ClientTraffic)
+					hyCumulativeTraffic[adminPort] = portMap
 				}
-				ct.DownBytes = t.Tx
-				ct.UpBytes = t.Rx
+				for email, t := range rawTraffic {
+					ct, exists := portMap[email]
+					if !exists {
+						ct = &ClientTraffic{Email: email}
+						portMap[email] = ct
+					}
+					ct.DownBytes = t.Tx
+					ct.UpBytes = t.Rx
+				}
+				hyTrafficMu.Unlock()
 			}
-			hyTrafficMu.Unlock()
 		}
 	}
 
@@ -76,10 +80,12 @@ func FetchHysteriaTraffic(adminPort int) (map[string]ClientTraffic, error) {
 	onlineURL := fmt.Sprintf("http://127.0.0.1:%d/online", adminPort)
 	rawOnline := make(map[string]int)
 	respOnline, err := localHTTPClient.Get(onlineURL)
-	if err == nil && respOnline.StatusCode == http.StatusOK {
+	if err == nil {
 		defer respOnline.Body.Close()
-		body, _ := io.ReadAll(respOnline.Body)
-		_ = json.Unmarshal(body, &rawOnline)
+		if respOnline.StatusCode == http.StatusOK {
+			body, _ := io.ReadAll(respOnline.Body)
+			_ = json.Unmarshal(body, &rawOnline)
+		}
 	}
 
 	// Build result snapshot merging cumulative bytes with live online status
