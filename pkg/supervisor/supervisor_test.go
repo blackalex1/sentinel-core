@@ -1829,4 +1829,108 @@ func TestSecurityAudit_StopCore_UnknownCore_Safe(t *testing.T) {
 	}
 }
 
+func TestSessionTracker_UnauthenticatedHostProbeDoesNotFlap(t *testing.T) {
+	ResetSingBoxCumulativeTraffic()
+	st := GetSessionTracker()
+	st.Clear()
+
+	// Mock RFC 5737 documentation test IPs & synthetic usernames:
+	// Client: "mock_client_primary" on 192.0.2.45:54321
+	// Unauthenticated probe: 203.0.113.88:48614
+	const clientUser = "mock_client_primary"
+	const clientIP = "192.0.2.45"
+	const clientPort = "54321"
+	const probeIP = "203.0.113.88"
+	const probePort = "48614"
+
+	// 1. Process Sing-box connection logs for the real client
+	st.ProcessLogLine("sing-box", fmt.Sprintf("INFO [1001 0ms] inbound/vless[vless-in]: inbound connection from %s:%s", clientIP, clientPort))
+	st.ProcessLogLine("sing-box", fmt.Sprintf("INFO [1001 50ms] inbound/vless[vless-in]: [%s] inbound connection to 198.51.100.1:443", clientUser))
+
+	// Verify client is connected on clientIP
+	sessions := st.GetActiveSessions()
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 active session, got %d", len(sessions))
+	}
+	if sessions[0].Email != clientUser || sessions[0].IP != clientIP {
+		t.Fatalf("expected session (%s, %s), got (%s, %s)", clientUser, clientIP, sessions[0].Email, sessions[0].IP)
+	}
+
+	eventsBefore := st.GetRecentEvents(0, 100)
+	if len(eventsBefore) != 1 || eventsBefore[0].Action != "connect" || eventsBefore[0].IP != clientIP {
+		t.Fatalf("expected exactly 1 connect event for %s, got: %+v", clientIP, eventsBefore)
+	}
+
+	// 2. An unauthenticated probe from probeIP arrives in Sing-box Clash API (no user attached)
+	// ResolveSingBoxUser must NOT attribute probeIP to clientUser
+	resolvedUser := st.ResolveSingBoxUser(probeIP, probePort)
+	if resolvedUser != "" {
+		t.Fatalf("expected ResolveSingBoxUser to return empty for unknown probe IP %s, but got: %s", probeIP, resolvedUser)
+	}
+
+	// 3. Mock Sing-box Clash API: returns client connection + unauthenticated host probe
+	apiMux := http.NewServeMux()
+	apiMux.HandleFunc("/connections", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		conns := []map[string]any{
+			{
+				"id":       "conn-client-1",
+				"download": 5000,
+				"upload":   1000,
+				"metadata": map[string]string{
+					"sourceIP":   clientIP,
+					"sourcePort": clientPort,
+					"type":       "vless/vless-in",
+				},
+			},
+			{
+				"id":       "conn-probe-host",
+				"download": 100,
+				"upload":   50,
+				"metadata": map[string]string{
+					"sourceIP":   probeIP,
+					"sourcePort": probePort,
+					"type":       "inbound-probe",
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"downloadTotal": 5100,
+			"uploadTotal":   1050,
+			"connections":   conns,
+		})
+	})
+	server := httptest.NewServer(apiMux)
+	defer server.Close()
+
+	// 4. Query Sing-box traffic via supervisor
+	traffic, err := FetchSingBoxTraffic(server.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("unexpected error fetching traffic: %v", err)
+	}
+
+	// 5. Verify that clientUser traffic was correctly accounted
+	clientTraffic, ok := traffic[clientUser]
+	if !ok {
+		t.Fatalf("expected traffic for user %s", clientUser)
+	}
+	if clientTraffic.DownBytes != 5000 || clientTraffic.UpBytes != 1000 {
+		t.Errorf("expected 5000 down / 1000 up, got: %+v", clientTraffic)
+	}
+
+	// 6. Verify that NO false session was created for probeIP and client session did NOT flap
+	sessionsAfter := st.GetActiveSessions()
+	if len(sessionsAfter) != 1 {
+		t.Fatalf("expected exactly 1 active session after probe, got %d: %+v", len(sessionsAfter), sessionsAfter)
+	}
+	if sessionsAfter[0].Email != clientUser || sessionsAfter[0].IP != clientIP {
+		t.Fatalf("expected client session to remain on %s, but got (%s, %s)", clientIP, sessionsAfter[0].Email, sessionsAfter[0].IP)
+	}
+
+	eventsAfter := st.GetRecentEvents(0, 100)
+	if len(eventsAfter) != 1 {
+		t.Fatalf("session flapping detected! Expected exactly 1 event, but got %d events: %+v", len(eventsAfter), eventsAfter)
+	}
+}
+
 

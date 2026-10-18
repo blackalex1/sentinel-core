@@ -169,23 +169,14 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		if email == "" {
 			email = conn.UUID
 		}
+		hasExplicitUser := (email != "")
 		if email == "" {
 			email = GetSessionTracker().ResolveSingBoxUser(conn.Metadata.SourceIP, conn.Metadata.SourcePort)
 		}
 		email = strings.TrimSpace(email)
-		if email == "" {
+		if email == "" && (conn.Metadata.SourceIP == "" || conn.Metadata.SourceIP == "127.0.0.1") {
 			email = sbLastSeenUser[clashAddr]
 		}
-		if email == "" {
-			continue
-		}
-
-		liveUsers[email]++
-		sbLastSeenUser[clashAddr] = email
-		if connID != "" {
-			sbConnUser[connID] = email
-		}
-
 		prev := sbLastConnStats[connID]
 		prevUp, prevDown := prev[0], prev[1]
 
@@ -204,6 +195,16 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		sbLastConnStats[connID] = [2]int64{conn.Upload, conn.Download}
 		activeDeltasUp += deltaUp
 		activeDeltasDown += deltaDown
+
+		if email == "" {
+			continue
+		}
+
+		liveUsers[email]++
+		sbLastSeenUser[clashAddr] = email
+		if connID != "" {
+			sbConnUser[connID] = email
+		}
 
 		ct, ctExists := addrMap[email]
 		if !ctExists {
@@ -246,7 +247,7 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		}
 		if srcIP != "" {
 			ipSetByUser[email][srcIP] = true
-			if srcIP != "127.0.0.1" && srcIP != "::1" {
+			if srcIP != "127.0.0.1" && srcIP != "::1" && hasExplicitUser {
 				GetSessionTracker().RegisterExternalConnect("sing-box", email, srcIP)
 			}
 		}
