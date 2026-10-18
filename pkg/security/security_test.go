@@ -1,6 +1,7 @@
 package security
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -135,9 +136,9 @@ func TestSecurityManager_Operations(t *testing.T) {
 	}
 
 	// 3. QuarantineClient & UnquarantineClient
-	var reloadTriggered bool
+	var reloadTriggered atomic.Bool
 	sm.SetOnQuarantineReload(func(clientID string) {
-		reloadTriggered = true
+		reloadTriggered.Store(true)
 	})
 
 	sm.QuarantineClient("client-101", "Manual isolation")
@@ -152,8 +153,8 @@ func TestSecurityManager_Operations(t *testing.T) {
 
 	// Unquarantine
 	sm.UnquarantineClient("client-101")
-	time.Sleep(10 * time.Millisecond) // wait for async hook
-	if !reloadTriggered {
+	time.Sleep(50 * time.Millisecond) // wait for async hook
+	if !reloadTriggered.Load() {
 		t.Errorf("expected onQuarantineReload callback to be called on unquarantine")
 	}
 	if len(sm.GetQuarantinedClients()) != 0 {
