@@ -652,6 +652,9 @@ func (st *SessionTracker) ResolveSingBoxUser(srcIP, srcPort string) string {
 		if u, ok := st.singboxIPUsers[srcIP]; ok && u != "" {
 			return u
 		}
+		// If a specific non-empty source IP was provided and does not match any known client IP,
+		// never guess or falsely attribute it to an active client on a different IP.
+		return ""
 	}
 	// Check if only one user is currently active in Sing-box sessions
 	var singleUser string
