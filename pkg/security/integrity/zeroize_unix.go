@@ -7,8 +7,8 @@ import (
 	"unsafe"
 )
 
-func isWritableMemory(ptr uintptr) bool {
-	if ptr == 0 {
+func isWritableMemory(ptr unsafe.Pointer) bool {
+	if ptr == nil {
 		return false
 	}
 	var p [2]int
@@ -22,7 +22,7 @@ func isWritableMemory(ptr uintptr) bool {
 		return false
 	}
 
-	b := unsafe.Slice((*byte)(unsafe.Pointer(ptr)), 1)
+	b := unsafe.Slice((*byte)(ptr), 1)
 	_, err := syscall.Read(p[0], b)
 	return err == nil
 }

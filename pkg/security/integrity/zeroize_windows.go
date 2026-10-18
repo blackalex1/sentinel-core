@@ -30,13 +30,13 @@ const (
 	pageExecuteWriteCopy = 0x80
 )
 
-func isWritableMemory(ptr uintptr) bool {
-	if ptr == 0 {
+func isWritableMemory(ptr unsafe.Pointer) bool {
+	if ptr == nil {
 		return false
 	}
 	var mbi memoryBasicInformation
 	ret, _, _ := procVirtualQuery.Call(
-		ptr,
+		uintptr(ptr),
 		uintptr(unsafe.Pointer(&mbi)),
 		unsafe.Sizeof(mbi),
 	)

@@ -33,7 +33,7 @@ func ZeroizeString(s *string) {
 	length := len(*s)
 	bytePtr := unsafe.StringData(*s)
 
-	if bytePtr != nil && length > 0 && isWritableMemory(uintptr(unsafe.Pointer(bytePtr))) {
+	if bytePtr != nil && length > 0 && isWritableMemory(unsafe.Pointer(bytePtr)) {
 		for i := 0; i < length; i++ {
 			*(*byte)(unsafe.Add(unsafe.Pointer(bytePtr), i)) = 0
 		}
