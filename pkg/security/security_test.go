@@ -2,6 +2,7 @@ package security
 
 import (
 	"testing"
+	"time"
 
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 	"github.com/blackalex1/sentinel-core/pkg/security/detector"
@@ -112,3 +113,83 @@ func TestConfigSerialization(t *testing.T) {
 		t.Fatalf("config value mismatch after deserialization")
 	}
 }
+
+func TestSecurityManager_Operations(t *testing.T) {
+	cfg := DefaultSecurityConfig()
+	sm, err := NewSecurityManager(cfg)
+	if err != nil {
+		t.Fatalf("NewSecurityManager failed: %v", err)
+	}
+	defer sm.Stop()
+
+	// 1. GetConfig
+	if sm.GetConfig().RateLimiter.RequestsPerSecond != cfg.RateLimiter.RequestsPerSecond {
+		t.Errorf("GetConfig mismatch")
+	}
+
+	// 2. RegisterClient & Aliases
+	sm.RegisterClient("client-101", "uuid-1", "user-hy2", "192.168.1.50")
+	aliases := sm.GetQuarantinedAliases()
+	if len(aliases) != 0 {
+		t.Errorf("expected 0 quarantined aliases initially")
+	}
+
+	// 3. QuarantineClient & UnquarantineClient
+	var reloadTriggered bool
+	sm.SetOnQuarantineReload(func(clientID string) {
+		reloadTriggered = true
+	})
+
+	sm.QuarantineClient("client-101", "Manual isolation")
+	quarantined := sm.GetQuarantinedClients()
+	if len(quarantined) != 1 || quarantined[0] != "client-101" {
+		t.Errorf("expected client-101 in quarantine list, got: %v", quarantined)
+	}
+	aliases = sm.GetQuarantinedAliases()
+	if len(aliases) < 1 {
+		t.Errorf("expected quarantined aliases, got: %v", aliases)
+	}
+
+	// Unquarantine
+	sm.UnquarantineClient("client-101")
+	time.Sleep(10 * time.Millisecond) // wait for async hook
+	if !reloadTriggered {
+		t.Errorf("expected onQuarantineReload callback to be called on unquarantine")
+	}
+	if len(sm.GetQuarantinedClients()) != 0 {
+		t.Errorf("expected 0 quarantined clients after unquarantine")
+	}
+
+	// 4. Threat Journal integration
+	tj, err := NewThreatJournal("", "node-sm")
+	if err != nil {
+		t.Fatalf("NewThreatJournal failed: %v", err)
+	}
+	sm.SetThreatJournal(tj)
+	if sm.GetThreatJournal() != tj {
+		t.Errorf("GetThreatJournal mismatch")
+	}
+
+	// 5. Node summary
+	summary := sm.GetNodeSecuritySummary("node-sm")
+	if summary.NodeID != "node-sm" {
+		t.Errorf("unexpected security summary: %+v", summary)
+	}
+
+	// 6. RiskTracker, SSHMonitor, VPNActive
+	if sm.RiskTracker() == nil {
+		t.Errorf("expected non-nil RiskTracker")
+	}
+	_ = sm.SSHMonitor()
+	sm.SetVPNActive(true)
+
+	// 7. Security verification methods
+	if err := sm.AuditConfig([]byte(`{"outbounds":[]}`)); err != nil {
+		t.Errorf("AuditConfig failed: %v", err)
+	}
+	if err := sm.AuditURI("vless://b9f3857a-ce20-4e1e-b5e0-6f3d141fa2b2@1.1.1.1:443?type=tcp#test"); err != nil {
+		t.Errorf("AuditURI failed: %v", err)
+	}
+	sm.ZeroizeMemory([]byte("secret key"))
+}
+

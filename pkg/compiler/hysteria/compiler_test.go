@@ -433,3 +433,48 @@ func TestHysteriaServerCompiler_Outbounds(t *testing.T) {
 		t.Errorf("outbounds should be omitted when socksPort is 0, got:\n%s", cfg3)
 	}
 }
+
+func TestHysteriaServerCompiler_TLSVerification(t *testing.T) {
+	sc := NewServerCompiler()
+
+	// 1. External HTTPS auth webhook must NOT have "insecure": true by default
+	ib1 := ast.ServerInboundSpec{
+		Port:    443,
+		AuthURL: "https://auth.company.com/api/verify",
+	}
+	cfg1, err := sc.CompileServer(ib1, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(cfg1, `"insecure": true`) {
+		t.Errorf("vulnerability: external HTTPS auth webhook had insecure:true by default!\n%s", cfg1)
+	}
+
+	// 2. Loopback 127.0.0.1 may have insecure: true
+	ib2 := ast.ServerInboundSpec{
+		Port:    443,
+		AuthURL: "https://127.0.0.1:8443/verify",
+	}
+	cfg2, err := sc.CompileServer(ib2, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(cfg2, `"insecure": true`) {
+		t.Errorf("expected loopback webhook to permit insecure: true")
+	}
+
+	// 3. Explicit Insecure: true must be honored
+	ib3 := ast.ServerInboundSpec{
+		Port:     443,
+		AuthURL:  "https://self-signed.company.com/verify",
+		Insecure: true,
+	}
+	cfg3, err := sc.CompileServer(ib3, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(cfg3, `"insecure": true`) {
+		t.Errorf("expected explicit Insecure: true to be set")
+	}
+}
+

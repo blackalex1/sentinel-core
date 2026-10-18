@@ -1,9 +1,7 @@
 package security
 
 import (
-	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,130 +11,6 @@ import (
 
 	"github.com/blackalex1/sentinel-core/pkg/security/detector"
 )
-
-// ThreatClassification defines the unified taxonomy of security threats.
-type ThreatClassification string
-
-const (
-	ThreatNone          ThreatClassification = "NONE"
-	ThreatSensitivePort ThreatClassification = "SENSITIVE_PORT_PROBE"
-	ThreatPortScan      ThreatClassification = "PORT_SCAN"
-	ThreatSSRFProbe     ThreatClassification = "SSRF_PROBE"
-	ThreatHighFrequency ThreatClassification = "HIGH_FREQUENCY_BURST"
-	ThreatCoreBlocked   ThreatClassification = "THREAT_BLOCKED"
-	ThreatMalwareC2     ThreatClassification = "MALWARE_C2_SUSPECT"
-	ThreatMasquerade    ThreatClassification = "MASQUERADED_PROCESS"
-)
-
-// BannedEntity represents a process, user or package currently in zero-trust isolation.
-type BannedEntity struct {
-	CallerID  string    `json:"caller_id"`
-	BlockedAt time.Time `json:"blocked_at"`
-	Reason    string    `json:"reason"`
-	RiskScore int       `json:"risk_score"`
-}
-
-// PcapCaptureStatus represents live continuous forensic capture telemetry.
-type PcapCaptureStatus struct {
-	IsActive         bool   `json:"is_active"`
-	Reason           string `json:"reason"`
-	FilePath         string `json:"file_path"`
-	RemainingSeconds int    `json:"remaining_seconds"`
-}
-
-// PortShieldMode defines how aggressively sensitive ports and suspicious behaviors are defended.
-type PortShieldMode string
-
-const (
-	// ModeAlertOnly registers alerts in logs/threat journal but does not block connections.
-	ModeAlertOnly PortShieldMode = "alert_only"
-
-	// ModeThresholdBlock allows initial warnings (1..N-1) and only blocks once BlockThreshold is exceeded.
-	ModeThresholdBlock PortShieldMode = "threshold_block"
-
-	// ModeStrictBlock immediately drops connections on the 1st prohibited attempt.
-	ModeStrictBlock PortShieldMode = "strict_block"
-)
-
-// SecurityPolicyConfig allows applications (Android & Desktop) to configure dynamic defense rules.
-type SecurityPolicyConfig struct {
-	Mode               PortShieldMode `json:"mode"`                 // "threshold_block", "strict_block", "alert_only"
-	BlockThreshold     int            `json:"block_threshold"`     // Number of suspicious attempts before BLOCK (default: 3)
-	PcapThreshold      int            `json:"pcap_threshold"`      // Number of suspicious attempts before PCAP capture (default: 3)
-	PortScanThreshold  int            `json:"port_scan_threshold"` // Distinct ports in window before PORT_SCAN alert (default: 5)
-	WindowSeconds      int            `json:"window_seconds"`      // Sliding window in seconds (default: 30)
-	AutoPcapCapture    bool           `json:"auto_pcap_capture"`   // Enable/disable PCAP capture
-	PcapDirectory      string         `json:"pcap_directory"`      // Destination folder for .pcap files
-	AutoUnblockMinutes int            `json:"auto_unblock_minutes"`// 0 = never, 5, 15, 60, 1440
-	ProtectedPorts     []int          `json:"protected_ports,omitempty"`
-}
-
-// DefaultSecurityPolicy returns balanced default protection settings.
-func DefaultSecurityPolicy() SecurityPolicyConfig {
-	return SecurityPolicyConfig{
-		Mode:               ModeThresholdBlock,
-		BlockThreshold:     3,
-		PcapThreshold:      3,
-		PortScanThreshold:  5,
-		WindowSeconds:      30,
-		AutoPcapCapture:    true,
-		PcapDirectory:      "data/pcaps",
-		AutoUnblockMinutes: 15,
-		ProtectedPorts:     []int{445, 135, 139, 3389, 22, 23, 5353},
-	}
-}
-
-// SecurityAuditRequest represents a unified connection audit payload for both Android and PC.
-type SecurityAuditRequest struct {
-	CallerID        string                `json:"caller_id"`        // Android: package/UID, PC: process_name/user
-	PackageName     string                `json:"package_name,omitempty"` // Android alias for CallerID
-	AppName         string                `json:"app_name,omitempty"`
-	ExecutablePath  string                `json:"executable_path,omitempty"` // Absolute disk path of binary (e.g. C:\Windows\System32\svchost.exe)
-	DestinationIP   string                `json:"destination_ip"`
-	DestinationHost string                `json:"destination_host,omitempty"`
-	Port            int                   `json:"port"`
-	Protocol        string                `json:"protocol"`         // "TCP", "UDP", "ICMP"
-	AuditPorts      []int                 `json:"audit_ports,omitempty"`
-	MaxThreshold    int                   `json:"max_threshold,omitempty"`
-	IsExplicitBlock bool                  `json:"is_explicit_block,omitempty"`
-	Platform        string                `json:"platform,omitempty"` // "windows", "android", "linux"
-	PolicyOverride  *SecurityPolicyConfig `json:"policy_override,omitempty"`
-}
-
-// SecurityAuditVerdict contains the unified security verdict.
-type SecurityAuditVerdict struct {
-	IsBlocked       bool                 `json:"is_blocked"`
-	ShouldBlock     bool                 `json:"should_block"`
-	IsSystemFlagged bool                 `json:"is_system_flagged"`
-	ThreatDetected  bool                 `json:"threat_detected"`
-	ThreatType      ThreatClassification `json:"threat_type"`
-	Description     string               `json:"description"`
-	Action          string               `json:"action"` // "BLOCK", "ALLOW", "ALERT", "FLAG_SYSTEM"
-	RiskScore       int                  `json:"risk_score"`
-	AttemptCount    int                  `json:"attempt_count"`
-	AttemptsCount   int                  `json:"attempts_count"`
-	Threshold       int                  `json:"threshold"`
-	Timestamp       int64                `json:"timestamp"`
-	PcapCaptured    bool                 `json:"pcap_captured,omitempty"`
-	PcapFilePath    string               `json:"pcap_file_path,omitempty"`
-}
-
-type entityConnEntry struct {
-	Timestamp     time.Time
-	DestinationIP string
-	Port          int
-}
-
-type entitySecurityProfile struct {
-	CallerID       string
-	RiskScore      int
-	ThreatCount    int
-	LastSeen       time.Time
-	ProbedPorts    map[int]time.Time
-	RecentAttempts []entityConnEntry
-	PcapCaptured   bool
-	PcapFilePath   string
-}
 
 // UnifiedSecurityEngine provides cross-platform threat detection and port shielding.
 type UnifiedSecurityEngine struct {
@@ -238,292 +112,6 @@ func (e *UnifiedSecurityEngine) SetPcapConfig(dir string, threshold int) {
 		e.policy.PcapThreshold = threshold
 	}
 	e.policy.AutoPcapCapture = true
-}
-
-// GetBlockedEntities returns all currently quarantined processes/packages.
-func (e *UnifiedSecurityEngine) GetBlockedEntities() []*BannedEntity {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	list := make([]*BannedEntity, 0, len(e.bannedEntities))
-	for _, b := range e.bannedEntities {
-		list = append(list, b)
-	}
-	return list
-}
-
-// BanEntity explicitly adds an entity to the quarantine list.
-func (e *UnifiedSecurityEngine) BanEntity(callerID string, reason ThreatClassification, desc string) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.bannedEntities[callerID] = &BannedEntity{
-		CallerID:  callerID,
-		BlockedAt: time.Now(),
-		Reason:    desc,
-		RiskScore: 100,
-	}
-}
-
-// UnblockEntity removes a quarantined entity by caller ID.
-func (e *UnifiedSecurityEngine) UnblockEntity(callerID string) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	delete(e.bannedEntities, callerID)
-	if p, ok := e.profiles[callerID]; ok {
-		p.ThreatCount = 0
-		p.RiskScore = 0
-	}
-}
-
-// UnblockAllEntities clears all quarantines and resets all entity profiles.
-func (e *UnifiedSecurityEngine) UnblockAllEntities() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.bannedEntities = make(map[string]*BannedEntity)
-	e.profiles = make(map[string]*entitySecurityProfile)
-}
-
-// IsEntityBlocked checks if an entity is currently quarantined.
-func (e *UnifiedSecurityEngine) IsEntityBlocked(callerID string) bool {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	_, exists := e.bannedEntities[callerID]
-	return exists
-}
-
-// EnsureActivePcapSession starts a 5-minute forensic session if none is active, returning the active PCAP file path.
-func (e *UnifiedSecurityEngine) EnsureActivePcapSession(reason string, policy SecurityPolicyConfig, now time.Time) string {
-	if !policy.AutoPcapCapture {
-		return ""
-	}
-	if now.Before(e.pcapActiveUntil) && e.pcapActiveFile != "" {
-		return e.pcapActiveFile
-	}
-
-	pcapDir := policy.PcapDirectory
-	if pcapDir == "" {
-		pcapDir = "data/pcaps"
-	}
-	_ = os.MkdirAll(pcapDir, 0755)
-
-	e.pcapActiveUntil = now.Add(5 * time.Minute)
-	e.pcapActiveReason = reason
-	e.pcapActiveFile = filepath.Join(pcapDir, fmt.Sprintf("threat_capture_%s.pcap", now.Format("20060102_150405")))
-
-	f, err := os.OpenFile(e.pcapActiveFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err == nil {
-		_ = WritePcapGlobalHeader(f, PCAPLinkTypeRawIP)
-		f.Close()
-	}
-
-	return e.pcapActiveFile
-}
-
-// StartPcapSession starts an active continuous forensic capture session.
-func (e *UnifiedSecurityEngine) StartPcapSession(reason string, duration time.Duration) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	now := time.Now()
-	e.EnsureActivePcapSession(reason, e.policy, now)
-	if duration > 0 {
-		e.pcapActiveUntil = now.Add(duration)
-	}
-}
-
-// StopPcapSession stops any active forensic capture session.
-func (e *UnifiedSecurityEngine) StopPcapSession() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.pcapActiveUntil = time.Time{}
-}
-
-// GetPcapStatus returns the live status of the PCAP capture session.
-func (e *UnifiedSecurityEngine) GetPcapStatus() PcapCaptureStatus {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	now := time.Now()
-	active := now.Before(e.pcapActiveUntil)
-	remSec := 0
-	if active {
-		remSec = int(e.pcapActiveUntil.Sub(now).Seconds())
-	}
-	return PcapCaptureStatus{
-		IsActive:         active,
-		Reason:           e.pcapActiveReason,
-		FilePath:         e.pcapActiveFile,
-		RemainingSeconds: remSec,
-	}
-}
-
-// IngestCoreLog parses raw core logs, extracts endpoints/PID, audits threat, and records forensics.
-func (e *UnifiedSecurityEngine) IngestCoreLog(logLine string) *SecurityAuditVerdict {
-	clean := strings.TrimSpace(logLine)
-	if clean == "" {
-		return nil
-	}
-
-	ev, ok := e.singboxParser.ParseLogLine(clean)
-	if !ok || ev == nil {
-		ev, ok = detector.ParseCoreLogLine("", clean)
-	}
-	if !ok || ev == nil {
-		return nil
-	}
-
-	lower := strings.ToLower(clean)
-	isBlock := strings.Contains(lower, "outbound/block") || strings.Contains(lower, "action=block") || strings.Contains(lower, "match[block]") || strings.Contains(lower, "ssrf_probe")
-
-	req := SecurityAuditRequest{
-		CallerID:        ev.ClientRawID,
-		ExecutablePath:  ev.ExecutablePath,
-		DestinationIP:   ev.TargetHost,
-		DestinationHost: ev.TargetHost,
-		Port:            ev.TargetPort,
-		Protocol:        "TCP",
-		IsExplicitBlock: isBlock,
-		Platform:        "windows",
-	}
-
-	v := e.AuditConnection(req)
-	return &v
-}
-
-// Stop halts background tasks.
-func (e *UnifiedSecurityEngine) Stop() {
-	if e.decayTicker != nil {
-		e.decayTicker.Stop()
-	}
-	close(e.stopChan)
-}
-
-func (e *UnifiedSecurityEngine) decayWorker() {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			e.mu.Lock()
-			now := time.Now()
-
-			// 1. Auto-unblock TTL check for quarantined entities
-			if e.policy.AutoUnblockMinutes > 0 {
-				ttl := time.Duration(e.policy.AutoUnblockMinutes) * time.Minute
-				for id, b := range e.bannedEntities {
-					if now.Sub(b.BlockedAt) > ttl {
-						delete(e.bannedEntities, id)
-					}
-				}
-			}
-
-			// 2. Risk profile decay
-			for id, p := range e.profiles {
-				if now.Sub(p.LastSeen) > 10*time.Minute {
-					delete(e.profiles, id)
-					continue
-				}
-				if p.RiskScore > 0 {
-					p.RiskScore -= 20
-					if p.RiskScore < 0 {
-						p.RiskScore = 0
-					}
-				}
-				if p.ThreatCount > 0 {
-					p.ThreatCount--
-				}
-			}
-			e.mu.Unlock()
-		case <-e.stopChan:
-			return
-		}
-	}
-}
-
-// IsSafeSystemTraffic checks if a destination is standard web/DNS/LAN infrastructure.
-func IsSafeSystemTraffic(destIP, destHost string, port int) bool {
-	if port == 53 || port == 80 || port == 443 || port == 853 {
-		return true
-	}
-	if destIP == "127.0.0.1" || destIP == "::1" || destIP == "localhost" || destHost == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(destIP)
-	if ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()) {
-		return true
-	}
-	return false
-}
-
-// IsCloudMetadataEndpoint checks for SSRF targets.
-func IsCloudMetadataEndpoint(destIP, destHost string) bool {
-	if destIP == "169.254.169.254" || destIP == "100.100.100.200" {
-		return true
-	}
-	if strings.Contains(destHost, "metadata.google.internal") || strings.Contains(destHost, "169.254.169.254") {
-		return true
-	}
-	return false
-}
-
-// IsMasqueradedSystemProcess detects MITRE ATT&CK T1036 (Masquerading / Fake System Executables).
-func IsMasqueradedSystemProcess(callerID, fullPath string) (bool, string) {
-	name := strings.ToLower(filepath.Base(strings.ReplaceAll(callerID, "\\", "/")))
-	path := strings.ToLower(strings.ReplaceAll(fullPath, "\\", "/"))
-
-	systemBinaries := map[string]string{
-		"svchost.exe":   "system32",
-		"csrss.exe":     "system32",
-		"lsass.exe":     "system32",
-		"services.exe":  "system32",
-		"smss.exe":      "system32",
-		"taskhostw.exe": "system32",
-		"dwm.exe":       "system32",
-		"conhost.exe":   "system32",
-		"explorer.exe":  "windows",
-	}
-
-	expectedSubdir, isSysBin := systemBinaries[name]
-	if !isSysBin || path == "" {
-		return false, ""
-	}
-
-	// Genuine system paths must be within /windows/system32 or /windows/syswow64
-	if expectedSubdir == "system32" {
-		if strings.Contains(path, "/windows/system32") || strings.Contains(path, "/windows/syswow64") {
-			return false, ""
-		}
-	} else if expectedSubdir == "windows" {
-		if strings.Contains(path, "/windows") && !strings.Contains(path, "/users/") && !strings.Contains(path, "/temp/") && !strings.Contains(path, "/appdata/") {
-			return false, ""
-		}
-	}
-
-	return true, fmt.Sprintf("MITRE T1036: Маскировка процесса! Вредоносный бинарник '%s' запущен вне системной директории Windows (%s)", name, fullPath)
-}
-
-// isProtectedSystemEntity ensures ONLY genuinely verified OS components are immune to broad quarantine.
-func isProtectedSystemEntity(caller, execPath string) bool {
-	clean := strings.ToLower(strings.TrimSpace(caller))
-	p := strings.ToLower(strings.ReplaceAll(execPath, "\\", "/"))
-
-	if clean == "android" || clean == "android.system.kernel" ||
-		strings.HasPrefix(clean, "android.system.") ||
-		strings.HasPrefix(clean, "android.uid.") ||
-		strings.HasPrefix(clean, "unknown.uid.") {
-		return true
-	}
-
-	switch clean {
-	case "", "defaultentity", "unknown", "pending", "127.0.0.1", "::1":
-		return true
-	case "system", "system.exe", "kernel", "ntoskrnl.exe":
-		return p == "" || !strings.Contains(p, "/users/")
-	case "svchost.exe", "csrss.exe", "lsass.exe", "services.exe", "smss.exe", "taskhostw.exe", "dwm.exe", "conhost.exe":
-		return p == "" || strings.Contains(p, "/windows/system32") || strings.Contains(p, "/windows/syswow64")
-	case "explorer.exe":
-		return p == "" || (strings.Contains(p, "/windows") && !strings.Contains(p, "/users/") && !strings.Contains(p, "/temp/") && !strings.Contains(p, "/appdata/"))
-	default:
-		return false
-	}
 }
 
 // AuditConnection executes comprehensive threat auditing on any incoming socket or log event.
@@ -666,15 +254,29 @@ func (e *UnifiedSecurityEngine) AuditConnection(req SecurityAuditRequest) Securi
 
 	profile, exists := e.profiles[caller]
 	if !exists {
-		profile = &entitySecurityProfile{
-			CallerID:       caller,
-			RiskScore:      0,
-			ThreatCount:    0,
-			LastSeen:       now,
-			ProbedPorts:    make(map[int]time.Time),
-			RecentAttempts: make([]entityConnEntry, 0, 10),
+		if len(e.profiles) >= 10000 {
+			// Evict profiles unseen for >1 minute to protect against OOM
+			for k, p := range e.profiles {
+				if now.Sub(p.LastSeen) > 1*time.Minute {
+					delete(e.profiles, k)
+				}
+			}
+			if len(e.profiles) >= 10000 {
+				caller = "DefaultEntity"
+				profile = e.profiles[caller]
+			}
 		}
-		e.profiles[caller] = profile
+		if profile == nil {
+			profile = &entitySecurityProfile{
+				CallerID:       caller,
+				RiskScore:      0,
+				ThreatCount:    0,
+				LastSeen:       now,
+				ProbedPorts:    make(map[int]time.Time),
+				RecentAttempts: make([]entityConnEntry, 0, 10),
+			}
+			e.profiles[caller] = profile
+		}
 	}
 
 	profile.LastSeen = now
@@ -694,6 +296,9 @@ func (e *UnifiedSecurityEngine) AuditConnection(req SecurityAuditRequest) Securi
 		DestinationIP: req.DestinationIP,
 		Port:          req.Port,
 	})
+	if len(recent) > 100 {
+		recent = recent[len(recent)-100:]
+	}
 	profile.RecentAttempts = recent
 
 	// Prune probed ports older than windowDuration
@@ -874,11 +479,4 @@ func (e *UnifiedSecurityEngine) handlePcapAndProfile(caller string, v *SecurityA
 			profile.PcapFilePath = e.pcapActiveFile
 		}
 	}
-}
-
-// Helper to deserialize policy
-func ParseSecurityPolicy(jsonStr string) (SecurityPolicyConfig, error) {
-	var cfg SecurityPolicyConfig
-	err := json.Unmarshal([]byte(jsonStr), &cfg)
-	return cfg, err
 }

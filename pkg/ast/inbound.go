@@ -74,6 +74,7 @@ type ServerInboundSpec struct {
 	PortHop        string `json:"portHop,omitempty"`
 	AdminPort      int    `json:"adminPort,omitempty"`
 	AuthURL        string `json:"authUrl,omitempty"`
+	Insecure       bool   `json:"insecure,omitempty"`
 	ObfsType       string `json:"obfsType,omitempty"`
 	ObfsPassword   string `json:"obfsPassword,omitempty"`
 	BandwidthUp    string `json:"bandwidthUp,omitempty"`

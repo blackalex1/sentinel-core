@@ -162,13 +162,14 @@ func TestLiveCoreLog_SingBox_RealtimeStreaming(t *testing.T) {
 	receivedLines := make([]string, 0)
 	deadline := time.After(3 * time.Second)
 
+CollectLoop:
 	for len(receivedLines) < 2 {
 		select {
 		case line := <-logSub:
 			receivedLines = append(receivedLines, line)
 			t.Logf("[Sing-box Live Log]: %s", line)
 		case <-deadline:
-			break
+			break CollectLoop
 		}
 	}
 
@@ -250,13 +251,14 @@ func TestLiveCoreLog_Xray_RealtimeStreaming(t *testing.T) {
 	receivedLines := make([]string, 0)
 	deadline := time.After(3 * time.Second)
 
+CollectLoop:
 	for len(receivedLines) < 2 {
 		select {
 		case line := <-logSub:
 			receivedLines = append(receivedLines, line)
 			t.Logf("[Xray Live Log]: %s", line)
 		case <-deadline:
-			break
+			break CollectLoop
 		}
 	}
 
@@ -323,13 +325,14 @@ func TestLiveCoreLog_Hysteria2_RealtimeStreaming(t *testing.T) {
 	receivedLines := make([]string, 0)
 	deadline := time.After(3 * time.Second)
 
+CollectLoop:
 	for len(receivedLines) < 2 {
 		select {
 		case line := <-logSub:
 			receivedLines = append(receivedLines, line)
 			t.Logf("[Hysteria 2 Live Log]: %s", line)
 		case <-deadline:
-			break
+			break CollectLoop
 		}
 	}
 

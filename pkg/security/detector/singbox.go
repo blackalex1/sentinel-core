@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -38,10 +39,25 @@ func isHotspotOrLANClient(ipStr string) bool {
 
 // SingboxParser handles log parsing and connection translation for Sing-box.
 type SingboxParser struct {
-	connProcCache    sync.Map // map[string]string (connID -> processName)
-	connPathCache    sync.Map // map[string]string (connID -> fullExecutablePath)
-	pendingEvents    sync.Map // map[string]*ParsedLogEvent (connID -> *ParsedLogEvent)
+	connProcCache     sync.Map // map[string]string (connID -> processName)
+	connPathCache     sync.Map // map[string]string (connID -> fullExecutablePath)
+	pendingEvents     sync.Map // map[string]*ParsedLogEvent (connID -> *ParsedLogEvent)
 	connClientIPCache sync.Map // map[string]string (connID -> real client source IP)
+	cacheCount        atomic.Int64
+}
+
+func (p *SingboxParser) checkAndPruneCache() {
+	if p.cacheCount.Add(1) > 5000 {
+		p.cacheCount.Store(0)
+		count := 0
+		p.connProcCache.Range(func(key, value any) bool {
+			p.connProcCache.Delete(key)
+			p.connPathCache.Delete(key)
+			p.connClientIPCache.Delete(key)
+			count++
+			return count < 2500
+		})
+	}
 }
 
 
@@ -72,6 +88,7 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 	// "[user] inbound connection to DST:PORT" line with the same connID.
 	if strings.Contains(cleanLine, "inbound connection from") {
 		if fm := singboxFromClientRegex.FindStringSubmatch(cleanLine); len(fm) >= 3 {
+			p.checkAndPruneCache()
 			p.connClientIPCache.Store(fm[1], fm[2])
 		}
 		// "from" lines carry no security event by themselves — return early.
@@ -83,6 +100,7 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 		fullPath := strings.TrimSpace(pMatches[1])
 		procName := cleanProcessName(fullPath)
 		if connID != "" && procName != "" {
+			p.checkAndPruneCache()
 			p.connProcCache.Store(connID, procName)
 			p.connPathCache.Store(connID, fullPath)
 

@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"fmt"
 	"os"
 	"testing"
 )
@@ -141,3 +142,59 @@ func TestGuardCoordination(t *testing.T) {
 		t.Fatalf("expected reason for blocking sensitive port")
 	}
 }
+
+func TestProcessWhitelist_NoSubstringBypass(t *testing.T) {
+	wl := NewProcessWhitelist(nil, nil)
+
+	// Malicious binaries with substrings of allowed names must NOT be protected
+	dangerous := []string{
+		"evil_xray",
+		"xray_miner",
+		"xray_exploit.exe",
+		"malicious_sshd",
+		"sshd_backdoor",
+		"fake_hysteria.exe",
+		"sing-box-stealer",
+		"dockerd_rootkit",
+	}
+
+	for _, d := range dangerous {
+		if wl.IsProcessProtected(d, 9999) {
+			t.Fatalf("vulnerability: process %q was falsely whitelisted due to substring match!", d)
+		}
+	}
+
+	// Legitimate path-wrapped names should still be protected
+	legitimate := []string{
+		"/usr/bin/xray",
+		"/usr/local/bin/sing-box",
+		`C:\Program Files\Sentinel\sentinel-core.exe`,
+		"/usr/sbin/sshd",
+	}
+	for _, l := range legitimate {
+		if !wl.IsProcessProtected(l, 9999) {
+			t.Fatalf("expected legitimate path %q to be protected", l)
+		}
+	}
+}
+
+func TestSensitivePortMonitor_BoundedMemory(t *testing.T) {
+	ports := []int{22, 3389}
+	monitor := NewSensitivePortMonitor(true, ports, "block", 3, 5, true, nil)
+
+	// Simulate 12,000 distinct IPs probing port 22 in a short burst
+	for i := 0; i < 12000; i++ {
+		fakeIP := fmt.Sprintf("198.51.%d.%d", (i/256)%256, i%256)
+		monitor.CheckPortAccess(fakeIP, 22)
+	}
+
+	monitor.mu.Lock()
+	probeCount := len(monitor.ipProbes)
+	monitor.mu.Unlock()
+
+	// Must be bounded below 11000 due to hard upper bound eviction
+	if probeCount > 10500 {
+		t.Fatalf("expected ipProbes to be bounded under 10500, got %d", probeCount)
+	}
+}
+

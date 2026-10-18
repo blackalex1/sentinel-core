@@ -89,6 +89,11 @@ func handleSecurity() {
 			exitFunc(1)
 			return
 		}
+		if err := security.ValidateRemoteClientID(*client); err != nil {
+			fmt.Printf("Error: invalid client ID: %v\n", err)
+			exitFunc(1)
+			return
+		}
 
 		// Instant in-memory kick across all active cores
 		ctrl := supervisor.GetController()
@@ -109,6 +114,11 @@ func handleSecurity() {
 
 		if *client == "" {
 			fmt.Println("Error: --client is required")
+			exitFunc(1)
+			return
+		}
+		if err := security.ValidateRemoteClientID(*client); err != nil {
+			fmt.Printf("Error: invalid client ID: %v\n", err)
 			exitFunc(1)
 			return
 		}

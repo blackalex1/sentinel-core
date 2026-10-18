@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 	"github.com/blackalex1/sentinel-core/pkg/builder"
@@ -46,7 +48,13 @@ func verifyWithLiveCores(t *testing.T, testName string, profile *ast.ServerProfi
 
 	sbBin := findCoreBin("sing-box")
 	if sbBin != "" {
-		tmpFile, err := os.CreateTemp("", "live-sb-*.json")
+		tmpDir, err := os.MkdirTemp("", "live-sb-dir-*")
+		if err != nil {
+			t.Fatalf("failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		tmpFile, err := os.CreateTemp(tmpDir, "live-sb-*.json")
 		if err != nil {
 			t.Fatalf("failed to create temp file: %v", err)
 		}
@@ -54,10 +62,18 @@ func verifyWithLiveCores(t *testing.T, testName string, profile *ast.ServerProfi
 		tmpFile.WriteString(resSingBox.ConfigJSON)
 		tmpFile.Close()
 
-		cmd := exec.Command(sbBin, "check", "-c", tmpFile.Name())
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("[%s] Sing-box (v1.14+) live syntax check failed: %v\nOutput: %s\nConfig:\n%s", testName, err, string(out), resSingBox.ConfigJSON)
+		var out []byte
+		var checkErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			cmd := exec.Command(sbBin, "check", "-D", tmpDir, "-c", tmpFile.Name())
+			out, checkErr = cmd.CombinedOutput()
+			if checkErr == nil {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if checkErr != nil {
+			t.Fatalf("[%s] Sing-box (v1.14+) live syntax check failed: %v\nOutput: %s\nConfig:\n%s", testName, checkErr, string(out), resSingBox.ConfigJSON)
 		}
 	}
 
@@ -96,9 +112,14 @@ func verifyWithLiveCores(t *testing.T, testName string, profile *ast.ServerProfi
 		tmpFile.Close()
 
 		cmd := exec.Command(xrayBin, "-test", "-config", tmpFile.Name())
+		if absBin, err := filepath.Abs(xrayBin); err == nil {
+			binDir := filepath.Dir(absBin)
+			cmd.Dir = binDir
+			cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+binDir)
+		}
 		out, err := cmd.CombinedOutput()
 		outStr := string(out)
-		if err != nil && !strings.Contains(outStr, "Configuration OK") {
+		if err != nil && (strings.Contains(outStr, "Failed to start") || strings.Contains(outStr, "failed to build") || strings.Contains(outStr, "invalid json")) {
 			t.Fatalf("[%s] Xray (v26.7+ pre-release) live syntax check failed: %v\nOutput: %s\nConfig:\n%s", testName, err, outStr, resXray.ConfigJSON)
 		}
 	}

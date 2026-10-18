@@ -114,21 +114,10 @@ func (w *RouterSSHWatcher) streamRemote(ctx context.Context) {
 		remoteCmd = pathPrefix + "conntrack -E -p tcp -e NEW"
 	}
 
-	sshArgs := []string{
-		"-p", strconv.Itoa(w.config.Port),
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
-		"-o", "ServerAliveInterval=15",
-		"-o", "ServerAliveCountMax=3",
-		"-o", "ConnectTimeout=10",
+	sshArgs, err := BuildSSHArgs(w.config, remoteCmd)
+	if err != nil {
+		return
 	}
-
-	if w.config.KeyPath != "" {
-		sshArgs = append(sshArgs, "-i", w.config.KeyPath)
-	}
-
-	target := fmt.Sprintf("%s@%s", w.config.User, w.config.Host)
-	sshArgs = append(sshArgs, target, remoteCmd)
 
 	cmd := exec.CommandContext(ctx, "ssh", sshArgs...)
 	stdout, err := cmd.StdoutPipe()
@@ -153,3 +142,48 @@ func (w *RouterSSHWatcher) streamRemote(ctx context.Context) {
 
 	_ = cmd.Wait()
 }
+
+// BuildSSHArgs validates connection parameters and generates OpenSSH arguments safely,
+// defending against OpenSSH flag/option injection (CWE-88) and command injection.
+func BuildSSHArgs(cfg RouterSSHConfig, remoteCmd string) ([]string, error) {
+	if cfg.Host == "" {
+		return nil, fmt.Errorf("empty ssh host")
+	}
+	if strings.HasPrefix(cfg.Host, "-") || strings.ContainsAny(cfg.Host, " \t\r\n'\"`;&|") {
+		return nil, fmt.Errorf("invalid or insecure ssh host: %q", cfg.Host)
+	}
+
+	cleanUser := cfg.User
+	if cleanUser == "" {
+		cleanUser = "root"
+	}
+	if strings.HasPrefix(cleanUser, "-") || strings.ContainsAny(cleanUser, " \t\r\n'\"`;&|") {
+		return nil, fmt.Errorf("invalid or insecure ssh user: %q", cleanUser)
+	}
+
+	port := cfg.Port
+	if port <= 0 {
+		port = 22
+	}
+
+	sshArgs := []string{
+		"-p", strconv.Itoa(port),
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "ServerAliveInterval=15",
+		"-o", "ServerAliveCountMax=3",
+		"-o", "ConnectTimeout=10",
+	}
+
+	if cfg.KeyPath != "" {
+		if strings.HasPrefix(cfg.KeyPath, "-") || strings.ContainsAny(cfg.KeyPath, "\r\n'\"`;&|") {
+			return nil, fmt.Errorf("invalid or insecure ssh key path: %q", cfg.KeyPath)
+		}
+		sshArgs = append(sshArgs, "-i", cfg.KeyPath)
+	}
+
+	target := fmt.Sprintf("%s@%s", cleanUser, cfg.Host)
+	// Use -- to separate options from destination, preventing option injection
+	sshArgs = append(sshArgs, "--", target, remoteCmd)
+	return sshArgs, nil
+}
+

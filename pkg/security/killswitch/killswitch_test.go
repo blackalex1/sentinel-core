@@ -81,3 +81,50 @@ func TestKillSwitchPacketEvaluation(t *testing.T) {
 		t.Fatalf("expected DecisionAllow for IPv6 loopback, got %v", decision)
 	}
 }
+
+func TestDNSLeakGuard_StrictRules(t *testing.T) {
+	guard := NewDNSLeakGuard(true)
+
+	dnsServer := net.ParseIP("1.1.1.1")
+	loopback := net.ParseIP("127.0.0.1")
+	untrustedDNS := net.ParseIP("198.51.100.99")
+
+	// 1. VPN DOWN:
+	// Port 53 plaintext to public resolver MUST BE BLOCKED
+	if guard.AllowDNSQuery(dnsServer, 53, false) {
+		t.Fatalf("vulnerability: allowed plaintext DNS query to public IP when VPN is down!")
+	}
+
+	// Port 853 DoT to public resolver MUST BE BLOCKED when VPN down
+	if guard.AllowDNSQuery(dnsServer, 853, false) {
+		t.Fatalf("vulnerability: allowed DoT query to public IP when VPN is down!")
+	}
+
+	// Port 443 DoH to public resolver MUST BE BLOCKED when VPN down
+	if guard.AllowDNSQuery(dnsServer, 443, false) {
+		t.Fatalf("vulnerability: allowed DoH query to public IP when VPN is down!")
+	}
+
+	// Loopback internal resolver query allowed even when VPN is down
+	if !guard.AllowDNSQuery(loopback, 53, false) {
+		t.Fatalf("expected loopback DNS query to be allowed when VPN is down")
+	}
+
+	// 2. VPN UP:
+	// Allowed DNS IPs on port 53 / 853 / 443 should pass
+	if !guard.AllowDNSQuery(dnsServer, 53, true) {
+		t.Fatalf("expected allowed DNS IP on port 53 to pass when VPN is active")
+	}
+	if !guard.AllowDNSQuery(dnsServer, 853, true) {
+		t.Fatalf("expected DoT on port 853 to pass when VPN is active")
+	}
+	if !guard.AllowDNSQuery(dnsServer, 443, true) {
+		t.Fatalf("expected DoH on port 443 to pass when VPN is active")
+	}
+
+	// Untrusted DNS IP on port 53 should NOT pass even if VPN is active
+	if guard.AllowDNSQuery(untrustedDNS, 53, true) {
+		t.Fatalf("expected untrusted external DNS IP to be blocked on port 53")
+	}
+}
+

@@ -21,6 +21,7 @@ bin/*.dat
 *.tmp
 *.log
 *.pcap
+*.db
 data/pcaps/
 tests/temp_*
 tests/batch_*

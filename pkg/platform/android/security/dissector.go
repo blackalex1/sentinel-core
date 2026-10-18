@@ -112,6 +112,9 @@ func DissectPacket(rawBytes []byte) (*DissectedPacket, error) {
 		res.TCPAck = binary.BigEndian.Uint32(transportBytes[8:12])
 
 		dataOffset := int(transportBytes[12]>>4) * 4
+		if dataOffset < 20 {
+			return nil, fmt.Errorf("invalid TCP data offset (%d bytes, min 20 required)", dataOffset)
+		}
 		flagsByte := transportBytes[13]
 
 		var flags []string
@@ -305,6 +308,10 @@ func extractDNSDomain(data []byte) string {
 	for pos < len(data) {
 		length := int(data[pos])
 		if length == 0 {
+			break
+		}
+		// In standard DNS query wire format, labels cannot exceed 63 bytes and compression flags (0xc0) indicate pointer
+		if length > 63 || length&0xc0 != 0 {
 			break
 		}
 		pos++

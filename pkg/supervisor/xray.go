@@ -54,6 +54,10 @@ func QueryXrayStats(statsAddr string) (map[string]ClientTraffic, error) {
 		statsAddr = "127.0.0.1:10085"
 	}
 
+	if strings.HasPrefix(statsAddr, "-") || strings.ContainsAny(statsAddr, " \t\r\n'\"`;&|$(){}") {
+		return result, fmt.Errorf("invalid statsAddr: %q", statsAddr)
+	}
+
 	xrayBin := findXrayBinary()
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()

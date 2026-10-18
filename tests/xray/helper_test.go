@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -62,6 +63,11 @@ func runXraySyntaxCheck(t *testing.T, testName, configJSON string) {
 	tmpFile.Close()
 
 	cmd := exec.Command(xrayBin, "-test", "-config", tmpFile.Name())
+	if absBin, err := filepath.Abs(xrayBin); err == nil {
+		binDir := filepath.Dir(absBin)
+		cmd.Dir = binDir
+		cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+binDir)
+	}
 	out, err := cmd.CombinedOutput()
 	outStr := string(out)
 

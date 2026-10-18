@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -361,10 +362,10 @@ func CloseSingBoxConnections(clashAddr string, email string) error {
 		clashAddr = "127.0.0.1:9090"
 	}
 
-	url := fmt.Sprintf("http://%s/connections", clashAddr)
+	apiURL := fmt.Sprintf("http://%s/connections", clashAddr)
 	client := &http.Client{Timeout: 150 * time.Millisecond}
 
-	resp, err := client.Get(url)
+	resp, err := client.Get(apiURL)
 	if err != nil {
 		return err
 	}
@@ -426,7 +427,7 @@ func CloseSingBoxConnections(clashAddr string, email string) error {
 			cUser = conn.Email
 		}
 		if strings.EqualFold(strings.TrimSpace(cUser), email) {
-			delURL := fmt.Sprintf("http://%s/connections/%s", clashAddr, conn.ID)
+			delURL := fmt.Sprintf("http://%s/connections/%s", clashAddr, url.PathEscape(conn.ID))
 			delReq, err := http.NewRequest(http.MethodDelete, delURL, nil)
 			if err == nil {
 				delResp, err := client.Do(delReq)

@@ -118,13 +118,19 @@ func (e *ThreatEngine) CheckHost(host string) MatchResult {
 	}
 
 	cleanHost := strings.ToLower(strings.TrimSpace(host))
+	// Strip trailing FQDN root dot if present (e.g. "malware.com." -> "malware.com")
+	cleanHost = strings.TrimSuffix(cleanHost, ".")
+
 	// Remove port if present
-	if strings.Contains(cleanHost, ":") && !strings.Contains(cleanHost, "]:") && !strings.HasPrefix(cleanHost, "[") {
-		parts := strings.Split(cleanHost, ":")
-		if len(parts) == 2 {
-			cleanHost = parts[0]
+	if strings.HasPrefix(cleanHost, "[") {
+		if closeIdx := strings.Index(cleanHost, "]"); closeIdx != -1 {
+			cleanHost = cleanHost[1:closeIdx]
 		}
+	} else if strings.Count(cleanHost, ":") == 1 {
+		parts := strings.Split(cleanHost, ":")
+		cleanHost = parts[0]
 	}
+	cleanHost = strings.TrimSuffix(cleanHost, ".")
 
 	e.mu.RLock()
 	defer e.mu.RUnlock()

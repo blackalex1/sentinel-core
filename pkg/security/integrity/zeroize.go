@@ -1,7 +1,6 @@
 package integrity
 
 import (
-	"reflect"
 	"runtime"
 	"unsafe"
 )
@@ -18,19 +17,26 @@ func ZeroizeBytes(b []byte) {
 	runtime.KeepAlive(b)
 }
 
-// ZeroizeString securely wipes the underlying memory buffer of an ASCII/UTF-8 string.
+// ZeroizeString securely resets a string pointer and safely attempts to zeroize writable heap-allocated bytes.
+// If the string backing data is located in read-only memory (.rodata), it bypasses in-place wiping and resets the pointer safely.
 func ZeroizeString(s *string) {
 	if s == nil || len(*s) == 0 {
 		return
 	}
 
-	// Use unsafe pointer to overwrite the string's backing memory
-	strHeader := (*reflect.StringHeader)(unsafe.Pointer(s))
-	ptr := (*byte)(unsafe.Pointer(strHeader.Data))
-	length := strHeader.Len
+	defer func() {
+		_ = recover()
+		*s = ""
+		runtime.KeepAlive(s)
+	}()
 
-	for i := 0; i < length; i++ {
-		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(ptr)) + uintptr(i))) = 0
+	length := len(*s)
+	bytePtr := unsafe.StringData(*s)
+
+	if bytePtr != nil && length > 0 && isWritableMemory(uintptr(unsafe.Pointer(bytePtr))) {
+		for i := 0; i < length; i++ {
+			*(*byte)(unsafe.Add(unsafe.Pointer(bytePtr), i)) = 0
+		}
 	}
 
 	*s = ""

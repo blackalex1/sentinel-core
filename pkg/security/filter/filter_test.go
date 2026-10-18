@@ -70,3 +70,45 @@ func TestThreatEngineCategories(t *testing.T) {
 		t.Fatalf("expected IP 198.51.100.42 in subnet 198.51.100.0/24 to be blocked")
 	}
 }
+
+func TestThreatEngine_FQDN_TrailingDot_And_IPv6(t *testing.T) {
+	engine := NewThreatEngine(
+		true,
+		true, // Malware
+		true, // Phishing
+		true, // Miners
+		false, // Ads
+		[]string{"custom-danger.com"},
+		[]string{"allowed-exception.com"},
+		nil,
+	)
+
+	// FQDN trailing dot bypass attempts
+	res := engine.CheckHost("c2-panel.su.")
+	if !res.Blocked || res.Category != CategoryMalware {
+		t.Fatalf("expected c2-panel.su. with trailing dot to be blocked as MALWARE, got: %+v", res)
+	}
+
+	res = engine.CheckHost("pool1.us.minexmr.com.")
+	if !res.Blocked || res.Category != CategoryMiner {
+		t.Fatalf("expected pool1.us.minexmr.com. with trailing dot to be blocked as CRYPTO_MINER, got: %+v", res)
+	}
+
+	res = engine.CheckHost("custom-danger.com.")
+	if !res.Blocked || res.Category != CategoryCustom {
+		t.Fatalf("expected custom-danger.com. with trailing dot to be blocked as CUSTOM_BLOCK, got: %+v", res)
+	}
+
+	// Allowed domain with trailing dot should still be recognized and allowed
+	res = engine.CheckHost("allowed-exception.com.")
+	if res.Blocked {
+		t.Fatalf("expected allowed-exception.com. with trailing dot to be allowed, got: %+v", res)
+	}
+
+	// IPv6 bracket parsing
+	res = engine.CheckHost("[2001:db8::1]:8080")
+	if res.Blocked {
+		t.Fatalf("expected benign IPv6 to be allowed")
+	}
+}
+
