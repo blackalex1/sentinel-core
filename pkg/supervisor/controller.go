@@ -181,7 +181,8 @@ func (c *Controller) GetStatus() map[string]CoreStatus {
 	// Check Sing-box
 	sbRunning := pm.IsRunning("sing-box")
 	if !sbRunning {
-		if _, err := localHTTPClient.Get("http://" + clashAddr + "/connections"); err == nil {
+		if resp, err := localHTTPClient.Get("http://" + clashAddr + "/connections"); err == nil {
+			_ = resp.Body.Close()
 			sbRunning = true
 		}
 	}
@@ -195,7 +196,8 @@ func (c *Controller) GetStatus() map[string]CoreStatus {
 	hyPorts := c.getActiveHysteriaPorts()
 	if !hyRunning {
 		for _, port := range hyPorts {
-			if _, err := localHTTPClient.Get(fmt.Sprintf("http://127.0.0.1:%d/traffic", port)); err == nil {
+			if resp, err := localHTTPClient.Get(fmt.Sprintf("http://127.0.0.1:%d/traffic", port)); err == nil {
+				_ = resp.Body.Close()
 				hyRunning = true
 				break
 			}
@@ -376,8 +378,9 @@ func (c *Controller) GetRealtimeTraffic(clashAddr string) RealtimeTrafficStats {
 
 	url := fmt.Sprintf("http://%s/connections", clashAddr)
 	resp, err := localHTTPClient.Get(url)
-	if err == nil && resp.StatusCode == 200 {
+	if err == nil {
 		defer resp.Body.Close()
+		if resp.StatusCode == 200 {
 		var data struct {
 			DownloadTotal int64 `json:"downloadTotal"`
 			UploadTotal   int64 `json:"uploadTotal"`
@@ -408,6 +411,7 @@ func (c *Controller) GetRealtimeTraffic(clashAddr string) RealtimeTrafficStats {
 			lastSampleAt = now
 			rtMu.Unlock()
 		}
+	}
 	}
 
 	return stats

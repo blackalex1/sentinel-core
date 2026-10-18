@@ -37,9 +37,11 @@ func CheckSingBoxStatus(clashAddr string) bool {
 		clashAddr = "127.0.0.1:9090"
 	}
 	resp, err := localHTTPClient.Get("http://" + clashAddr + "/connections")
-	if err == nil && resp.StatusCode == http.StatusOK {
-		resp.Body.Close()
-		return true
+	if err == nil {
+		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			return true
+		}
 	}
 	return false
 }
@@ -53,6 +55,9 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 
 	url := fmt.Sprintf("http://%s/connections", clashAddr)
 	resp, err := localHTTPClient.Get(url)
+	if err == nil {
+		defer resp.Body.Close()
+	}
 	if err != nil || resp.StatusCode != http.StatusOK {
 		sbTrafficMu.RLock()
 		if addrMap, exists := sbUserCumulative[clashAddr]; exists {
@@ -68,7 +73,6 @@ func FetchSingBoxTraffic(clashAddr string) (map[string]ClientTraffic, error) {
 		sbTrafficMu.RUnlock()
 		return result, err
 	}
-	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
