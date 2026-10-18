@@ -49,6 +49,9 @@ func NewConnectionAuditor(
 	sensitivePorts []int,
 	maxConnsPerUser int,
 ) *ConnectionAuditor {
+	if tracker == nil {
+		tracker = NewClientRiskTracker(DefaultRiskScorerConfig(), nil)
+	}
 	if registry == nil {
 		registry = NewClientRegistry()
 	}

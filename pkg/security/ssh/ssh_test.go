@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -88,3 +89,43 @@ func TestSSHParser_FailedAuthAndSudo(t *testing.T) {
 		t.Fatalf("expected sudo event, got: %+v", evSudo)
 	}
 }
+
+func TestSSHMonitor_KillInvalidPID(t *testing.T) {
+	monitor := NewSSHMonitor(nil)
+
+	// Refuse killing PID 0, -1, 1
+	if err := monitor.KillSSHSession(0); err == nil {
+		t.Fatalf("expected error refusing to kill PID 0")
+	}
+	if err := monitor.KillSSHSession(-1); err == nil {
+		t.Fatalf("expected error refusing to kill PID -1")
+	}
+	if err := monitor.KillSSHSession(1); err == nil {
+		t.Fatalf("expected error refusing to kill PID 1 (init)")
+	}
+}
+
+func TestSSHMonitor_MemoryPruning(t *testing.T) {
+	monitor := NewSSHMonitor(nil)
+
+	// Simulate brute-force from 5500 distinct IPs
+	for i := 0; i < 5500; i++ {
+		fakeIP := fmt.Sprintf("198.51.%d.%d", (i/256)%256, i%256)
+		monitor.mu.Lock()
+		monitor.failedAttempts[fakeIP] = 1
+		monitor.mu.Unlock()
+	}
+
+	// Process one more failed auth to trigger pruning check
+	line := "Aug 16 01:31:00 server sshd[9999]: Failed password for invalid user admin from 203.0.113.10 port 44444 ssh2"
+	monitor.ProcessLogLine(line)
+
+	monitor.mu.Lock()
+	count := len(monitor.failedAttempts)
+	monitor.mu.Unlock()
+
+	if count > 5000 {
+		t.Fatalf("expected failedAttempts to be pruned below 5000, got %d", count)
+	}
+}
+

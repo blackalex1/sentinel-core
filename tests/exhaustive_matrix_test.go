@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -29,6 +30,26 @@ var testGlobalPort int32 = 25000
 
 func nextTestPort() int {
 	return int(atomic.AddInt32(&testGlobalPort, 1))
+}
+
+func runSingboxCheck(bin, configPath string) ([]byte, error) {
+	isolatedDir, err := os.MkdirTemp("", "sb-isolated-*")
+	if err != nil {
+		cmd := exec.Command(bin, "check", "-D", filepath.Dir(configPath), "-c", configPath)
+		return cmd.CombinedOutput()
+	}
+	defer os.RemoveAll(isolatedDir)
+
+	content, err := os.ReadFile(configPath)
+	if err == nil {
+		cfgFile := filepath.Join(isolatedDir, "config.json")
+		if err := os.WriteFile(cfgFile, content, 0600); err == nil {
+			configPath = cfgFile
+		}
+	}
+
+	cmd := exec.Command(bin, "check", "-D", isolatedDir, "-c", configPath)
+	return cmd.CombinedOutput()
 }
 
 // Helper to generate self-signed cert and key temporary files
@@ -143,8 +164,7 @@ func TestExhaustive_Shadowsocks_Ciphers_And_Networks(t *testing.T) {
 					tmpFile, _ := os.CreateTemp("", "sb-ss-*.json")
 					tmpFile.WriteString(cfgJSON)
 					tmpFile.Close()
-					cmd := exec.Command(singboxBin, "check", "-c", tmpFile.Name())
-					out, err := cmd.CombinedOutput()
+					out, err := runSingboxCheck(singboxBin, tmpFile.Name())
 					os.Remove(tmpFile.Name())
 					if err != nil {
 						t.Fatalf("sing-box check failed for %s: %v\nOutput: %s", testName, err, string(out))
@@ -288,8 +308,7 @@ func TestExhaustive_VLESS_Permutations(t *testing.T) {
 						tmpFile, _ := os.CreateTemp("", "sb-vless-*.json")
 						tmpFile.WriteString(cfgJSON)
 						tmpFile.Close()
-						cmd := exec.Command(singboxBin, "check", "-c", tmpFile.Name())
-						out, err := cmd.CombinedOutput()
+						out, err := runSingboxCheck(singboxBin, tmpFile.Name())
 						os.Remove(tmpFile.Name())
 						if err != nil {
 							t.Fatalf("sing-box check failed for %s: %v\nOutput: %s", testName, err, string(out))
@@ -368,8 +387,7 @@ func TestExhaustive_VLESS_Permutations(t *testing.T) {
 					tmpFile, _ := os.CreateTemp("", "sb-vlesstls-*.json")
 					tmpFile.WriteString(cfgJSON)
 					tmpFile.Close()
-					cmd := exec.Command(singboxBin, "check", "-c", tmpFile.Name())
-					out, err := cmd.CombinedOutput()
+					out, err := runSingboxCheck(singboxBin, tmpFile.Name())
 					os.Remove(tmpFile.Name())
 					if err != nil {
 						t.Fatalf("sing-box check failed for %s: %v\nOutput: %s", testTLSName, err, string(out))
@@ -465,8 +483,7 @@ func TestExhaustive_VMess_Permutations(t *testing.T) {
 					tmpFile, _ := os.CreateTemp("", "sb-vmess-*.json")
 					tmpFile.WriteString(cfgJSON)
 					tmpFile.Close()
-					cmd := exec.Command(singboxBin, "check", "-c", tmpFile.Name())
-					out, err := cmd.CombinedOutput()
+					out, err := runSingboxCheck(singboxBin, tmpFile.Name())
 					os.Remove(tmpFile.Name())
 					if err != nil {
 						t.Fatalf("sing-box check failed for %s: %v\nOutput: %s", testName, err, string(out))
@@ -543,8 +560,7 @@ func TestExhaustive_Hysteria2_Permutations(t *testing.T) {
 						tmpFile, _ := os.CreateTemp("", "sb-hy2-*.json")
 						tmpFile.WriteString(cfgJSON)
 						tmpFile.Close()
-						cmd := exec.Command(singboxBin, "check", "-c", tmpFile.Name())
-						out, err := cmd.CombinedOutput()
+						out, err := runSingboxCheck(singboxBin, tmpFile.Name())
 						os.Remove(tmpFile.Name())
 						if err != nil {
 							t.Fatalf("sing-box check failed for %s: %v\nOutput: %s", testName, err, string(out))
@@ -600,8 +616,7 @@ func TestExhaustive_TUIC_Permutations(t *testing.T) {
 						tmpFile, _ := os.CreateTemp("", "sb-tuic-*.json")
 						tmpFile.WriteString(cfgJSON)
 						tmpFile.Close()
-						cmd := exec.Command(singboxBin, "check", "-c", tmpFile.Name())
-						out, err := cmd.CombinedOutput()
+						out, err := runSingboxCheck(singboxBin, tmpFile.Name())
 						os.Remove(tmpFile.Name())
 						if err != nil {
 							t.Fatalf("sing-box check failed for %s: %v\nOutput: %s", testName, err, string(out))
@@ -652,8 +667,7 @@ func TestExhaustive_ShadowTLS_Permutations(t *testing.T) {
 					tmpFile, _ := os.CreateTemp("", "sb-stls-*.json")
 					tmpFile.WriteString(cfgJSON)
 					tmpFile.Close()
-					cmd := exec.Command(singboxBin, "check", "-c", tmpFile.Name())
-					out, err := cmd.CombinedOutput()
+					out, err := runSingboxCheck(singboxBin, tmpFile.Name())
 					os.Remove(tmpFile.Name())
 					if err != nil {
 						t.Fatalf("sing-box check failed for %s: %v\nOutput: %s", testName, err, string(out))
@@ -706,8 +720,7 @@ func TestExhaustive_Trojan_Permutations(t *testing.T) {
 					tmpFile, _ := os.CreateTemp("", "sb-trojan-*.json")
 					tmpFile.WriteString(cfgJSON)
 					tmpFile.Close()
-					cmd := exec.Command(singboxBin, "check", "-c", tmpFile.Name())
-					out, err := cmd.CombinedOutput()
+					out, err := runSingboxCheck(singboxBin, tmpFile.Name())
 					os.Remove(tmpFile.Name())
 					if err != nil {
 						t.Fatalf("sing-box check failed for %s: %v\nOutput: %s", testName, err, string(out))

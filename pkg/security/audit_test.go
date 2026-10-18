@@ -3,6 +3,7 @@ package security
 import (
 	"os"
 	"testing"
+	"time"
 )
 
 func TestUnifiedSecurityEngine_ThresholdBlockMode(t *testing.T) {
@@ -413,4 +414,60 @@ func TestUnifiedSecurityEngine_HotspotClientIsolation(t *testing.T) {
 		t.Fatalf("local app %s should NOT be in quarantine", localAppPkg)
 	}
 }
+
+func TestUnifiedSecurityEngine_AuxiliaryMethods(t *testing.T) {
+	// 1. GetDefaultSecurityEngine
+	defaultEngine := GetDefaultSecurityEngine()
+	if defaultEngine == nil {
+		t.Fatalf("expected non-nil default engine")
+	}
+
+	// 2. sanitizeFilename
+	if sanitizeFilename("app:bad*name?1") != "app_bad_name_1" {
+		t.Errorf("unexpected sanitized filename: %s", sanitizeFilename("app:bad*name?1"))
+	}
+	if sanitizeFilename("") != "entity" {
+		t.Errorf("unexpected empty sanitize result: %s", sanitizeFilename(""))
+	}
+
+	engine := NewUnifiedSecurityEngine(0)
+	defer engine.Stop()
+
+	// 3. SetPcapConfig & GetPolicy
+	engine.SetPcapConfig("test/pcaps", 5)
+	p := engine.GetPolicy()
+	if p.PcapDirectory != "test/pcaps" || p.PcapThreshold != 5 || !p.AutoPcapCapture {
+		t.Errorf("unexpected policy after SetPcapConfig: %+v", p)
+	}
+
+	// 4. StartPcapSession
+	engine.StartPcapSession("manual forensic", 2*time.Second)
+	status := engine.GetPcapStatus()
+	if !status.IsActive {
+		t.Errorf("expected active PCAP session after StartPcapSession")
+	}
+
+	// 5. BanEntity & UnblockAllEntities
+	engine.BanEntity("entity1", ThreatSSRFProbe, "SSRF attempt")
+	engine.BanEntity("entity2", ThreatPortScan, "Scan attempt")
+	if !engine.IsEntityBlocked("entity1") || !engine.IsEntityBlocked("entity2") {
+		t.Errorf("expected entity1 and entity2 to be blocked")
+	}
+	engine.UnblockAllEntities()
+	if engine.IsEntityBlocked("entity1") || engine.IsEntityBlocked("entity2") {
+		t.Errorf("expected all entities to be unblocked after UnblockAllEntities")
+	}
+
+	// 6. ParseSecurityPolicy
+	validJSON := `{"mode":"strict_block","block_threshold":5,"auto_pcap_capture":false}`
+	parsed, err := ParseSecurityPolicy(validJSON)
+	if err != nil || parsed.Mode != ModeStrictBlock || parsed.BlockThreshold != 5 {
+		t.Errorf("failed to parse valid security policy: %v, %+v", err, parsed)
+	}
+	_, err = ParseSecurityPolicy("invalid-json{")
+	if err == nil {
+		t.Errorf("expected error parsing invalid json")
+	}
+}
+
 

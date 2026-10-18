@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -231,15 +233,21 @@ func (pm *ProcessManager) StopCore(coreName string) error {
 		log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SUPERVISOR_STOPPED", normName, cmd.Process.Pid))
 	}
 
-	// Also perform safety OS process cleanup
-	binBase := getBinBaseName(normName)
-	if runtime.GOOS == "windows" {
-		_ = exec.Command("taskkill", "/F", "/IM", binBase+".exe").Run()
-		_ = exec.Command("taskkill", "/F", "/IM", binBase+"-windows-*.exe").Run()
-		_ = exec.Command("taskkill", "/F", "/IM", binBase+"*").Run()
-	} else {
-		_ = exec.Command("killall", "-9", binBase).Run()
-		_ = exec.Command("pkill", "-9", "-f", binBase).Run()
+	// Also perform safety OS process cleanup ONLY for recognized cores
+	allowedCores := map[string]bool{
+		"sing-box":  true,
+		"xray":      true,
+		"hysteria2": true,
+	}
+	if allowedCores[normName] {
+		binBase := getBinBaseName(normName)
+		if runtime.GOOS == "windows" {
+			_ = exec.Command("taskkill", "/F", "/IM", binBase+".exe").Run()
+			_ = exec.Command("taskkill", "/F", "/IM", binBase+"-windows-*.exe").Run()
+		} else {
+			_ = exec.Command("killall", "-9", binBase).Run()
+			_ = exec.Command("pkill", "-9", "-x", binBase).Run()
+		}
 	}
 	if normName == "hysteria2" {
 		ResetHysteriaCumulativeTraffic()
@@ -451,6 +459,67 @@ func getBinBaseName(normName string) string {
 // Magic bytes: SRS\x01 + zlib-compressed empty rule list.
 var emptySrsStub = []byte{0x53, 0x52, 0x53, 0x01, 0x78, 0xda, 0x62, 0x00, 0x04, 0x00, 0x00, 0xff, 0xff, 0x00, 0x01, 0x00, 0x01}
 
+// safeRulePath sanitizes and restricts rule-set target filepaths strictly to binDir.
+// Prevents path traversal vulnerabilities (CWE-22) like writing to /etc or system folders.
+func safeRulePath(initialPath, binDir string) (string, bool) {
+	if initialPath == "" {
+		return "", false
+	}
+	clean := filepath.Clean(initialPath)
+	var target string
+	if filepath.IsAbs(clean) {
+		rel, err := filepath.Rel(binDir, clean)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			target = filepath.Join(binDir, filepath.Base(clean))
+		} else {
+			target = clean
+		}
+	} else {
+		target = filepath.Join(binDir, clean)
+		rel, err := filepath.Rel(binDir, target)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			target = filepath.Join(binDir, filepath.Base(clean))
+		}
+	}
+
+	ext := strings.ToLower(filepath.Ext(target))
+	if ext != ".srs" && ext != ".json" && ext != ".db" {
+		return "", false
+	}
+	return target, true
+}
+
+// isSafePrefetchURL ensures candidate URLs do not target cloud metadata endpoints or private LAN/loopback (SSRF protection).
+func isSafePrefetchURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return false
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return false
+	}
+	lowerHost := strings.ToLower(host)
+	if lowerHost == "metadata.google.internal" || lowerHost == "metadata.goog" || lowerHost == "instance-data" || lowerHost == "localhost" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return false
+		}
+		if v4 := ip.To4(); v4 != nil {
+			if v4[0] == 100 && (v4[1]&0xC0) == 64 {
+				return false
+			}
+			if v4[0] == 169 && v4[1] == 254 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // ensureSingboxRuleStubs ensures that all local rule-set files referenced by initial_path
 // exist on disk before sing-box starts or validates config.
 // On clean/empty servers where remote rule-sets are not yet downloaded,
@@ -475,12 +544,9 @@ func ensureSingboxRuleStubs(configPath, binDir string) {
 		return
 	}
 	for _, rs := range parsed.Route.RuleSet {
-		if rs.InitialPath == "" {
+		targetPath, ok := safeRulePath(rs.InitialPath, binDir)
+		if !ok || targetPath == "" {
 			continue
-		}
-		targetPath := rs.InitialPath
-		if !filepath.IsAbs(targetPath) {
-			targetPath = filepath.Join(binDir, targetPath)
 		}
 		if _, err := os.Stat(targetPath); os.IsNotExist(err) {
 			_ = os.MkdirAll(filepath.Dir(targetPath), 0755)
@@ -532,12 +598,9 @@ func prefetchRuleSets(configPath, binDir string) {
 	hasMissingRules := false
 
 	for _, rs := range parsed.Route.RuleSet {
-		if rs.InitialPath == "" {
+		targetPath, ok := safeRulePath(rs.InitialPath, binDir)
+		if !ok || targetPath == "" {
 			continue
-		}
-		targetPath := rs.InitialPath
-		if !filepath.IsAbs(targetPath) {
-			targetPath = filepath.Join(binDir, targetPath)
 		}
 
 		// Only download if it's currently a stub (<= 17 bytes) or missing
@@ -552,7 +615,7 @@ func prefetchRuleSets(configPath, binDir string) {
 
 		// Phase 1: Build candidate URLs (active mirror, configured URL, then other mirrors)
 		var urlsToTry []string
-		if rs.URL != "" {
+		if rs.URL != "" && isSafePrefetchURL(rs.URL) {
 			urlsToTry = append(urlsToTry, rs.URL)
 		}
 		if isGeoIP {
@@ -572,6 +635,9 @@ func prefetchRuleSets(configPath, binDir string) {
 
 		var downloadedContent []byte
 		for _, u := range urlsToTry {
+			if !isSafePrefetchURL(u) {
+				continue
+			}
 			resp, err := client.Get(u)
 			if err != nil || resp.StatusCode != http.StatusOK {
 				if resp != nil && resp.Body != nil {

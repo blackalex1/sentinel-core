@@ -1746,3 +1746,87 @@ func TestSessionTracker_RealProductionHandshakeWithUntrustedIP(t *testing.T) {
 	}
 }
 
+func TestSecurityAudit_SafeRulePath_PreventsPathTraversal(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// 1. Normal relative path
+	p1, ok1 := safeRulePath("rules/geoip-ru.srs", tempDir)
+	if !ok1 || !strings.HasPrefix(p1, tempDir) {
+		t.Fatalf("expected valid path within tempDir, got %s (ok=%v)", p1, ok1)
+	}
+
+	// 2. Traversal attempt with ../../
+	p2, ok2 := safeRulePath("../../../../etc/shadow.srs", tempDir)
+	if !ok2 {
+		t.Fatalf("expected sanitization to succeed, got ok=false")
+	}
+	if !strings.HasPrefix(p2, tempDir) || strings.Contains(p2, "..") {
+		t.Fatalf("path traversal not prevented! got %s", p2)
+	}
+	if filepath.Base(p2) != "shadow.srs" {
+		t.Fatalf("expected base name shadow.srs, got %s", p2)
+	}
+
+	// 3. Absolute path attempting escape
+	absEscape := filepath.Join(os.TempDir(), "outside", "rules.srs")
+	p3, ok3 := safeRulePath(absEscape, tempDir)
+	if !ok3 || !strings.HasPrefix(p3, tempDir) {
+		t.Fatalf("absolute path escape not contained within tempDir! got %s", p3)
+	}
+
+	// 4. Non-rule extension (e.g. .exe, .sh, .bat) should be rejected
+	_, ok4 := safeRulePath("malicious.sh", tempDir)
+	if ok4 {
+		t.Fatalf("expected non-rule extension to be rejected")
+	}
+}
+
+func TestSecurityAudit_IsSafePrefetchURL_SSRFPrevention(t *testing.T) {
+	// Should reject cloud metadata
+	if isSafePrefetchURL("http://169.254.169.254/latest/meta-data") {
+		t.Fatalf("expected SSRF AWS metadata URL to be blocked")
+	}
+	if isSafePrefetchURL("http://100.100.100.200/metadata") {
+		t.Fatalf("expected Alibaba metadata URL to be blocked")
+	}
+	if isSafePrefetchURL("http://metadata.google.internal/computeMetadata/v1/") {
+		t.Fatalf("expected Google metadata URL to be blocked")
+	}
+
+	// Should reject loopback and private LAN
+	if isSafePrefetchURL("http://127.0.0.1:8006/api2/json") {
+		t.Fatalf("expected loopback Proxmox URL to be blocked")
+	}
+	if isSafePrefetchURL("http://localhost:9090/rules") {
+		t.Fatalf("expected localhost URL to be blocked")
+	}
+	if isSafePrefetchURL("http://192.168.1.1/admin") {
+		t.Fatalf("expected private LAN router URL to be blocked")
+	}
+	if isSafePrefetchURL("http://10.0.0.1:8080/secret") {
+		t.Fatalf("expected private IP 10.0.0.1 to be blocked")
+	}
+
+	// Should allow legitimate public HTTPS CDN mirrors
+	if !isSafePrefetchURL("https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-geolocation-!cn.srs") {
+		t.Fatalf("expected public jsdelivr HTTPS mirror to be allowed")
+	}
+	if !isSafePrefetchURL("https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs") {
+		t.Fatalf("expected public github HTTPS mirror to be allowed")
+	}
+}
+
+func TestSecurityAudit_StopCore_UnknownCore_Safe(t *testing.T) {
+	pm := GetProcessManager()
+	// Stopping arbitrary host binary name must not fail or execute taskkill/killall on host binaries
+	err := pm.StopCore("explorer")
+	if err != nil {
+		t.Fatalf("unexpected error stopping unknown core: %v", err)
+	}
+	err = pm.StopCore("python")
+	if err != nil {
+		t.Fatalf("unexpected error stopping unknown core: %v", err)
+	}
+}
+
+

@@ -61,17 +61,19 @@ func (g *DNSLeakGuard) AllowDNSQuery(dstIP net.IP, dstPort int, vpnActive bool) 
 		if dstIP.IsLoopback() {
 			return true
 		}
-		for _, allowed := range g.allowedDNSIPs {
-			if allowed.Equal(dstIP) {
-				return true
+		if vpnActive {
+			for _, allowed := range g.allowedDNSIPs {
+				if allowed.Equal(dstIP) {
+					return true
+				}
 			}
 		}
 	}
 
 	// If VPN is active and dstPort is encrypted DNS (853 for DoT, 443 for DoH), permit
-	if dstPort == 853 || dstPort == 443 {
+	if vpnActive && (dstPort == 853 || dstPort == 443) {
 		return true
 	}
 
-	return vpnActive
+	return false
 }

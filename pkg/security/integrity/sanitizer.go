@@ -51,6 +51,10 @@ func (s *Sanitizer) AuditEndpoint(host string, port int) error {
 		return fmt.Errorf("invalid port number: %d (must be 1-65535)", port)
 	}
 
+	if strings.HasPrefix(trimmedHost, "-") {
+		return fmt.Errorf("host cannot start with hyphen: %q", host)
+	}
+
 	// Check shell injection symbols
 	if dangerousExecPatterns.MatchString(trimmedHost) {
 		return fmt.Errorf("host contains illegal shell injection characters")

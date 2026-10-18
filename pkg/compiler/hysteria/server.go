@@ -66,7 +66,7 @@ func (sc *ServerCompiler) CompileServer(inbound ast.ServerInboundSpec, forwardTo
 		httpAuth := map[string]interface{}{
 			"url": inbound.AuthURL,
 		}
-		if strings.HasPrefix(inbound.AuthURL, "https://") || strings.Contains(inbound.AuthURL, "127.0.0.1") || strings.Contains(inbound.AuthURL, "localhost") {
+		if inbound.Insecure || strings.Contains(inbound.AuthURL, "127.0.0.1") || strings.Contains(inbound.AuthURL, "localhost") {
 			httpAuth["insecure"] = true
 		}
 		configObj["auth"] = map[string]interface{}{
@@ -80,7 +80,7 @@ func (sc *ServerCompiler) CompileServer(inbound ast.ServerInboundSpec, forwardTo
 				httpAuth := map[string]interface{}{
 					"url": c.Password,
 				}
-				if strings.HasPrefix(c.Password, "https://") || strings.Contains(c.Password, "127.0.0.1") || strings.Contains(c.Password, "localhost") {
+				if inbound.Insecure || strings.Contains(c.Password, "127.0.0.1") || strings.Contains(c.Password, "localhost") {
 					httpAuth["insecure"] = true
 				}
 				configObj["auth"] = map[string]interface{}{

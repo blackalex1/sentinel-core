@@ -2,6 +2,7 @@ package guard
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -75,11 +76,16 @@ func (w *ProcessWhitelist) IsProcessProtected(procName string, pid int) bool {
 		return true
 	}
 
-	// Substring checks for wrapped binaries (e.g. /usr/bin/sentinel-core)
-	for protected := range w.protectedNames {
-		if strings.Contains(clean, protected) {
-			return true
-		}
+	// Check base executable name (e.g. /usr/bin/sentinel-core or C:\bin\xray.exe)
+	base := strings.ToLower(filepath.Base(strings.ReplaceAll(clean, "\\", "/")))
+	if w.protectedNames[base] {
+		return true
+	}
+
+	// Check without .exe extension
+	trimmedBase := strings.TrimSuffix(base, ".exe")
+	if w.protectedNames[trimmedBase] {
+		return true
 	}
 
 	return false

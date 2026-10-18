@@ -136,3 +136,24 @@ func TestRunHealthCheck(t *testing.T) {
 		t.Errorf("expected health check to fail for non-existent domain")
 	}
 }
+
+func TestPingHostPort_IPv6(t *testing.T) {
+	// Start an IPv6 local listener
+	listener, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skip("IPv6 not supported on host loopback, skipping")
+	}
+	defer listener.Close()
+
+	addr := listener.Addr().(*net.TCPAddr)
+	res := PingHostPort("::1", addr.Port, 1*time.Second)
+	if !res.Success {
+		t.Fatalf("expected ping to succeed on IPv6 loopback listener, got error: %s", res.Error)
+	}
+
+	reachable, _, err := CheckRemoteReachable("::1", addr.Port, 1*time.Second)
+	if err != nil || !reachable {
+		t.Fatalf("expected CheckRemoteReachable to succeed on IPv6, err: %v", err)
+	}
+}
+

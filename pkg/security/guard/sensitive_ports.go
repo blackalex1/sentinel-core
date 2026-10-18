@@ -82,6 +82,43 @@ func (m *SensitivePortMonitor) CheckPortAccess(sourceIP string, targetPort int) 
 
 	now := time.Now()
 
+	// Memory safety: prune expired probes and bans if maps exceed threshold
+	if len(m.ipProbes) > 1000 {
+		for ip, rec := range m.ipProbes {
+			if now.Sub(rec.FirstAttempt) > m.scanWindow*2 {
+				delete(m.ipProbes, ip)
+			}
+		}
+		if len(m.ipProbes) > 10000 {
+			// Hard upper bound eviction against distributed DDoS port floods
+			evicted := 0
+			for ip := range m.ipProbes {
+				delete(m.ipProbes, ip)
+				evicted++
+				if evicted >= 2000 {
+					break
+				}
+			}
+		}
+	}
+	if len(m.bannedIPs) > 1000 {
+		for ip, banUntil := range m.bannedIPs {
+			if now.After(banUntil) {
+				delete(m.bannedIPs, ip)
+			}
+		}
+		if len(m.bannedIPs) > 10000 {
+			evicted := 0
+			for ip := range m.bannedIPs {
+				delete(m.bannedIPs, ip)
+				evicted++
+				if evicted >= 2000 {
+					break
+				}
+			}
+		}
+	}
+
 	// 1. Check if IP is currently banned
 	if bannedUntil, isBanned := m.bannedIPs[sourceIP]; isBanned {
 		if now.Before(bannedUntil) {

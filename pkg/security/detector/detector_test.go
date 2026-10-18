@@ -259,3 +259,23 @@ func TestXrayParser_ProcessRecognition(t *testing.T) {
 		})
 	}
 }
+
+func TestClientRiskTracker_IncidentListBounded(t *testing.T) {
+	cfg := DefaultRiskScorerConfig()
+	tracker := NewClientRiskTracker(cfg, nil)
+	defer tracker.Stop()
+
+	client := "flooder@test.local"
+	for i := 0; i < 150; i++ {
+		tracker.RecordIncident(client, "PROBE", "1.2.3.4:80", "scan", 1)
+	}
+
+	p, exists := tracker.GetProfile(client)
+	if !exists {
+		t.Fatalf("expected profile to exist")
+	}
+	if len(p.Incidents) != 100 {
+		t.Fatalf("expected incidents list to be capped at 100, got %d", len(p.Incidents))
+	}
+}
+

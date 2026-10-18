@@ -93,3 +93,30 @@ func TestZeroize(t *testing.T) {
 		}
 	}
 }
+
+func TestZeroizeString_HeapAndROData(t *testing.T) {
+	// 1. Heap allocated string
+	raw := []byte("super-secret-passphrase-12345")
+	str := string(raw)
+	ZeroizeString(&str)
+	if str != "" {
+		t.Fatalf("expected string to be empty after zeroize, got %q", str)
+	}
+
+	// 2. Read-only (.rodata) string constant literal
+	// Should not crash the runtime with SIGSEGV due to defer/recover
+	roStr := "read-only-constant-literal-data"
+	ZeroizeString(&roStr)
+	if roStr != "" {
+		t.Fatalf("expected roStr to be reset to empty, got %q", roStr)
+	}
+
+	// 3. Nil pointer and empty string safety
+	ZeroizeString(nil)
+	empty := ""
+	ZeroizeString(&empty)
+	if empty != "" {
+		t.Fatalf("expected empty string to remain empty")
+	}
+}
+

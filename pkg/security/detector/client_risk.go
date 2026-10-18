@@ -139,8 +139,10 @@ func (t *ClientRiskTracker) RecordIncident(clientID, threatType, target, desc st
 	}
 
 	profile.RiskScore += scoreDelta
-	profile.LastViolation = now
 	profile.Incidents = append(profile.Incidents, incident)
+	if len(profile.Incidents) > 100 {
+		profile.Incidents = profile.Incidents[len(profile.Incidents)-100:]
+	}
 
 	var callbacksToRun []CompromiseCallback
 	shouldAlert := false
@@ -283,6 +285,10 @@ func (t *ClientRiskTracker) startDecayLoop() {
 							p.Status = StatusClean
 						}
 					}
+				}
+				// Cleanup inactive clean profiles after 30 minutes to prevent memory leaks
+				if p.RiskScore == 0 && p.Status == StatusClean && now.Sub(p.LastViolation) > 30*time.Minute && now.Sub(p.FirstSeen) > 30*time.Minute {
+					delete(t.profiles, p.ClientID)
 				}
 			}
 			t.mu.Unlock()

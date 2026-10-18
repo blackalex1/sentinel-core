@@ -160,3 +160,82 @@ func containsSubstring(s, sub string) bool {
 	}
 	return false
 }
+
+func TestRouterSSH_BuildSSHArgs_SecurityValidation(t *testing.T) {
+	// 1. Flag injection in Host (-oProxyCommand)
+	_, err := BuildSSHArgs(RouterSSHConfig{
+		Host: "-oProxyCommand=gnome-calculator",
+		Port: 22,
+		User: "root",
+	}, "conntrack -E")
+	if err == nil {
+		t.Fatalf("expected error for flag injection in Host")
+	}
+
+	// 2. Shell injection characters in Host
+	_, err = BuildSSHArgs(RouterSSHConfig{
+		Host: "192.168.1.1; reboot",
+		Port: 22,
+		User: "root",
+	}, "conntrack -E")
+	if err == nil {
+		t.Fatalf("expected error for shell injection chars in Host")
+	}
+
+	// 3. Flag injection in User
+	_, err = BuildSSHArgs(RouterSSHConfig{
+		Host: "192.168.1.1",
+		Port: 22,
+		User: "-oStrictHostKeyChecking=no",
+	}, "conntrack -E")
+	if err == nil {
+		t.Fatalf("expected error for flag injection in User")
+	}
+
+	// 4. Flag injection in KeyPath
+	_, err = BuildSSHArgs(RouterSSHConfig{
+		Host:    "192.168.1.1",
+		Port:    22,
+		User:    "root",
+		KeyPath: "-oProxyCommand=evil",
+	}, "conntrack -E")
+	if err == nil {
+		t.Fatalf("expected error for flag injection in KeyPath")
+	}
+
+	// 5. Legitimate config
+	args, err := BuildSSHArgs(RouterSSHConfig{
+		Host:    "192.168.1.1",
+		Port:    2222,
+		User:    "admin",
+		KeyPath: "/root/.ssh/id_ed25519",
+	}, "conntrack -E")
+	if err != nil {
+		t.Fatalf("unexpected error for legitimate config: %v", err)
+	}
+
+	// Verify StrictHostKeyChecking=accept-new
+	foundStrict := false
+	dashDashIdx := -1
+	targetIdx := -1
+
+	for idx, arg := range args {
+		if arg == "StrictHostKeyChecking=accept-new" {
+			foundStrict = true
+		}
+		if arg == "--" {
+			dashDashIdx = idx
+		}
+		if arg == "admin@192.168.1.1" {
+			targetIdx = idx
+		}
+	}
+
+	if !foundStrict {
+		t.Errorf("expected StrictHostKeyChecking=accept-new in ssh args")
+	}
+	if dashDashIdx == -1 || targetIdx != dashDashIdx+1 {
+		t.Errorf("expected '--' immediately preceding target in ssh args, got dashDashIdx=%d, targetIdx=%d", dashDashIdx, targetIdx)
+	}
+}
+

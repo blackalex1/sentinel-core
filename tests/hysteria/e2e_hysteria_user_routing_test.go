@@ -178,11 +178,21 @@ func TestE2E_RealHysteria2_PerClientRouting_BlockGoogleForSingleUser(t *testing.
 	_, _ = tmpClient2Config.WriteString(client2Res.ConfigJSON)
 	tmpClient2Config.Close()
 
+	t.Logf("Client 2 Config:\n%s", client2Res.ConfigJSON)
+	checkCmd := exec.Command(sbBin, "check", "-c", tmpClient2Config.Name())
+	checkOut, checkErr := checkCmd.CombinedOutput()
+	if checkErr != nil {
+		t.Fatalf("Client 2 config check failed: %v\nOutput: %s\nConfig:\n%s", checkErr, string(checkOut), client2Res.ConfigJSON)
+	}
+
 	// 4. Launch Real Server Core (Sing-box with Hysteria 2 Inbound)
 	serverCtx, serverCancel := context.WithCancel(context.Background())
 	defer serverCancel()
 
-	serverCmd := exec.CommandContext(serverCtx, sbBin, "run", "-c", tmpServerConfig.Name())
+	serverDir, _ := os.MkdirTemp("", "sb-server-*")
+	defer os.RemoveAll(serverDir)
+
+	serverCmd := exec.CommandContext(serverCtx, sbBin, "run", "-D", serverDir, "-c", tmpServerConfig.Name())
 	var serverLogBuf bytes.Buffer
 	serverCmd.Stdout = &serverLogBuf
 	serverCmd.Stderr = &serverLogBuf
@@ -204,7 +214,10 @@ func TestE2E_RealHysteria2_PerClientRouting_BlockGoogleForSingleUser(t *testing.
 	client1Ctx, client1Cancel := context.WithCancel(context.Background())
 	defer client1Cancel()
 
-	client1Cmd := exec.CommandContext(client1Ctx, sbBin, "run", "-c", tmpClient1Config.Name())
+	client1Dir, _ := os.MkdirTemp("", "sb-client1-*")
+	defer os.RemoveAll(client1Dir)
+
+	client1Cmd := exec.CommandContext(client1Ctx, sbBin, "run", "-D", client1Dir, "-c", tmpClient1Config.Name())
 	var client1LogBuf bytes.Buffer
 	client1Cmd.Stdout = &client1LogBuf
 	client1Cmd.Stderr = &client1LogBuf
@@ -224,7 +237,10 @@ func TestE2E_RealHysteria2_PerClientRouting_BlockGoogleForSingleUser(t *testing.
 	client2Ctx, client2Cancel := context.WithCancel(context.Background())
 	defer client2Cancel()
 
-	client2Cmd := exec.CommandContext(client2Ctx, sbBin, "run", "-c", tmpClient2Config.Name())
+	client2Dir, _ := os.MkdirTemp("", "sb-client2-*")
+	defer os.RemoveAll(client2Dir)
+
+	client2Cmd := exec.CommandContext(client2Ctx, sbBin, "run", "-D", client2Dir, "-c", tmpClient2Config.Name())
 	var client2LogBuf bytes.Buffer
 	client2Cmd.Stdout = &client2LogBuf
 	client2Cmd.Stderr = &client2LogBuf
@@ -276,9 +292,17 @@ func TestE2E_RealHysteria2_PerClientRouting_BlockGoogleForSingleUser(t *testing.
 
 	// 8. Verify Client 2 (allowed_user) accessing Google -> MUST SUCCEED
 	t.Logf("Checking Client 2 (%s) accessing google.com through Hysteria 2 tunnel...", allowedUser)
-	resp2, err2 := httpClient2.Get("http://www.google.com")
+	var resp2 *http.Response
+	var err2 error
+	for attempt := 1; attempt <= 5; attempt++ {
+		resp2, err2 = httpClient2.Get("http://www.google.com")
+		if err2 == nil {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
 	if err2 != nil {
-		t.Fatalf("EXPECTED SUCCESS for Client 2 on google.com, but got error: %v", err2)
+		t.Fatalf("EXPECTED SUCCESS for Client 2 on google.com, but got error: %v\nClient2 Logs:\n%s\nServer Logs:\n%s", err2, client2LogBuf.String(), serverLogBuf.String())
 	}
 	defer resp2.Body.Close()
 	body2, _ := io.ReadAll(resp2.Body)

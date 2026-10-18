@@ -3,11 +3,13 @@ package netfilter
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // FindRealVPNClientIP searches conntrack table entries for the original VPN client IP.
@@ -33,7 +35,10 @@ func FindRealVPNClientIP(proto, containerIP, dstIP string, sport, dpt int, connt
 		}
 
 		if len(lines) == 0 {
-			if out, err := exec.Command("conntrack", "-L").Output(); err == nil && len(out) > 0 {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			out, err := exec.CommandContext(ctx, "conntrack", "-L").Output()
+			cancel()
+			if err == nil && len(out) > 0 {
 				scanner := bufio.NewScanner(bytes.NewReader(out))
 				for scanner.Scan() {
 					lines = append(lines, scanner.Text())

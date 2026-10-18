@@ -1,8 +1,8 @@
 package diagnostics
 
 import (
-	"fmt"
 	"net"
+	"strconv"
 	"time"
 )
 
@@ -21,7 +21,7 @@ func PingHostPort(address string, port int, timeout time.Duration) PingResult {
 	if port <= 0 {
 		port = 443
 	}
-	target := fmt.Sprintf("%s:%d", address, port)
+	target := net.JoinHostPort(address, strconv.Itoa(port))
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", target, timeout)
 	if err != nil {

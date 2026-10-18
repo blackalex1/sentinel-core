@@ -237,7 +237,20 @@ func (d *RouterThreatDetector) Evaluate(ev *RouterEvent) {
 		}
 	}
 	history = history[:n]
-	d.history[ev.SrcIP] = history
+	if len(history) == 0 {
+		delete(d.history, ev.SrcIP)
+	} else {
+		d.history[ev.SrcIP] = history
+	}
+
+	// Periodic cleanup of stale IPs to prevent unbounded memory growth
+	if len(d.history) > 1000 {
+		for ip, recs := range d.history {
+			if len(recs) == 0 || now.Sub(recs[len(recs)-1].Timestamp) > d.window {
+				delete(d.history, ip)
+			}
+		}
+	}
 
 	// 1. Check dangerous exploit ports (Telnet, SMB, Mirai, ADB)
 	if isExploit {

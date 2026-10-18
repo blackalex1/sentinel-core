@@ -159,6 +159,25 @@ func (m *SSHMonitor) ProcessLogLine(line string) (*SSHEvent, bool) {
 		}
 	}
 
+	// Memory safety: Prune recentCloses if capacity exceeds 1000
+	if len(m.recentCloses) > 1000 {
+		for k, tClose := range m.recentCloses {
+			if now.Sub(tClose) > time.Minute {
+				delete(m.recentCloses, k)
+			}
+		}
+	}
+
+	// Memory safety: Prune failedAttempts under high-volume scanning
+	if len(m.failedAttempts) > 5000 {
+		for ip := range m.failedAttempts {
+			delete(m.failedAttempts, ip)
+			if len(m.failedAttempts) <= 2500 {
+				break
+			}
+		}
+	}
+
 	// Trigger registered event callbacks
 	for _, fn := range m.onEventHooks {
 		fn(*event)
@@ -181,6 +200,10 @@ func (m *SSHMonitor) GetActiveSessions() []SSHSession {
 
 // KillSSHSession forcibly terminates a specific SSH session by PID.
 func (m *SSHMonitor) KillSSHSession(pid int) error {
+	if pid <= 1 {
+		return fmt.Errorf("refusing to kill invalid or system PID %d", pid)
+	}
+
 	m.mu.Lock()
 	delete(m.activeSessions, pid)
 	m.mu.Unlock()
