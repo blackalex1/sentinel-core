@@ -21,7 +21,7 @@ func isSingbox114OrNewer(version string) bool {
 // BuildSingBoxRoute generates the route object and any required top-level http_clients for Sing-box
 func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{}, []map[string]interface{}) {
 	isV114 := isSingbox114OrNewer(spec.CoreVersion)
-	activeMirror := GetActiveRuleMirror()
+	activeMirror, isDirect := GetActiveRuleMirrorWithStatus()
 	var httpClients []map[string]interface{}
 
 	route := map[string]interface{}{
@@ -96,10 +96,13 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 
 	downloadDetour := "direct"
 	if spec.ServerNode != nil {
-		if spec.ServerNode.Name != "" {
-			downloadDetour = spec.ServerNode.Name
-		} else {
-			downloadDetour = "proxy"
+		if !isDirect {
+			// Client mode multi-tier fallback: Direct CDN mirrors blocked/unavailable. Fall back to proxy tunnel.
+			if spec.ServerNode.Name != "" {
+				downloadDetour = spec.ServerNode.Name
+			} else {
+				downloadDetour = "proxy"
+			}
 		}
 	} else if spec.Routing != nil {
 		// Server mode with upstream proxy outbounds (cascade / relay / warp):

@@ -1,6 +1,7 @@
 package singbox
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -1064,3 +1065,56 @@ func TestSingboxCompiler_AllInboundProtocols(t *testing.T) {
 
 
 
+
+
+func TestSingboxCompiler_RuleSet_MultiTierFallback(t *testing.T) {
+	c := NewCompiler()
+
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreSingBox,
+		LogLevel:   "info",
+		ServerNode: &ast.ServerProfile{
+			Name:     "Test-Proxy-Outbound",
+			Protocol: ast.ProtoVLESS,
+			Address:  "1.2.3.4",
+			Port:     443,
+			UUID:     "b9f3857a-ce20-4e1e-b5e0-6f3d141fa2b2",
+		},
+		Routing: &ast.RoutingSpec{
+			Rules: []ast.RoutingRule{
+				{
+					Action:  ast.ActionDirect,
+					Domains: []string{"geosite:category-ru"},
+					IPs:     []string{"geoip:ru"},
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile: %v", err)
+	}
+
+	// When direct mirrors are reachable (isDirect=true), rules-client must NOT detour through the proxy!
+	var parsed struct {
+		HttpClients []struct {
+			Tag    string `json:"tag"`
+			Detour string `json:"detour"`
+		} `json:"http_clients"`
+	}
+	if err := json.Unmarshal([]byte(cfg), &parsed); err != nil {
+		t.Fatalf("failed to parse json: %v", err)
+	}
+	for _, cl := range parsed.HttpClients {
+		if cl.Tag == "rules-client" && cl.Detour == "Test-Proxy-Outbound" {
+			t.Errorf("rules-client should not detour through proxy when direct mirror is reachable, got: %s", cfg)
+		}
+	}
+	if !strings.Contains(cfg, `"initial_path": "rules/geosite-category-ru.srs"`) {
+		t.Errorf("expected initial_path for geosite-category-ru, got: %s", cfg)
+	}
+	if !strings.Contains(cfg, `"initial_path": "rules/geoip-ru.srs"`) {
+		t.Errorf("expected initial_path for geoip-ru, got: %s", cfg)
+	}
+}
