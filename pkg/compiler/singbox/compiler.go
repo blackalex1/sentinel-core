@@ -174,9 +174,65 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 	return string(jsonBytes), allWarnings, nil
 }
 
+func parseSingboxDNSServer(tag string, serverURL string, detour string) map[string]interface{} {
+	obj := map[string]interface{}{
+		"tag": tag,
+	}
+	if detour != "" {
+		obj["detour"] = detour
+	}
+
+	if strings.HasPrefix(serverURL, "https://") {
+		obj["type"] = "https"
+		trimmed := strings.TrimPrefix(serverURL, "https://")
+		parts := strings.SplitN(trimmed, "/", 2)
+		hostPart := parts[0]
+		if len(parts) > 1 && parts[1] != "" {
+			obj["path"] = "/" + parts[1]
+		}
+		obj["server_port"] = 443
+
+		knownIPs := map[string]string{
+			"dns.google":               "8.8.8.8",
+			"cloudflare-dns.com":       "1.1.1.1",
+			"one.one.one.one":          "1.1.1.1",
+			"dns.adguard-dns.com":      "94.140.14.14",
+			"dns.yandex.ru":            "77.88.8.8",
+			"common.dot.dns.yandex.net": "77.88.8.8",
+		}
+		if ip, ok := knownIPs[hostPart]; ok {
+			obj["server"] = ip
+			obj["tls"] = map[string]interface{}{
+				"enabled":     true,
+				"server_name": hostPart,
+			}
+		} else {
+			obj["server"] = hostPart
+		}
+	} else if strings.HasPrefix(serverURL, "tls://") {
+		obj["type"] = "tls"
+		obj["server"] = strings.TrimPrefix(serverURL, "tls://")
+		obj["server_port"] = 853
+	} else if strings.HasPrefix(serverURL, "tcp://") {
+		obj["type"] = "tcp"
+		obj["server"] = strings.TrimPrefix(serverURL, "tcp://")
+		obj["server_port"] = 53
+	} else if strings.HasPrefix(serverURL, "udp://") {
+		obj["type"] = "udp"
+		obj["server"] = strings.TrimPrefix(serverURL, "udp://")
+		obj["server_port"] = 53
+	} else {
+		// Plain IP or host without scheme
+		obj["type"] = "udp"
+		obj["server"] = serverURL
+		obj["server_port"] = 53
+	}
+	return obj
+}
+
 func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 	remoteDNS := "https://1.1.1.1/dns-query"
-	directDNS := "8.8.8.8"
+	directDNS := "https://8.8.8.8/dns-query"
 	strategy := "ipv4_only"
 
 	if spec.DNS != nil {
@@ -197,58 +253,46 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 		}
 	}
 
-	directServerObj := map[string]interface{}{
-		"tag":         "dns-direct",
-		"type":        "udp",
-		"server":      directDNS,
-		"server_port": 53,
-	}
-
+	directServerObj := parseSingboxDNSServer("dns-direct", directDNS, "")
 	servers := []map[string]interface{}{directServerObj}
 
 	finalDNS := "dns-direct"
 	dnsRules := []map[string]interface{}{}
 
+	detourTag := ""
 	if spec.ServerNode != nil {
-		detourTag := "proxy"
 		if spec.ServerNode.Name != "" {
 			detourTag = spec.ServerNode.Name
-		}
-
-		remoteServerObj := map[string]interface{}{
-			"tag":    "dns-remote",
-			"detour": detourTag,
-		}
-
-		if strings.HasPrefix(remoteDNS, "https://") {
-			remoteServerObj["type"] = "https"
-			trimmed := strings.TrimPrefix(remoteDNS, "https://")
-			parts := strings.SplitN(trimmed, "/", 2)
-			remoteServerObj["server"] = parts[0]
-			if len(parts) > 1 && parts[1] != "" {
-				remoteServerObj["path"] = "/" + parts[1]
-			}
-			remoteServerObj["server_port"] = 443
-		} else if strings.HasPrefix(remoteDNS, "tls://") {
-			remoteServerObj["type"] = "tls"
-			remoteServerObj["server"] = strings.TrimPrefix(remoteDNS, "tls://")
-			remoteServerObj["server_port"] = 853
-		} else if strings.HasPrefix(remoteDNS, "tcp://") {
-			remoteServerObj["type"] = "tcp"
-			remoteServerObj["server"] = strings.TrimPrefix(remoteDNS, "tcp://")
-			remoteServerObj["server_port"] = 53
-		} else if strings.HasPrefix(remoteDNS, "udp://") {
-			remoteServerObj["type"] = "udp"
-			remoteServerObj["server"] = strings.TrimPrefix(remoteDNS, "udp://")
-			remoteServerObj["server_port"] = 53
 		} else {
-			remoteServerObj["type"] = "udp"
-			remoteServerObj["server"] = remoteDNS
-			remoteServerObj["server_port"] = 53
+			detourTag = "proxy"
 		}
+	} else if spec.Routing != nil && len(spec.Routing.Outbounds) > 0 {
+		for _, ob := range spec.Routing.Outbounds {
+			t, _ := ob["tag"].(string)
+			if t != "" && t != "direct" && t != "block" && t != "custom-direct" && t != "custom-block" {
+				detourTag = t
+				break
+			}
+		}
+	}
 
-		servers = append([]map[string]interface{}{remoteServerObj}, servers...)
+	if detourTag != "" {
+		remoteServerObj := parseSingboxDNSServer("dns-remote", remoteDNS, detourTag)
+		servers = append([]map[string]interface{}{remoteServerObj}, directServerObj)
 		finalDNS = "dns-remote"
+
+		dnsRules = append(dnsRules, map[string]interface{}{
+			"domain_suffix": []string{".ru", ".su", ".рф", ".xn--p1ai"},
+			"server":        "dns-direct",
+		})
+	} else if spec.DNS != nil && spec.DNS.DirectServer == "" && spec.DNS.RemoteServer != "" {
+		directDNS = spec.DNS.RemoteServer
+		directServerObj = parseSingboxDNSServer("dns-direct", directDNS, "")
+		servers = []map[string]interface{}{directServerObj}
+	}
+
+	if spec.DNS != nil && spec.DNS.FinalServer != "" {
+		finalDNS = spec.DNS.FinalServer
 	}
 
 	return map[string]interface{}{

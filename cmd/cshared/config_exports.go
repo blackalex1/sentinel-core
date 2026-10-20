@@ -54,7 +54,7 @@ func SentinelBuildServerConfig(specJSON *C.char) *C.char {
 		return C.CString(string(errResp))
 	}
 
-	cfg, err := builder.BuildServerConfig(spec.TargetCore, spec.ServerInbounds, spec.Routing, spec.ClashAPIAddress, spec.LogPath, spec.LogLevel)
+	cfg, err := builder.BuildServerConfigFromSpec(&spec)
 	if err != nil {
 		errResp, _ := json.Marshal(map[string]string{"error": err.Error()})
 		return C.CString(string(errResp))

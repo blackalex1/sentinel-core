@@ -34,19 +34,6 @@ func BuildServerConfig(targetCore ast.TargetCore, serverInbounds []ast.ServerInb
 		errorLog = logPathAndLevel[3]
 	}
 
-	if targetCore == ast.CoreHysteria2 {
-		if len(serverInbounds) == 0 {
-			return "", fmt.Errorf("at least one server inbound required for hysteria2")
-		}
-		sc := hysteria.NewServerCompiler()
-		// If routing rules exist, forward traffic to local Xray SOCKS5 port (20808)
-		forwardPort := 0
-		if routing != nil && len(routing.Rules) > 0 {
-			forwardPort = 20808
-		}
-		return sc.CompileServer(serverInbounds[0], forwardPort, lvl)
-	}
-
 	spec := &ast.ConfigSpec{
 		TargetCore:      targetCore,
 		ServerInbounds:  serverInbounds,
@@ -56,6 +43,34 @@ func BuildServerConfig(targetCore ast.TargetCore, serverInbounds []ast.ServerInb
 		LogPath:         logPath,
 		AccessLog:       accessLog,
 		ErrorLog:        errorLog,
+	}
+
+	return BuildServerConfigFromSpec(spec)
+}
+
+// BuildServerConfigFromSpec compiles a complete node server configuration from a full ConfigSpec.
+func BuildServerConfigFromSpec(spec *ast.ConfigSpec) (string, error) {
+	if spec == nil {
+		return "", fmt.Errorf("config spec cannot be nil")
+	}
+
+	targetCore := spec.TargetCore
+	if targetCore == "" {
+		targetCore = ast.CoreSingBox
+		spec.TargetCore = targetCore
+	}
+
+	if targetCore == ast.CoreHysteria2 {
+		if len(spec.ServerInbounds) == 0 {
+			return "", fmt.Errorf("at least one server inbound required for hysteria2")
+		}
+		sc := hysteria.NewServerCompiler()
+		// If routing rules exist, forward traffic to local Xray SOCKS5 port (20808)
+		forwardPort := 0
+		if spec.Routing != nil && len(spec.Routing.Rules) > 0 {
+			forwardPort = 20808
+		}
+		return sc.CompileServerWithDNS(spec.ServerInbounds[0], forwardPort, spec.DNS, spec.LogLevel)
 	}
 
 	if targetCore == ast.CoreXray {
