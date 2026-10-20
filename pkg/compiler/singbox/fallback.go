@@ -84,6 +84,11 @@ func BuildSingboxFallbackGroup(tag string, primaryCompiled map[string]interface{
 	if probeInterval <= 0 {
 		probeInterval = 15
 	}
+	idleTimeoutSec := 1800
+	if probeInterval >= idleTimeoutSec {
+		idleTimeoutSec = probeInterval * 2
+	}
+	idleTimeoutStr := fmt.Sprintf("%ds", idleTimeoutSec)
 
 	return map[string]interface{}{
 		"type":         "urltest",
@@ -92,7 +97,7 @@ func BuildSingboxFallbackGroup(tag string, primaryCompiled map[string]interface{
 		"url":          probeURL,
 		"interval":     fmt.Sprintf("%ds", probeInterval),
 		"tolerance":    toleranceVal,
-		"idle_timeout": "30s",
+		"idle_timeout": idleTimeoutStr,
 	}
 }
 
@@ -201,6 +206,11 @@ func BuildSingboxMultiNodeFallback(adaptedNode *ast.ServerProfile, backupProfile
 	}
 
 	toleranceVal := CalculateSingboxTolerance(strategy)
+	idleTimeoutSec := 1800
+	if probeInt >= idleTimeoutSec {
+		idleTimeoutSec = probeInt * 2
+	}
+	idleTimeoutStr := fmt.Sprintf("%ds", idleTimeoutSec)
 	urltestGroup := map[string]interface{}{
 		"type":         "urltest",
 		"tag":          groupTag,
@@ -208,7 +218,7 @@ func BuildSingboxMultiNodeFallback(adaptedNode *ast.ServerProfile, backupProfile
 		"url":          probeURL,
 		"interval":     fmt.Sprintf("%ds", probeInt),
 		"tolerance":    toleranceVal,
-		"idle_timeout": "30s",
+		"idle_timeout": idleTimeoutStr,
 	}
 
 	return urltestGroup, compiledNodes, nil
