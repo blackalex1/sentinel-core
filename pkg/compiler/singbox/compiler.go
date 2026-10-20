@@ -332,6 +332,20 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 		finalDNS = spec.DNS.FinalServer
 	}
 
+	// Validate that finalDNS exists in servers list to prevent Sing-box startup panic
+	hasFinal := false
+	for _, s := range servers {
+		if tag, ok := s["tag"].(string); ok && tag == finalDNS {
+			hasFinal = true
+			break
+		}
+	}
+	if !hasFinal && len(servers) > 0 {
+		if tag, ok := servers[0]["tag"].(string); ok {
+			finalDNS = tag
+		}
+	}
+
 	return map[string]interface{}{
 		"servers":  servers,
 		"rules":    dnsRules,
