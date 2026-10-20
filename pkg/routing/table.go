@@ -24,6 +24,7 @@ type RoutingRuleRow struct {
 	Ports        []string `json:"ports,omitempty"`        // Port ranges: ["80", "443", "1000-2000"]
 	ProcessNames []string `json:"processNames,omitempty"` // Process names for Windows: ["discord.exe", "telegram.exe"]
 	PackageUIDs  []string `json:"packageUids,omitempty"`  // Package UIDs for Android: ["10142"]
+	IPVersion    int      `json:"ipVersion,omitempty"`    // 4 or 6
 }
 
 // RoutingTable manages a collection of prioritized routing rules with import/export capabilities.
@@ -101,6 +102,7 @@ func (t *RoutingTable) CompileToAST() *ast.RoutingSpec {
 			Ports:        cleanPorts,
 			ProcessNames: row.ProcessNames,
 			PackageUIDs:  row.PackageUIDs,
+			IPVersion:    row.IPVersion,
 		}
 
 		astRules = append(astRules, astRule)

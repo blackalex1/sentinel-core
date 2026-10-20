@@ -24,6 +24,7 @@ type RoutingRule struct {
 	PackageUIDs      []string `json:"packageUids,omitempty"`      // Android user UIDs
 	ProcessNames     []string `json:"processNames,omitempty"`     // Windows/Linux process binaries e.g. ["discord.exe"]
 	InboundTags      []string `json:"inboundTags,omitempty"`
+	IPVersion        int      `json:"ipVersion,omitempty"`
 }
 
 // RoutingSpec contains the full collection of routing rules and global route switches

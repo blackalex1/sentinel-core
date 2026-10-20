@@ -949,3 +949,31 @@ func TestXrayCompiler_AllInboundProtocols(t *testing.T) {
 	}
 }
 
+
+func TestCompile_XrayBlockIPv6(t *testing.T) {
+	c := NewCompiler()
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreXray,
+		Routing: &ast.RoutingSpec{
+			Rules: []ast.RoutingRule{
+				{
+					Action:      ast.ActionBlock,
+					OutboundTag: "blocked",
+					IPVersion:   6,
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile: %v", err)
+	}
+
+	if !strings.Contains(cfg, `"::/0"`) {
+		t.Errorf("expected ::/0 in compiled Xray config, got: %s", cfg)
+	}
+	if !strings.Contains(cfg, `"outboundTag": "blocked"`) {
+		t.Errorf("expected outboundTag: blocked in compiled Xray config, got: %s", cfg)
+	}
+}

@@ -27,6 +27,7 @@ type Preset struct {
 	Ports        []string `json:"ports,omitempty"`
 	ProcessNames []string `json:"processNames,omitempty"`
 	PackageUIDs  []string `json:"packageUids,omitempty"`
+	IPVersion    int      `json:"ipVersion,omitempty"`
 
 	// Optional multi-rule composite rows
 	Rules []RoutingRuleRow `json:"rules,omitempty"`
@@ -67,6 +68,7 @@ func (p *Preset) GetRules(targetOverride string) []RoutingRuleRow {
 			Ports:        p.Ports,
 			ProcessNames: p.ProcessNames,
 			PackageUIDs:  p.PackageUIDs,
+			IPVersion:    p.IPVersion,
 		},
 	}
 }

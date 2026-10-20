@@ -1118,3 +1118,31 @@ func TestSingboxCompiler_RuleSet_MultiTierFallback(t *testing.T) {
 		t.Errorf("expected initial_path for geoip-ru, got: %s", cfg)
 	}
 }
+
+func TestCompile_BlockIPv6Rule(t *testing.T) {
+	c := NewCompiler()
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreSingBox,
+		Routing: &ast.RoutingSpec{
+			Rules: []ast.RoutingRule{
+				{
+					Action:      ast.ActionBlock,
+					OutboundTag: "block",
+					IPs:         []string{"::/0"},
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile: %v", err)
+	}
+
+	if !strings.Contains(cfg, `"ip_version": 6`) {
+		t.Errorf("expected ip_version: 6 in compiled config, got: %s", cfg)
+	}
+	if !strings.Contains(cfg, `"outbound": "block"`) {
+		t.Errorf("expected outbound: block in compiled config, got: %s", cfg)
+	}
+}

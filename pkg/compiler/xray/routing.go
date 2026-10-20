@@ -59,6 +59,18 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 
 	if spec.Routing != nil {
 		for _, r := range spec.Routing.Rules {
+			if r.IPVersion == 6 {
+				hasV6 := false
+				for _, ip := range r.IPs {
+					if ip == "::/0" {
+						hasV6 = true
+						break
+					}
+				}
+				if !hasV6 {
+					r.IPs = append(r.IPs, "::/0")
+				}
+			}
 			tag := string(r.Action)
 			if r.OutboundTag != "" {
 				tag = r.OutboundTag
