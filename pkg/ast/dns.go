@@ -16,10 +16,10 @@ type DNSSpec struct {
 func DefaultDNSSpec() DNSSpec {
 	return DNSSpec{
 		RemoteServer: "https://1.1.1.1/dns-query",
-		DirectServer: "8.8.8.8",
+		DirectServer: "https://8.8.8.8/dns-query",
 		Strategy:     "ipv4_only",
 		FakeIP:       false,
-		Servers:      []string{"https://1.1.1.1/dns-query", "8.8.8.8"},
+		Servers:      []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"},
 		FinalServer:  "dns-remote",
 	}
 }

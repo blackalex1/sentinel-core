@@ -377,29 +377,48 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		}
 	}
 
-	// 5. Build DNS
-	var dnsServers []string
-	if spec.DNS != nil && len(spec.DNS.Servers) > 0 {
+	// 5. Build DNS (Split-DNS with encrypted DoH)
+	var dnsServers []interface{}
+	directDNS := "https://8.8.8.8/dns-query"
+	if spec.DNS != nil && spec.DNS.DirectServer != "" {
+		directDNS = spec.DNS.DirectServer
+	}
+	remoteDNS := "https://1.1.1.1/dns-query"
+	if spec.DNS != nil && spec.DNS.RemoteServer != "" {
+		remoteDNS = spec.DNS.RemoteServer
+	} else if spec.DNS != nil && len(spec.DNS.Servers) > 0 {
+		remoteDNS = spec.DNS.Servers[0]
+	}
+
+	dnsServers = append(dnsServers, map[string]interface{}{
+		"address": directDNS,
+		"domains": []string{"domain:ru", "domain:su", "domain:xn--p1ai"},
+	})
+	if remoteDNS != directDNS {
+		dnsServers = append(dnsServers, remoteDNS)
+	}
+	if spec.DNS != nil {
 		for _, s := range spec.DNS.Servers {
-			if s != "" {
+			if s != "" && s != directDNS && s != remoteDNS {
 				dnsServers = append(dnsServers, s)
 			}
 		}
-	} else if spec.DNS != nil && spec.DNS.RemoteServer != "" {
-		dnsServers = append(dnsServers, spec.DNS.RemoteServer)
-	}
-
-	if len(dnsServers) == 0 {
-		dnsServers = []string{"https://1.1.1.1/dns-query", "8.8.8.8", "8.8.4.4"}
-	}
-	if spec.DNS != nil && spec.DNS.DirectServer != "" {
-		dnsServers = append(dnsServers, spec.DNS.DirectServer)
 	}
 	dnsServers = append(dnsServers, "localhost")
 
+	qStrategy := "UseIPv4"
+	if spec.DNS != nil && spec.DNS.Strategy != "" {
+		switch spec.DNS.Strategy {
+		case "ipv6_only", "prefer_ipv6":
+			qStrategy = "UseIPv6"
+		default:
+			qStrategy = "UseIPv4"
+		}
+	}
+
 	dnsConfig := map[string]interface{}{
 		"servers":       dnsServers,
-		"queryStrategy": "UseIPv4",
+		"queryStrategy": qStrategy,
 	}
 
 	// 6. Log

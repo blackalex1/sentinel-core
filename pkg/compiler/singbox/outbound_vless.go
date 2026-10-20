@@ -125,7 +125,7 @@ func compileRawVLESSOutbound(tag string, sMap, tsMap map[string]interface{}) map
 				}
 				if len(ports) > 0 {
 					vlOb["server_ports"] = ports
-					vlOb["hop_interval"] = "30s"
+					vlOb["hop_interval"] = "300s"
 				}
 			} else {
 				var pInt int

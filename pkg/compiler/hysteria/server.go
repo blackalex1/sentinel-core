@@ -17,6 +17,11 @@ func NewServerCompiler() *ServerCompiler {
 
 // CompileServer builds official Hysteria 2 server config (with Webhook Auth and local Xray routing forward)
 func (sc *ServerCompiler) CompileServer(inbound ast.ServerInboundSpec, forwardToXraySocksPort int, logLevel ...string) (string, error) {
+	return sc.CompileServerWithDNS(inbound, forwardToXraySocksPort, nil, logLevel...)
+}
+
+// CompileServerWithDNS builds official Hysteria 2 server config with custom DNS resolver
+func (sc *ServerCompiler) CompileServerWithDNS(inbound ast.ServerInboundSpec, forwardToXraySocksPort int, dns *ast.DNSSpec, logLevel ...string) (string, error) {
 	listenAddr := fmt.Sprintf(":%d", inbound.Port)
 	if inbound.PortHop != "" && strings.Contains(inbound.PortHop, "-") {
 		listenAddr = fmt.Sprintf(":%s", strings.TrimPrefix(inbound.PortHop, ":"))
@@ -46,6 +51,7 @@ func (sc *ServerCompiler) CompileServer(inbound ast.ServerInboundSpec, forwardTo
 		"log": map[string]interface{}{
 			"level": lvl,
 		},
+		"resolver": BuildHysteriaResolver(dns),
 	}
 
 	// TLS Settings
@@ -225,3 +231,90 @@ func normalizeMasqURL(raw string) string {
 	return raw
 }
 
+
+
+// BuildHysteriaResolver creates a native Hysteria 2 resolver block for encrypted DoH
+func BuildHysteriaResolver(dns *ast.DNSSpec) map[string]interface{} {
+	targetURL := "https://8.8.8.8/dns-query"
+	if dns != nil {
+		if dns.DirectServer != "" {
+			targetURL = dns.DirectServer
+		} else if dns.RemoteServer != "" {
+			targetURL = dns.RemoteServer
+		} else if len(dns.Servers) > 0 {
+			targetURL = dns.Servers[0]
+		}
+	}
+
+	if strings.HasPrefix(targetURL, "https://") {
+		trimmed := strings.TrimPrefix(targetURL, "https://")
+		parts := strings.SplitN(trimmed, "/", 2)
+		hostPart := parts[0]
+		addr := hostPart
+		sni := ""
+
+		knownIPs := map[string]string{
+			"dns.google":                "8.8.8.8",
+			"cloudflare-dns.com":        "1.1.1.1",
+			"one.one.one.one":           "1.1.1.1",
+			"dns.adguard-dns.com":       "94.140.14.14",
+			"dns.yandex.ru":             "77.88.8.8",
+			"common.dot.dns.yandex.net":  "77.88.8.8",
+		}
+
+		if ip, ok := knownIPs[hostPart]; ok {
+			addr = ip + ":443"
+			sni = hostPart
+		} else if hostPart == "8.8.8.8" || hostPart == "8.8.4.4" {
+			addr = hostPart + ":443"
+			sni = "dns.google"
+		} else if hostPart == "1.1.1.1" || hostPart == "1.0.0.1" {
+			addr = hostPart + ":443"
+			sni = "cloudflare-dns.com"
+		} else if hostPart == "94.140.14.14" || hostPart == "94.140.15.15" {
+			addr = hostPart + ":443"
+			sni = "dns.adguard-dns.com"
+		} else if hostPart == "77.88.8.8" || hostPart == "77.88.8.1" {
+			addr = hostPart + ":443"
+			sni = "dns.yandex.ru"
+		} else if !strings.Contains(hostPart, ":") {
+			addr = hostPart + ":443"
+		}
+
+		httpsObj := map[string]interface{}{
+			"addr":    addr,
+			"timeout": "4s",
+		}
+		if sni != "" {
+			httpsObj["sni"] = sni
+		}
+		return map[string]interface{}{
+			"type":  "https",
+			"https": httpsObj,
+		}
+	} else if strings.HasPrefix(targetURL, "tcp://") {
+		addr := strings.TrimPrefix(targetURL, "tcp://")
+		if !strings.Contains(addr, ":") {
+			addr += ":53"
+		}
+		return map[string]interface{}{
+			"type": "tcp",
+			"tcp": map[string]interface{}{
+				"addr":    addr,
+				"timeout": "4s",
+			},
+		}
+	} else {
+		addr := strings.TrimPrefix(targetURL, "udp://")
+		if !strings.Contains(addr, ":") {
+			addr += ":53"
+		}
+		return map[string]interface{}{
+			"type": "udp",
+			"udp": map[string]interface{}{
+				"addr":    addr,
+				"timeout": "4s",
+			},
+		}
+	}
+}

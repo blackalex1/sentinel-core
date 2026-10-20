@@ -36,7 +36,7 @@ func buildHysteria2Outbound(tag string, node *ast.ServerProfile) (map[string]int
 			}
 			if len(ports) > 0 {
 				out["server_ports"] = ports
-				hopInterval := "30s"
+				hopInterval := "300s"
 				if node.Extra != nil {
 					if val, ok := node.Extra["hop_interval"].(string); ok && val != "" {
 						hopInterval = val
@@ -271,7 +271,7 @@ func compileRawHysteria2Outbound(tag string, sMap, tsMap map[string]interface{})
 				}
 				if len(ports) > 0 {
 					hyOb["server_ports"] = ports
-					hyOb["hop_interval"] = "30s"
+					hyOb["hop_interval"] = "300s"
 				}
 			} else {
 				var pInt int

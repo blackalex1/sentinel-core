@@ -91,6 +91,9 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		}
 	}
 
+	// Resolver (Encrypted DoH)
+	configObj["resolver"] = BuildHysteriaResolver(spec.DNS)
+
 	// Inbounds (SOCKS5 / HTTP)
 	if spec.ClientInbound != nil {
 		cb := spec.ClientInbound

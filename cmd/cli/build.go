@@ -151,7 +151,7 @@ func handleCompileServer() {
 		return
 	}
 
-	cfg, err := builder.BuildServerConfig(spec.TargetCore, spec.ServerInbounds, spec.Routing, spec.ClashAPIAddress, spec.LogPath, spec.LogLevel)
+	cfg, err := builder.BuildServerConfigFromSpec(&spec)
 	if err != nil {
 		fmt.Printf("Build error: %v\n", err)
 		exitFunc(1)
