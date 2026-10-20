@@ -87,6 +87,8 @@ var enTranslations = map[string]string{
 	"PRESET_GLOBAL_PROXY_DESC": "All device network traffic through proxy except local network",
 	"PRESET_IP_CHECKERS_NAME":  "IP Lookup Services",
 	"PRESET_IP_CHECKERS_DESC":  "IP lookup and checker services (ipify, 2ip, ifconfig, ipinfo, etc.)",
+	"PRESET_IPV6_NAME":         "Block IPv6",
+	"PRESET_IPV6_DESC":         "Block all IPv6 traffic (::/0) to prevent timeouts and leaks",
 	"PRESET_LAN_NAME":          "Local Network (LAN)",
 	"PRESET_LAN_DESC":          "Routing of all private IP ranges (192.168.x.x, 10.x.x.x, 172.16.x.x)",
 	"PRESET_QUIC_NAME":         "Block QUIC (UDP 443)",

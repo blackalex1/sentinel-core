@@ -87,6 +87,8 @@ var ruTranslations = map[string]string{
 	"PRESET_GLOBAL_PROXY_DESC": "Весь трафик через прокси, кроме локальной сети",
 	"PRESET_IP_CHECKERS_NAME":  "Сервисы определения IP",
 	"PRESET_IP_CHECKERS_DESC":  "Сервисы проверки IP (ipify, 2ip, ifconfig, ipinfo и др.)",
+	"PRESET_IPV6_NAME":         "Блокировка IPv6",
+	"PRESET_IPV6_DESC":         "Блокировка всего IPv6-трафика (::/0) для устранения таймаутов и утечек",
 	"PRESET_LAN_NAME":          "Локальная сеть (LAN)",
 	"PRESET_LAN_DESC":          "Маршрутизация всех частных IP адресов (192.168.x.x, 10.x.x.x, 172.16.x.x)",
 	"PRESET_QUIC_NAME":         "Блокировка QUIC (UDP 443)",

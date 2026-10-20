@@ -152,6 +152,9 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 				base := map[string]interface{}{
 					"outbound": outbound,
 				}
+				if r.IPVersion != 0 {
+					base["ip_version"] = r.IPVersion
+				}
 				if len(r.InboundTags) > 0 {
 					base["inbound"] = r.InboundTags
 				}
@@ -252,8 +255,13 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 			}
 
 			var rawIPs []string
+			hasIPv6All := r.IPVersion == 6
 			if len(r.IPs) > 0 {
 				for _, ip := range r.IPs {
+					if ip == "::/0" {
+						hasIPv6All = true
+						continue
+					}
 					if strings.HasPrefix(ip, "geoip:") {
 						country := strings.TrimPrefix(ip, "geoip:")
 						if country == "private" {
@@ -293,7 +301,7 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 			}
 
 			hasDomainMatchers := len(regexList) > 0 || len(suffixDomains) > 0 || len(exactDomains) > 0 || len(keywordList) > 0 || len(domainRuleSets) > 0
-			hasIPMatchers := len(rawIPs) > 0 || len(ipRuleSets) > 0
+			hasIPMatchers := len(rawIPs) > 0 || len(ipRuleSets) > 0 || hasIPv6All
 
 			if hasDomainMatchers && hasIPMatchers {
 				// Split into two rules so domains and IPs match independently
@@ -316,6 +324,9 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 				rules = append(rules, dRule)
 
 				iRule := createBaseRule()
+				if hasIPv6All {
+					iRule["ip_version"] = 6
+				}
 				if len(rawIPs) > 0 {
 					iRule["ip_cidr"] = rawIPs
 				}
@@ -343,6 +354,9 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 				rules = append(rules, dRule)
 			} else if hasIPMatchers {
 				iRule := createBaseRule()
+				if hasIPv6All {
+					iRule["ip_version"] = 6
+				}
 				if len(rawIPs) > 0 {
 					iRule["ip_cidr"] = rawIPs
 				}
