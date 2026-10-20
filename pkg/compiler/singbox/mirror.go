@@ -62,9 +62,10 @@ var DefaultMirrors = []RuleMirror{
 }
 
 var (
-	cachedMirror     *RuleMirror
-	cachedMirrorTime time.Time
-	mirrorMu         sync.RWMutex
+	cachedMirror       *RuleMirror
+	cachedMirrorDirect bool
+	cachedMirrorTime   time.Time
+	mirrorMu           sync.RWMutex
 )
 
 // ProbeMirrorsDirect tests all mirrors concurrently via direct HTTP requests.
@@ -124,14 +125,15 @@ func ProbeMirrorsDirect(timeout time.Duration) *RuleMirror {
 	return nil
 }
 
-// GetActiveRuleMirror returns the active cached mirror or tests direct connectivity.
-// Falls back to the first default mirror if no direct connection is available.
-func GetActiveRuleMirror() RuleMirror {
+// GetActiveRuleMirrorWithStatus returns the active cached mirror and whether it is reachable directly.
+// Falls back to DefaultMirrors[0] with isDirect=false if direct connectivity is unavailable.
+func GetActiveRuleMirrorWithStatus() (RuleMirror, bool) {
 	mirrorMu.RLock()
 	if cachedMirror != nil && time.Since(cachedMirrorTime) < 10*time.Minute {
 		m := *cachedMirror
+		isDirect := cachedMirrorDirect
 		mirrorMu.RUnlock()
-		return m
+		return m, isDirect
 	}
 	mirrorMu.RUnlock()
 
@@ -142,13 +144,22 @@ func GetActiveRuleMirror() RuleMirror {
 	defer mirrorMu.Unlock()
 	if best != nil {
 		cachedMirror = best
+		cachedMirrorDirect = true
 		cachedMirrorTime = time.Now()
-		return *best
+		return *best, true
 	}
 
 	cachedMirror = &DefaultMirrors[0]
+	cachedMirrorDirect = false
 	cachedMirrorTime = time.Now()
-	return DefaultMirrors[0]
+	return DefaultMirrors[0], false
+}
+
+// GetActiveRuleMirror returns the active cached mirror or tests direct connectivity.
+// Falls back to the first default mirror if no direct connection is available.
+func GetActiveRuleMirror() RuleMirror {
+	m, _ := GetActiveRuleMirrorWithStatus()
+	return m
 }
 
 // ProbeOutboundsViaClashAPI probes a list of proxy outbounds via Sing-box Clash API
