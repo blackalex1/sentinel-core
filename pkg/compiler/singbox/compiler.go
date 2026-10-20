@@ -267,6 +267,14 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 		}
 	}
 
+	// Direct DNS for local resolution should never use HTTPS DoH without a proxy (causes timeouts in restricted networks).
+	// Normalize common public resolvers specified as DoH back to fast UDP port 53.
+	if strings.HasPrefix(directDNS, "https://8.8.8.8") || strings.HasPrefix(directDNS, "https://dns.google") {
+		directDNS = "8.8.8.8"
+	} else if strings.HasPrefix(directDNS, "https://77.88.8.8") || strings.HasPrefix(directDNS, "https://dns.yandex") {
+		directDNS = "77.88.8.8"
+	}
+
 	directServerObj := parseSingboxDNSServer("dns-direct", directDNS, "")
 	servers := []map[string]interface{}{directServerObj}
 
