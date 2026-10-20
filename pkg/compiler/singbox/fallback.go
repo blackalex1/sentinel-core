@@ -66,7 +66,7 @@ func ExtractSingboxFallbackSettings(sMap map[string]interface{}, tag string) ([]
 func CalculateSingboxTolerance(strategy string) int {
 	strategy = strings.ToLower(strings.TrimSpace(strategy))
 	if strategy == "priority" || strategy == "primary" || strategy == "fallback" || strategy == "" {
-		return 300
+		return 5000
 	}
 	if strategy == "least_ping" {
 		return 0
@@ -74,14 +74,14 @@ func CalculateSingboxTolerance(strategy string) int {
 	if strategy == "load_balance" || strategy == "round_robin" || strategy == "random" {
 		return 50
 	}
-	return 300
+	return 5000
 }
 
 // BuildSingboxFallbackGroup constructs an urltest outbound group and renamed primary node.
 func BuildSingboxFallbackGroup(tag string, primaryCompiled map[string]interface{}, backups []string, probeURL string, probeInterval int, strategy string) map[string]interface{} {
 	primaryTag := tag + "-primary"
 	toleranceVal := CalculateSingboxTolerance(strategy)
-	if probeInterval <= 0 {
+	if probeInterval <= 0 || probeInterval > 60 {
 		probeInterval = 15
 	}
 	idleTimeoutSec := 1800
@@ -91,13 +91,14 @@ func BuildSingboxFallbackGroup(tag string, primaryCompiled map[string]interface{
 	idleTimeoutStr := fmt.Sprintf("%ds", idleTimeoutSec)
 
 	return map[string]interface{}{
-		"type":         "urltest",
-		"tag":          tag,
-		"outbounds":    append([]string{primaryTag}, backups...),
-		"url":          probeURL,
-		"interval":     fmt.Sprintf("%ds", probeInterval),
-		"tolerance":    toleranceVal,
-		"idle_timeout": idleTimeoutStr,
+		"type":                        "urltest",
+		"tag":                         tag,
+		"outbounds":                   append([]string{primaryTag}, backups...),
+		"url":                         probeURL,
+		"interval":                    fmt.Sprintf("%ds", probeInterval),
+		"tolerance":                   toleranceVal,
+		"idle_timeout":                idleTimeoutStr,
+		"interrupt_exist_connections": true,
 	}
 }
 
@@ -206,19 +207,23 @@ func BuildSingboxMultiNodeFallback(adaptedNode *ast.ServerProfile, backupProfile
 	}
 
 	toleranceVal := CalculateSingboxTolerance(strategy)
+	if probeInt <= 0 || probeInt > 60 {
+		probeInt = 15
+	}
 	idleTimeoutSec := 1800
 	if probeInt >= idleTimeoutSec {
 		idleTimeoutSec = probeInt * 2
 	}
 	idleTimeoutStr := fmt.Sprintf("%ds", idleTimeoutSec)
 	urltestGroup := map[string]interface{}{
-		"type":         "urltest",
-		"tag":          groupTag,
-		"outbounds":    outboundTags,
-		"url":          probeURL,
-		"interval":     fmt.Sprintf("%ds", probeInt),
-		"tolerance":    toleranceVal,
-		"idle_timeout": idleTimeoutStr,
+		"type":                        "urltest",
+		"tag":                         groupTag,
+		"outbounds":                   outboundTags,
+		"url":                         probeURL,
+		"interval":                    fmt.Sprintf("%ds", probeInt),
+		"tolerance":                   toleranceVal,
+		"idle_timeout":                idleTimeoutStr,
+		"interrupt_exist_connections": true,
 	}
 
 	return urltestGroup, compiledNodes, nil
