@@ -10,7 +10,7 @@ import (
 var exitFunc = os.Exit
 
 // Version can be set at compile time via -ldflags="-X main.Version=1.0.0"
-var Version = "0.15"
+var Version = "0.0.15"
 
 func main() {
 	if len(os.Args) < 2 {
