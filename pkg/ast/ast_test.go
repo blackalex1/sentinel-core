@@ -211,7 +211,7 @@ func TestDNSSpec_DefaultAndCustom(t *testing.T) {
 	if def.RemoteServer != "https://1.1.1.1/dns-query" {
 		t.Errorf("unexpected default remote server: %s", def.RemoteServer)
 	}
-	if def.DirectServer != "https://8.8.8.8/dns-query" {
+	if def.DirectServer != "8.8.8.8" {
 		t.Errorf("unexpected default direct server: %s", def.DirectServer)
 	}
 	if def.Strategy != "ipv4_only" {
