@@ -193,18 +193,32 @@ func parseSingboxDNSServer(tag string, serverURL string, detour string) map[stri
 		obj["server_port"] = 443
 
 		knownIPs := map[string]string{
-			"dns.google":               "8.8.8.8",
-			"cloudflare-dns.com":       "1.1.1.1",
-			"one.one.one.one":          "1.1.1.1",
-			"dns.adguard-dns.com":      "94.140.14.14",
-			"dns.yandex.ru":            "77.88.8.8",
+			"dns.google":                "8.8.8.8",
+			"cloudflare-dns.com":        "1.1.1.1",
+			"one.one.one.one":           "1.1.1.1",
+			"dns.adguard-dns.com":       "94.140.14.14",
+			"dns.yandex.ru":             "77.88.8.8",
 			"common.dot.dns.yandex.net": "77.88.8.8",
+		}
+		knownDomainsForIP := map[string]string{
+			"8.8.8.8":      "dns.google",
+			"8.8.4.4":      "dns.google",
+			"1.1.1.1":      "cloudflare-dns.com",
+			"1.0.0.1":      "cloudflare-dns.com",
+			"94.140.14.14": "dns.adguard-dns.com",
+			"77.88.8.8":    "dns.yandex.ru",
 		}
 		if ip, ok := knownIPs[hostPart]; ok {
 			obj["server"] = ip
 			obj["tls"] = map[string]interface{}{
 				"enabled":     true,
 				"server_name": hostPart,
+			}
+		} else if sni, ok := knownDomainsForIP[hostPart]; ok {
+			obj["server"] = hostPart
+			obj["tls"] = map[string]interface{}{
+				"enabled":     true,
+				"server_name": sni,
 			}
 		} else {
 			obj["server"] = hostPart
@@ -232,7 +246,7 @@ func parseSingboxDNSServer(tag string, serverURL string, detour string) map[stri
 
 func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 	remoteDNS := "https://1.1.1.1/dns-query"
-	directDNS := "https://8.8.8.8/dns-query"
+	directDNS := "8.8.8.8"
 	strategy := "ipv4_only"
 
 	if spec.DNS != nil {
@@ -269,9 +283,24 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 	} else if spec.Routing != nil && len(spec.Routing.Outbounds) > 0 {
 		for _, ob := range spec.Routing.Outbounds {
 			t, _ := ob["tag"].(string)
-			if t != "" && t != "direct" && t != "block" && t != "custom-direct" && t != "custom-block" {
+			if t == "" || t == "direct" || t == "block" || t == "custom-direct" || t == "custom-block" {
+				continue
+			}
+			obType, _ := ob["type"].(string)
+			sMap := parseMapOrJSON(ob["settings"])
+			validBackups, _, _, _ := ExtractSingboxFallbackSettings(sMap, t)
+			if obType == "urltest" || obType == "selector" || len(validBackups) > 0 {
 				detourTag = t
 				break
+			}
+		}
+		if detourTag == "" {
+			for _, ob := range spec.Routing.Outbounds {
+				t, _ := ob["tag"].(string)
+				if t != "" && t != "direct" && t != "block" && t != "custom-direct" && t != "custom-block" {
+					detourTag = t
+					break
+				}
 			}
 		}
 	}

@@ -66,7 +66,7 @@ func ExtractSingboxFallbackSettings(sMap map[string]interface{}, tag string) ([]
 func CalculateSingboxTolerance(strategy string) int {
 	strategy = strings.ToLower(strings.TrimSpace(strategy))
 	if strategy == "priority" || strategy == "primary" || strategy == "fallback" || strategy == "" {
-		return 50
+		return 300
 	}
 	if strategy == "least_ping" {
 		return 0
@@ -92,7 +92,7 @@ func BuildSingboxFallbackGroup(tag string, primaryCompiled map[string]interface{
 		"url":          probeURL,
 		"interval":     fmt.Sprintf("%ds", probeInterval),
 		"tolerance":    toleranceVal,
-		"idle_timeout": "15m",
+		"idle_timeout": "30s",
 	}
 }
 
@@ -208,9 +208,11 @@ func BuildSingboxMultiNodeFallback(adaptedNode *ast.ServerProfile, backupProfile
 		"url":          probeURL,
 		"interval":     fmt.Sprintf("%ds", probeInt),
 		"tolerance":    toleranceVal,
-		"idle_timeout": "15m",
+		"idle_timeout": "30s",
 	}
 
 	return urltestGroup, compiledNodes, nil
 }
+
+
 

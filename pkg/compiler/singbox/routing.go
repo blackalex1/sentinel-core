@@ -113,7 +113,9 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 			if tag == "" || tag == "direct" || tag == "block" || obType == "direct" || obType == "block" {
 				continue
 			}
-			if obType == "urltest" || obType == "selector" {
+			sMap := parseMapOrJSON(ob["settings"])
+			validBackups, _, _, _ := ExtractSingboxFallbackSettings(sMap, tag)
+			if obType == "urltest" || obType == "selector" || len(validBackups) > 0 {
 				downloadDetour = tag
 				break
 			}
