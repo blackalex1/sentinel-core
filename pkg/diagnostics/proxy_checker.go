@@ -83,6 +83,7 @@ func CheckSocks5Direct(proxyHostPort, targetHost string, targetPort int, useTLS 
 		tlsConn := tls.Client(conn, &tls.Config{
 			ServerName:         targetHost,
 			InsecureSkipVerify: true,
+			MinVersion:         tls.VersionTLS12,
 		})
 		if err := tlsConn.Handshake(); err != nil {
 			return false, 0, err
@@ -159,6 +160,7 @@ func CheckVLESSRealityProbe(profile *ast.ServerProfile, timeout time.Duration) (
 		ServerName:         sni,
 		NextProtos:         alpn,
 		InsecureSkipVerify: true,
+		MinVersion:         tls.VersionTLS12,
 	}
 
 	tlsConn := tls.Client(conn, tlsConfig)
