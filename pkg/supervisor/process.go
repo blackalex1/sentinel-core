@@ -100,7 +100,12 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 		go prefetchRuleSets(configPath, binDir)
 	}
 
-	cmd := exec.Command(binPath, args...)
+	cleanBin := filepath.Clean(binPath)
+	if strings.ContainsAny(cleanBin, "\x00\r\n`|;&$") {
+		return fmt.Errorf("invalid binary path: %q", binPath)
+	}
+
+	cmd := exec.Command(cleanBin, args...)
 	cmd.Dir = binDir
 	cmd.Env = append(os.Environ(),
 		"XRAY_LOCATION_ASSET="+binDir,
@@ -359,7 +364,12 @@ func (pm *ProcessManager) ValidateCoreConfig(coreName, binPath, configPath strin
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binPath, args...)
+	cleanBin := filepath.Clean(binPath)
+	if strings.ContainsAny(cleanBin, "\x00\r\n`|;&$") {
+		return false, "", fmt.Errorf("invalid binary path: %q", binPath)
+	}
+
+	cmd := exec.CommandContext(ctx, cleanBin, args...)
 	cmd.Dir = binDir
 	cmd.Env = append(os.Environ(),
 		"XRAY_LOCATION_ASSET="+binDir,
@@ -394,7 +404,12 @@ func (pm *ProcessManager) DetectCoreVersion(coreName, binPath string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binPath, args...)
+	cleanBin := filepath.Clean(binPath)
+	if strings.ContainsAny(cleanBin, "\x00\r\n`|;&$") {
+		return "Unknown"
+	}
+
+	cmd := exec.CommandContext(ctx, cleanBin, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil && len(out) == 0 {
 		return "Unknown"

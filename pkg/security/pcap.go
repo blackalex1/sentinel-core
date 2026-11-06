@@ -1,9 +1,9 @@
 package security
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -91,6 +91,18 @@ func WritePacketToPcap(filePath string, packetBytes []byte, timestampMs int64) e
 	return err
 }
 
+func cryptoRandUint32() uint32 {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return binary.BigEndian.Uint32(b[:])
+}
+
+func cryptoRandUint16() uint16 {
+	var b [2]byte
+	_, _ = rand.Read(b[:])
+	return binary.BigEndian.Uint16(b[:])
+}
+
 // SynthesizeRawIPv4Packet constructs a wire-format IPv4 + TCP/UDP packet.
 func SynthesizeRawIPv4Packet(
 	proto string,
@@ -148,7 +160,7 @@ func SynthesizeRawIPv4Packet(
 	ipHeader[0] = 0x45 // IPv4, Header Length = 5 words (20 bytes)
 	ipHeader[1] = 0x00 // DSCP / ECN
 	binary.BigEndian.PutUint16(ipHeader[2:4], uint16(totalLen))
-	binary.BigEndian.PutUint16(ipHeader[4:6], uint16(rand.Intn(65535)))
+	binary.BigEndian.PutUint16(ipHeader[4:6], cryptoRandUint16())
 	ipHeader[6] = 0x40 // Don't Fragment
 	ipHeader[7] = 0x00
 	ipHeader[8] = 64 // TTL
@@ -185,7 +197,7 @@ func SynthesizeAndRecordThreatPcap(
 	timestampMs int64,
 ) error {
 	payload := []byte(fmt.Sprintf("SENTINEL_THREAT_CAPTURE: type=%s dst=%s:%d", threatType, dstIP, dstPort))
-	pkt, err := SynthesizeRawIPv4Packet(proto, srcIP, srcPort, dstIP, dstPort, 0x02 /* SYN */, rand.Uint32(), 0, 64240, payload)
+	pkt, err := SynthesizeRawIPv4Packet(proto, srcIP, srcPort, dstIP, dstPort, 0x02 /* SYN */, cryptoRandUint32(), 0, 64240, payload)
 	if err != nil {
 		return err
 	}

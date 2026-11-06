@@ -107,7 +107,11 @@ func (t *LogTailer) IsRunning() bool {
 }
 
 func (t *LogTailer) runCommand(ctx context.Context) {
-	cmd := exec.CommandContext(ctx, t.source, t.cmdArgs...)
+	cleanSource := filepath.Clean(t.source)
+	if strings.ContainsAny(cleanSource, "\x00\r\n`|;&$") {
+		return
+	}
+	cmd := exec.CommandContext(ctx, cleanSource, t.cmdArgs...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return

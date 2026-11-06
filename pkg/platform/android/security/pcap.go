@@ -1,9 +1,10 @@
 package security
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -124,7 +125,11 @@ func SynthesizeRawIPv4Packet(
 	}
 
 	if srcPort <= 0 {
-		srcPort = 49152 + rand.Intn(16383)
+		if n, err := rand.Int(rand.Reader, big.NewInt(16383)); err == nil {
+			srcPort = 49152 + int(n.Int64())
+		} else {
+			srcPort = 49152
+		}
 	}
 	if window == 0 {
 		window = 64240
