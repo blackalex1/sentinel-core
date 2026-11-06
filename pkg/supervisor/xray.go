@@ -58,7 +58,10 @@ func QueryXrayStats(statsAddr string) (map[string]ClientTraffic, error) {
 		return result, fmt.Errorf("invalid statsAddr: %q", statsAddr)
 	}
 
-	xrayBin := findXrayBinary()
+	xrayBin := filepath.Clean(findXrayBinary())
+	if strings.ContainsAny(xrayBin, "\x00\r\n`|;&$") {
+		return result, fmt.Errorf("invalid xray binary: %q", xrayBin)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
 

@@ -165,7 +165,7 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 					var rangePorts []string
 					for _, p := range r.Ports {
 						pTrim := strings.TrimSpace(p)
-						if num, err := strconv.Atoi(pTrim); err == nil && num > 0 && num <= 65535 {
+						if num, err := strconv.ParseUint(pTrim, 10, 16); err == nil && num > 0 {
 							intPorts = append(intPorts, uint16(num))
 						} else if pTrim != "" {
 							rangePorts = append(rangePorts, pTrim)
