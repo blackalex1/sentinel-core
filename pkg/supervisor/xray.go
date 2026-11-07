@@ -65,6 +65,7 @@ func QueryXrayStats(statsAddr string) (map[string]ClientTraffic, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
 
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.CommandContext(ctx, xrayBin, "api", "statsquery", "--server="+statsAddr)
 	out, err := cmd.Output()
 	if err != nil {

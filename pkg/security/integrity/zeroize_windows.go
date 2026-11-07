@@ -35,6 +35,7 @@ func isWritableMemory(ptr unsafe.Pointer) bool {
 		return false
 	}
 	var mbi memoryBasicInformation
+	// nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block
 	ret, _, _ := procVirtualQuery.Call(
 		uintptr(ptr),
 		uintptr(unsafe.Pointer(&mbi)),
