@@ -3,7 +3,9 @@ package detector
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -108,7 +110,7 @@ func (ca *ConnectionAuditor) AuditConnections(connections []ActiveConnection) Co
 			ca.tracker.RecordIncident(
 				clientID,
 				"SENSITIVE_PORT_ACCESS",
-				conn.DestHost+":"+strconv.Itoa(conn.DestPort),
+				net.JoinHostPort(conn.DestHost, strconv.Itoa(conn.DestPort)),
 				fmt.Sprintf("Active socket connected to sensitive port %d", conn.DestPort),
 				35,
 			)
@@ -212,9 +214,9 @@ func ParseClashConnectionsJSON(rawJSON []byte) ([]ActiveConnection, error) {
 
 		res = append(res, ActiveConnection{
 			ID:            c.ID,
-			User:          user,
-			SourceIP:      c.Metadata.SourceIP,
-			DestHost:      host,
+			User:          strings.Trim(user, "[]"),
+			SourceIP:      strings.Trim(c.Metadata.SourceIP, "[]"),
+			DestHost:      strings.Trim(host, "[]"),
 			DestPort:      p,
 			UploadBytes:   c.Upload,
 			DownloadBytes: c.Download,

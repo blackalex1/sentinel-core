@@ -12,9 +12,9 @@ import (
 )
 
 var (
-	singboxConnRegex      = regexp.MustCompile(`(?:inbound|outbound).*?connection to\s+([^\s:]+):(\d+)`)
-	singboxInboundRegex   = regexp.MustCompile(`inbound connection to ([^:]+):(\d+).*?(?:from process ([^\s,]+)|by process ([^\s,]+)|from user ([^\s,]+)|from ([^\s:]+)(?::\d+)?)`)
-	singboxRejectRegex    = regexp.MustCompile(`(?:rule|router).*?(?:match|rejected).*?(?:for|to)\s+([^\s:]+):(\d+)`)
+	singboxConnRegex      = regexp.MustCompile(`(?:inbound|outbound).*?connection to\s+(\[[a-fA-F0-9:]+\]|[^:\s]+):(\d+)`)
+	singboxInboundRegex   = regexp.MustCompile(`inbound connection to (\[[a-fA-F0-9:]+\]|[^:\s]+):(\d+).*?(?:from process ([^\s,]+)|by process ([^\s,]+)|from user ([^\s,]+)|from (\[[a-fA-F0-9:]+\]|[^:\s]+)(?::\d+)?)`)
+	singboxRejectRegex    = regexp.MustCompile(`(?:rule|router).*?(?:match|rejected).*?(?:for|to)\s+(\[[a-fA-F0-9:]+\]|[^:\s]+):(\d+)`)
 	singboxProcessRegex   = regexp.MustCompile(`(?i)(?:found process path:\s*|process path:\s*)([^\r\n,\]\)]+)|(?i)(?:from process|by process|process[:=\s]+|user[:=\s]+)\s*([^\s,\]\)]+)`)
 	singboxConnIDRegex    = regexp.MustCompile(`\[(\d+)\s+\d+m?s\]`)
 	singboxProcEventRegex = regexp.MustCompile(`(?:router:\s+)?found process path:\s+([^\r\n]+)`)
@@ -22,10 +22,11 @@ var (
 
 	// singboxFromClientRegex extracts (connID, clientIP) from "inbound connection from IP:PORT" lines.
 	// sing-box emits this before the "[user] inbound connection to DST:PORT" line for the same connID.
-	singboxFromClientRegex = regexp.MustCompile(`\[(\d+)\s+[\d.]+(?:ms|µs|us|s|ns|m)\]\s+\S+:\s+inbound connection from\s+([^\s:]+):\d+`)
+	singboxFromClientRegex = regexp.MustCompile(`\[(\d+)\s+[\d.]+(?:ms|µs|us|s|ns|m)\]\s+\S+:\s+inbound connection from\s+(\[[a-fA-F0-9:]+\]|[^:\s]+):\d+`)
 )
 
 func isHotspotOrLANClient(ipStr string) bool {
+	ipStr = strings.Trim(ipStr, "[]")
 	if ipStr == "" || ipStr == "127.0.0.1" || ipStr == "::1" || ipStr == "localhost" {
 		return false
 	}
@@ -33,7 +34,7 @@ func isHotspotOrLANClient(ipStr string) bool {
 	if ip == nil {
 		return false
 	}
-	return ip.IsPrivate() || strings.HasPrefix(ipStr, "192.168.") || strings.HasPrefix(ipStr, "172.") || strings.HasPrefix(ipStr, "10.")
+	return ip.IsPrivate() || strings.HasPrefix(ipStr, "192.168.") || strings.HasPrefix(ipStr, "172.") || strings.HasPrefix(ipStr, "10.") || ip.IsLinkLocalUnicast()
 }
 
 
@@ -89,7 +90,7 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 	if strings.Contains(cleanLine, "inbound connection from") {
 		if fm := singboxFromClientRegex.FindStringSubmatch(cleanLine); len(fm) >= 3 {
 			p.checkAndPruneCache()
-			p.connClientIPCache.Store(fm[1], fm[2])
+			p.connClientIPCache.Store(fm[1], strings.Trim(fm[2], "[]"))
 		}
 		// "from" lines carry no security event by themselves — return early.
 		return nil, false
@@ -144,7 +145,7 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 	// 2. Check for connection to target (inbound or outbound)
 	if matches := singboxConnRegex.FindStringSubmatch(cleanLine); len(matches) >= 3 {
 		port, _ := strconv.Atoi(matches[2])
-		targetHost := matches[1]
+		targetHost := strings.Trim(matches[1], "[]")
 
 		identifiedID := ""
 		identifiedPath := ""
@@ -185,8 +186,8 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 		if identifiedID == "" {
 			if clientIP != "" {
 				identifiedID = clientIP
-			} else if fromMatch := regexp.MustCompile(`(?:from|by)\s+([^\s:]+)`).FindStringSubmatch(cleanLine); len(fromMatch) >= 2 {
-				identifiedID = fromMatch[1]
+			} else if fromMatch := regexp.MustCompile(`(?:from|by)\s+(\[[a-fA-F0-9:]+\]|[^:\s]+)`).FindStringSubmatch(cleanLine); len(fromMatch) >= 2 {
+				identifiedID = strings.Trim(fromMatch[1], "[]")
 			}
 		}
 
@@ -215,7 +216,7 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 		return &ParsedLogEvent{
 			CoreName:    "sing-box",
 			ClientRawID: extractProcessOrUser(cleanLine),
-			TargetHost:  matches[1],
+			TargetHost:  strings.Trim(matches[1], "[]"),
 			TargetPort:  port,
 			EventType:   "ROUTING_REJECT",
 			RawLine:     cleanLine,

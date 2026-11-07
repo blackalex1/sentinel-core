@@ -1992,4 +1992,108 @@ func TestSessionTracker_UnauthenticatedHostProbeDoesNotFlap(t *testing.T) {
 	}
 }
 
+func TestSessionTracker_IPv6_FullAttributionAndCorrelation(t *testing.T) {
+	// 1. parseCleanIP comprehensive verification (RFC 3849 & RFC 5737 test IPs only)
+	ipCases := []struct {
+		input    string
+		expected string
+	}{
+		{"[2001:db8:cafe::42]:54321", "2001:db8:cafe::42"},
+		{"[2001:db8:cafe::42]", "2001:db8:cafe::42"},
+		{"2001:db8:cafe::42", "2001:db8:cafe::42"},
+		{"'[2001:db8:cafe::42]:54321'", "2001:db8:cafe::42"},
+		{"\"[2001:db8:cafe::42]:54321\"", "2001:db8:cafe::42"},
+		{"([2001:db8:cafe::42]:54321)", "2001:db8:cafe::42"},
+		{"tcp:[2001:db8:cafe::42]:54321", "2001:db8:cafe::42"},
+		{"udp:[2001:db8:cafe::42]:54321", "2001:db8:cafe::42"},
+		{"198.51.100.42:54321", "198.51.100.42"},
+		{"198.51.100.42", "198.51.100.42"},
+		{"tcp:198.51.100.42:54321", "198.51.100.42"},
+	}
 
+	for _, tc := range ipCases {
+		got := parseCleanIP(tc.input)
+		if got != tc.expected {
+			t.Errorf("parseCleanIP(%q) = %q, expected %q", tc.input, got, tc.expected)
+		}
+	}
+
+	// 2. extractAnyNonLoopbackIP verification
+	if ext := extractAnyNonLoopbackIP("connection from [2001:db8:cafe::99]:12345"); ext != "2001:db8:cafe::99" {
+		t.Errorf("extractAnyNonLoopbackIP IPv6 failed, got %q", ext)
+	}
+	if ext := extractAnyNonLoopbackIP("connection from [::1]:12345"); ext != "" {
+		t.Errorf("extractAnyNonLoopbackIP loopback should be ignored, got %q", ext)
+	}
+	if ext := extractAnyNonLoopbackIP("15:04:05 timestamp line without IPs"); ext != "" {
+		t.Errorf("extractAnyNonLoopbackIP should not parse time strings as IP, got %q", ext)
+	}
+
+	// Reset tracker
+	st := GetSessionTracker()
+	st.Clear()
+
+	// 3. Sing-box 2-Stage Correlation with IPv6
+	st.ProcessLogLine("sing-box", "+0000 2026-11-08 00:00:00 INFO [10001 0ms] inbound/vless[vless-in]: inbound connection from [2001:db8:cafe::42]:54321")
+	st.ProcessLogLine("sing-box", "+0000 2026-11-08 00:00:00 INFO [10001 10ms] inbound/vless[vless-in]: [sb_ipv6_user@test.com] inbound connection to [2001:db8:1000::1]:443")
+
+	email := st.FindClientByIP("2001:db8:cafe::42")
+	if email != "sb_ipv6_user@test.com" {
+		t.Errorf("FindClientByIP('2001:db8:cafe::42') = %q, expected 'sb_ipv6_user@test.com'", email)
+	}
+	emailBracketed := st.FindClientByIP("[2001:db8:cafe::42]")
+	if emailBracketed != "sb_ipv6_user@test.com" {
+		t.Errorf("FindClientByIP('[2001:db8:cafe::42]') = %q, expected 'sb_ipv6_user@test.com'", emailBracketed)
+	}
+
+	resUser := st.ResolveSingBoxUser("2001:db8:cafe::42", "54321")
+	if resUser != "sb_ipv6_user@test.com" {
+		t.Errorf("ResolveSingBoxUser('2001:db8:cafe::42', '54321') = %q, expected 'sb_ipv6_user@test.com'", resUser)
+	}
+	resUserBracket := st.ResolveSingBoxUser("[2001:db8:cafe::42]", "54321")
+	if resUserBracket != "sb_ipv6_user@test.com" {
+		t.Errorf("ResolveSingBoxUser('[2001:db8:cafe::42]', '54321') = %q, expected 'sb_ipv6_user@test.com'", resUserBracket)
+	}
+
+	// 4. Xray IPv6 Connection
+	st.ProcessLogLine("xray", "2026/11/08 00:00:00 [Info] [4102910] proxy/vless/inbound: from tcp:[2001:db8:cafe::55]:54321 accepted tcp:[2001:db8:1000::1]:443 [vless-in -> direct] email: xray_ipv6_user@test.com")
+	xrayEmail := st.FindClientByIP("2001:db8:cafe::55")
+	if xrayEmail != "xray_ipv6_user@test.com" {
+		t.Errorf("FindClientByIP('2001:db8:cafe::55') = %q, expected 'xray_ipv6_user@test.com'", xrayEmail)
+	}
+
+	// 5. Hysteria 2 Text Connection
+	st.ProcessLogLine("hysteria2", "[TCP] [2001:db8:cafe::66]:54321 -> [2001:db8:1000::1]:443 (user: hy2_text_user@test.com)")
+	hyTextEmail := st.FindClientByIP("2001:db8:cafe::66")
+	if hyTextEmail != "hy2_text_user@test.com" {
+		t.Errorf("FindClientByIP('2001:db8:cafe::66') = %q, expected 'hy2_text_user@test.com'", hyTextEmail)
+	}
+
+	// 6. Hysteria 2 JSON Connection & Disconnect
+	st.ProcessLogLine("hysteria2", `{"time":"2026-11-08T00:00:00Z","level":"info","msg":"client connected","id":"hy2_json_user@test.com","addr":"[2001:db8:cafe::77]:54321"}`)
+	hyJsonEmail := st.FindClientByIP("2001:db8:cafe::77")
+	if hyJsonEmail != "hy2_json_user@test.com" {
+		t.Errorf("FindClientByIP('2001:db8:cafe::77') = %q, expected 'hy2_json_user@test.com'", hyJsonEmail)
+	}
+
+	// Check active sessions before disconnect
+	sessions := st.GetActiveSessions()
+	if len(sessions) != 4 {
+		t.Fatalf("expected 4 active IPv6 sessions, got %d: %+v", len(sessions), sessions)
+	}
+	for _, s := range sessions {
+		if strings.Contains(s.IP, "]") || strings.Contains(s.IP, "[") {
+			t.Errorf("corrupted session IP contains bracket: %q in %+v", s.IP, s)
+		}
+	}
+
+	// Disconnect JSON user
+	st.ProcessLogLine("hysteria2", `{"time":"2026-11-08T00:01:00Z","level":"info","msg":"client disconnected","id":"hy2_json_user@test.com","addr":"[2001:db8:cafe::77]:54321"}`)
+	sessionsAfter := st.GetActiveSessions()
+	if len(sessionsAfter) != 3 {
+		t.Fatalf("expected 3 active sessions after disconnect, got %d: %+v", len(sessionsAfter), sessionsAfter)
+	}
+	if disconnectedEmail := st.FindClientByIP("2001:db8:cafe::77"); disconnectedEmail != "" {
+		t.Errorf("expected hy2_json_user@test.com session to be removed, but found %q", disconnectedEmail)
+	}
+}

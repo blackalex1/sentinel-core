@@ -10,8 +10,8 @@ var (
 	// Xray log formats:
 	// [Info] [12345678] proxy/vless/inbound: from tcp:1.2.3.4:5678 accepted tcp:example.com:443 [vless-in -> direct] email: user@example.com
 	// [Info] [12345678] proxy/socks: from tcp:127.0.0.1:52341 accepted tcp:198.51.100.22:22 (process: ssh.exe)
-	xrayInboundRegex  = regexp.MustCompile(`from\s+(?:tcp|udp):([^\s:]+):\d+\s+accepted\s+(?:tcp|udp):([^\s:]+):(\d+)(?:.*?email:\s*([^\s]+))?`)
-	xrayRejectRegex   = regexp.MustCompile(`(?:rule|router).*?(?:match|rejected).*?(?:for|to)\s+(?:tcp|udp):([^\s:]+):(\d+)|connection from\s+(?:tcp|udp):([^\s:]+):\d+\s+rejected`)
+	xrayInboundRegex  = regexp.MustCompile(`from\s+(?:tcp|udp):(\[[a-fA-F0-9:]+\]|[^:\s]+):\d+\s+accepted\s+(?:tcp|udp):(\[[a-fA-F0-9:]+\]|[^:\s]+):(\d+)(?:.*?email:\s*([^\s]+))?`)
+	xrayRejectRegex   = regexp.MustCompile(`(?i)(?:rule|router|dispatcher|block).*?(?:match|rejected|block|connection).*?(?:for|to)\s+(?:tcp|udp):(\[[a-fA-F0-9:]+\]|[^:\s]+):(\d+)|connection from\s+(?:tcp|udp):(\[[a-fA-F0-9:]+\]|[^:\s]+):\d+\s+rejected`)
 	xrayMetadataRegex = regexp.MustCompile(`(?:169\.254\.169\.254|metadata\.google\.internal|100\.100\.100\.200)`)
 )
 
@@ -48,6 +48,8 @@ func (p *XrayParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 
 	// 2. Check for inbound connection with client email or process
 	if matches := xrayInboundRegex.FindStringSubmatch(cleanLine); len(matches) >= 4 {
+		clientIP := strings.Trim(matches[1], "[]")
+		targetHost := strings.Trim(matches[2], "[]")
 		port, _ := strconv.Atoi(matches[3])
 		email := ""
 		if len(matches) >= 5 {
@@ -59,7 +61,7 @@ func (p *XrayParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 			identifiedID = extractProcessOrUser(cleanLine)
 		}
 		if identifiedID == "" {
-			identifiedID = matches[1] // ClientIP
+			identifiedID = clientIP
 		} else {
 			identifiedID = cleanProcessName(identifiedID)
 		}
@@ -67,8 +69,8 @@ func (p *XrayParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 		return &ParsedLogEvent{
 			CoreName:    "xray",
 			ClientRawID: identifiedID,
-			ClientIP:    matches[1],
-			TargetHost:  matches[2],
+			ClientIP:    clientIP,
+			TargetHost:  targetHost,
 			TargetPort:  port,
 			EventType:   "SENSITIVE_PORT_PROBE",
 			RawLine:     cleanLine,
@@ -77,12 +79,12 @@ func (p *XrayParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 
 	// 3. Check for rejected authentication / routing blocks
 	if matches := xrayRejectRegex.FindStringSubmatch(cleanLine); len(matches) >= 3 {
-		targetHost := matches[1]
+		targetHost := strings.Trim(matches[1], "[]")
 		port, _ := strconv.Atoi(matches[2])
 		clientIP := ""
 		if targetHost == "" && len(matches) >= 4 {
-			clientIP = matches[3]
-			targetHost = matches[3]
+			clientIP = strings.Trim(matches[3], "[]")
+			targetHost = clientIP
 		}
 		return &ParsedLogEvent{
 			CoreName:    "xray",

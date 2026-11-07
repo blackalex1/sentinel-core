@@ -55,11 +55,11 @@ var (
 	singboxConnIDPattern = regexp.MustCompile(`\[(?:conn-)?([0-9]{1,16})\s+[0-9\.]+(?:ms|µs|us|s|ns|m)\]|\[(?:conn-)?([0-9]{5,16})\]`)
 	singboxFromPattern   = regexp.MustCompile(`(?:from|client|accepted(?:\s+(?:tcp|udp):?)?)\s*(?:tcp:|udp:)?\[?([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|[0-9a-fA-F:]{3,39})\]?(?::(\d+))?`)
 	singboxUserPattern   = regexp.MustCompile(`(?:inbound/[^:]+|inbound[^:]*):\s*\[([a-zA-Z0-9_.+@-]+)\]|router:\s*match\[\d+\]\s*(?:inbound/[^\s]+\s+)?\[([a-zA-Z0-9_.+@-]+)\]|\[([a-zA-Z0-9_.+@-]+)\]\s+(?:inbound connection|accepted|router|route|match|connection closed)|accepted\s+(?:tcp|udp):?\S*\s+\[([a-zA-Z0-9_.+@-]+)\]|(?:user|email|client|username|auth)[:=\s]+([a-zA-Z0-9_.+@-]+)|\[([a-zA-Z0-9_.+@-]+@[a-zA-Z0-9_.+@-]+)\]`)
-	xrayAcceptedPattern  = regexp.MustCompile(`(?:from\s+)?(?:tcp:|udp:)?\[?([0-9a-fA-F.:]+)\]?(?::\d+)?\s+accepted`)
+	xrayAcceptedPattern  = regexp.MustCompile(`(?:from\s+)?(?:tcp:|udp:)?(?:\[([0-9a-fA-F:]+)\]|([0-9a-fA-F.:]+))(?::\d+)?\s+accepted`)
 	xrayEmailPattern     = regexp.MustCompile(`email:\s+([^\s,\]]+)`)
-	hyTCPRegex           = regexp.MustCompile(`\[(?:TCP|UDP)\]\s+([^\s:]+):\d+\s+->\s+\S+\s+\(user:\s*([^\s\)]+)\)`)
-	hyAuthAsRegex        = regexp.MustCompile(`(?:client\s+)?authenticated as\s+([^\s(]+)(?:\s+\(?([^\s:)]+)(?::\d+)?\)?)?`)
-	ipCandidatePattern   = regexp.MustCompile(`\b([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})(?::\d+)?\b`)
+	hyTCPRegex           = regexp.MustCompile(`\[(?:TCP|UDP)\]\s+(\[[a-fA-F0-9:]+\]|[^:\s]+):\d+\s+->\s+\S+\s+\(user:\s*([^\s\)]+)\)`)
+	hyAuthAsRegex        = regexp.MustCompile(`(?:client\s+)?authenticated as\s+([^\s(]+)(?:\s+\(?(\[[a-fA-F0-9:]+\]|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|[a-fA-F0-9:]{3,39})(?::\d+)?\)?)?`)
+	ipCandidatePattern   = regexp.MustCompile(`\[?([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|[0-9a-fA-F:]{3,39})\]?(?::\d+)?`)
 )
 
 func isIgnoredTagOrLevel(val string) bool {
@@ -100,7 +100,10 @@ func extractAnyNonLoopbackIP(line string) string {
 	matches := ipCandidatePattern.FindAllStringSubmatch(line, -1)
 	for _, m := range matches {
 		if len(m) > 1 {
-			ipStr := m[1]
+			ipStr := strings.Trim(m[1], "[]")
+			if strings.Count(ipStr, ":") < 2 && strings.Count(ipStr, ".") != 3 {
+				continue
+			}
 			ip := net.ParseIP(ipStr)
 			if ip != nil && !ip.IsLoopback() && !ip.IsUnspecified() {
 				return ipStr
@@ -112,7 +115,17 @@ func extractAnyNonLoopbackIP(line string) string {
 
 func parseCleanIP(raw string) string {
 	raw = strings.TrimSpace(raw)
-	raw = strings.Trim(raw, "[]'\"()")
+	raw = strings.Trim(raw, "'\"()")
+	if strings.HasPrefix(raw, "tcp:") || strings.HasPrefix(raw, "udp:") {
+		raw = strings.TrimPrefix(strings.TrimPrefix(raw, "tcp:"), "udp:")
+	}
+	if host, _, err := net.SplitHostPort(raw); err == nil {
+		return strings.Trim(host, "[]")
+	}
+	raw = strings.Trim(raw, "[]")
+	if ip := net.ParseIP(raw); ip != nil {
+		return raw
+	}
 	if host, _, err := net.SplitHostPort(raw); err == nil {
 		return strings.Trim(host, "[]")
 	}
@@ -174,7 +187,7 @@ func (st *SessionTracker) processSingBoxLine(line string, now int64, nowStr stri
 
 	fullAddr := fromIP
 	if fromIP != "" && fromPort != "" {
-		fullAddr = fromIP + ":" + fromPort
+		fullAddr = net.JoinHostPort(fromIP, fromPort)
 	}
 
 	// 1. Stage 1: Handshake with Source IP / Address
@@ -276,7 +289,12 @@ func (st *SessionTracker) processXrayLine(line string, now int64, nowStr string)
 
 	var srcIP, email string
 	if m := xrayAcceptedPattern.FindStringSubmatch(line); len(m) > 1 {
-		srcIP = parseCleanIP(m[1])
+		for _, g := range m[1:] {
+			if g != "" {
+				srcIP = parseCleanIP(g)
+				break
+			}
+		}
 	}
 	if m := xrayEmailPattern.FindStringSubmatch(line); len(m) > 1 {
 		email = strings.TrimSpace(m[1])
@@ -352,10 +370,12 @@ func (st *SessionTracker) processHysteriaLine(line string, now int64, nowStr str
 		if srcIP == "" {
 			parts := strings.Fields(line)
 			for _, p := range parts {
-				cleanP := strings.Trim(p, "():")
-				if strings.Contains(cleanP, ".") && !strings.Contains(cleanP, "@") {
-					srcIP = parseCleanIP(cleanP)
-					break
+				cleanP := strings.Trim(p, "():[],")
+				if (strings.Contains(cleanP, ".") || strings.Contains(cleanP, ":")) && !strings.Contains(cleanP, "@") {
+					if testIP := parseCleanIP(cleanP); net.ParseIP(testIP) != nil {
+						srcIP = testIP
+						break
+					}
 				}
 			}
 		}
@@ -576,7 +596,7 @@ func (st *SessionTracker) FindClientByIP(ip string) string {
 	defer st.mu.RUnlock()
 
 	for _, s := range st.sessions {
-		if s.IP == cleanIP || s.IP == ip {
+		if s.IP == cleanIP || s.IP == ip || strings.Trim(s.IP, "[]") == strings.Trim(cleanIP, "[]") {
 			return s.Email
 		}
 	}
@@ -643,12 +663,21 @@ func (st *SessionTracker) ResolveSingBoxUser(srcIP, srcPort string) string {
 	defer st.mu.RUnlock()
 
 	if srcIP != "" && srcPort != "" {
-		addr := fmt.Sprintf("%s:%s", srcIP, srcPort)
+		cleanIP := strings.Trim(srcIP, "[]")
+		addr := net.JoinHostPort(cleanIP, srcPort)
 		if u, ok := st.singboxAddrUsers[addr]; ok && u != "" {
+			return u
+		}
+		legacyAddr := fmt.Sprintf("%s:%s", cleanIP, srcPort)
+		if u, ok := st.singboxAddrUsers[legacyAddr]; ok && u != "" {
 			return u
 		}
 	}
 	if srcIP != "" {
+		cleanIP := strings.Trim(srcIP, "[]")
+		if u, ok := st.singboxIPUsers[cleanIP]; ok && u != "" {
+			return u
+		}
 		if u, ok := st.singboxIPUsers[srcIP]; ok && u != "" {
 			return u
 		}

@@ -279,3 +279,136 @@ func TestClientRiskTracker_IncidentListBounded(t *testing.T) {
 	}
 }
 
+func TestIPv6_LogDetection_AllCores(t *testing.T) {
+	// 1. Xray Parser with IPv6 client and IPv6 target (RFC 3849)
+	xrayParser := NewXrayParser()
+	xrayLog := "2026/11/08 00:00:00 [Info] [4102910] proxy/vless/inbound: from tcp:[2001:db8:cafe::42]:54321 accepted tcp:[2001:db8:1000::1]:443 [vless-in -> direct] email: alice_v6@example.com"
+	evXray, ok := xrayParser.ParseLogLine(xrayLog)
+	if !ok || evXray == nil {
+		t.Fatalf("failed to parse IPv6 Xray log line")
+	}
+	if evXray.ClientRawID != "alice_v6@example.com" {
+		t.Errorf("expected ClientRawID 'alice_v6@example.com', got '%s'", evXray.ClientRawID)
+	}
+	if evXray.ClientIP != "2001:db8:cafe::42" {
+		t.Errorf("expected ClientIP '2001:db8:cafe::42', got '%s'", evXray.ClientIP)
+	}
+	if evXray.TargetHost != "2001:db8:1000::1" {
+		t.Errorf("expected TargetHost '2001:db8:1000::1', got '%s'", evXray.TargetHost)
+	}
+	if evXray.TargetPort != 443 {
+		t.Errorf("expected TargetPort 443, got %d", evXray.TargetPort)
+	}
+
+	// Xray reject with IPv6 target
+	xrayReject := "2026/11/08 00:00:00 [Warning] [4102911] app/dispatcher: default: block connection to tcp:[2001:db8:1000::1]:22"
+	evXrayReject, ok := xrayParser.ParseLogLine(xrayReject)
+	if !ok || evXrayReject == nil {
+		t.Fatalf("failed to parse IPv6 Xray reject log line")
+	}
+	if evXrayReject.TargetHost != "2001:db8:1000::1" {
+		t.Errorf("expected TargetHost '2001:db8:1000::1', got '%s'", evXrayReject.TargetHost)
+	}
+	if evXrayReject.TargetPort != 22 {
+		t.Errorf("expected TargetPort 22, got %d", evXrayReject.TargetPort)
+	}
+
+	// 2. Sing-box Parser with 2-stage IPv6 correlation
+	sbParser := NewSingboxParser()
+	sbStage1 := "[12345678 0ms] vless-in: inbound connection from [2001:db8:cafe::42]:54321"
+	ev1, ok1 := sbParser.ParseLogLine(sbStage1)
+	if ok1 || ev1 != nil {
+		t.Errorf("Stage 1 'from' line should not yield security event directly")
+	}
+
+	sbStage2 := "[12345678 5ms] [user_sb_v6@example.com] inbound connection to [2001:db8:1000::1]:443"
+	ev2, ok2 := sbParser.ParseLogLine(sbStage2)
+	if !ok2 || ev2 == nil {
+		t.Fatalf("failed to parse Stage 2 IPv6 Sing-box log line")
+	}
+	if ev2.ClientRawID != "user_sb_v6@example.com" {
+		t.Errorf("expected ClientRawID 'user_sb_v6@example.com', got '%s'", ev2.ClientRawID)
+	}
+	if ev2.ClientIP != "2001:db8:cafe::42" {
+		t.Errorf("expected ClientIP '2001:db8:cafe::42' correlated from cache, got '%s'", ev2.ClientIP)
+	}
+	if ev2.TargetHost != "2001:db8:1000::1" {
+		t.Errorf("expected TargetHost '2001:db8:1000::1', got '%s'", ev2.TargetHost)
+	}
+	if ev2.TargetPort != 443 {
+		t.Errorf("expected TargetPort 443, got %d", ev2.TargetPort)
+	}
+
+	// Sing-box reject with IPv6 target
+	sbReject := "router: match[0] to [2001:db8:1000::1]:22 rejected"
+	evSbReject, ok := sbParser.ParseLogLine(sbReject)
+	if !ok || evSbReject == nil {
+		t.Fatalf("failed to parse IPv6 Sing-box reject log line")
+	}
+	if evSbReject.TargetHost != "2001:db8:1000::1" {
+		t.Errorf("expected TargetHost '2001:db8:1000::1', got '%s'", evSbReject.TargetHost)
+	}
+	if evSbReject.TargetPort != 22 {
+		t.Errorf("expected TargetPort 22, got %d", evSbReject.TargetPort)
+	}
+
+	// 3. Hysteria 2 Parser with IPv6 client and target
+	hyParser := NewHysteriaParser()
+	hyTextLog := "[TCP] [2001:db8:cafe::42]:54321 -> [2001:db8:1000::1]:22 (user: alice_hy_v6)"
+	evHy, ok := hyParser.ParseLogLine(hyTextLog)
+	if !ok || evHy == nil {
+		t.Fatalf("failed to parse IPv6 Hysteria text log line")
+	}
+	if evHy.ClientRawID != "alice_hy_v6" {
+		t.Errorf("expected ClientRawID 'alice_hy_v6', got '%s'", evHy.ClientRawID)
+	}
+	if evHy.ClientIP != "2001:db8:cafe::42" {
+		t.Errorf("expected ClientIP '2001:db8:cafe::42', got '%s'", evHy.ClientIP)
+	}
+	if evHy.TargetHost != "2001:db8:1000::1" {
+		t.Errorf("expected TargetHost '2001:db8:1000::1', got '%s'", evHy.TargetHost)
+	}
+	if evHy.TargetPort != 22 {
+		t.Errorf("expected TargetPort 22, got %d", evHy.TargetPort)
+	}
+
+	// Hysteria 2 JSON log line
+	hyJsonLog := `{"time":"2026-11-08T00:00:00Z","level":"info","msg":"tcp request","id":"alice_hy_json","reqAddr":"[2001:db8:1000::1]:22","client_ip":"[2001:db8:cafe::42]:54321"}`
+	evHyJson, ok := hyParser.ParseLogLine(hyJsonLog)
+	if !ok || evHyJson == nil {
+		t.Fatalf("failed to parse IPv6 Hysteria JSON log line")
+	}
+	if evHyJson.ClientRawID != "alice_hy_json" {
+		t.Errorf("expected ClientRawID 'alice_hy_json', got '%s'", evHyJson.ClientRawID)
+	}
+	if evHyJson.ClientIP != "2001:db8:cafe::42" {
+		t.Errorf("expected ClientIP '2001:db8:cafe::42', got '%s'", evHyJson.ClientIP)
+	}
+	if evHyJson.TargetHost != "2001:db8:1000::1" {
+		t.Errorf("expected TargetHost '2001:db8:1000::1', got '%s'", evHyJson.TargetHost)
+	}
+	if evHyJson.TargetPort != 22 {
+		t.Errorf("expected TargetPort 22, got %d", evHyJson.TargetPort)
+	}
+
+	// 4. LogAuditor multi-core with IPv6 audit trail
+	tracker := NewClientRiskTracker(DefaultRiskScorerConfig(), nil)
+	defer tracker.Stop()
+	reg := NewClientRegistry()
+	auditor := NewLogAuditor(tracker, reg, []int{22, 443})
+
+	auditor.AuditLogLine("xray", xrayLog)
+	auditor.AuditLogLine("sing-box", sbStage1)
+	auditor.AuditLogLine("sing-box", sbStage2)
+	auditor.AuditLogLine("hysteria2", hyTextLog)
+
+	pXray, exists := tracker.GetProfile("alice_v6@example.com")
+	if !exists || pXray.RiskScore != 35 {
+		t.Errorf("expected profile for alice_v6@example.com with score 35, got exists=%v profile=%+v", exists, pXray)
+	}
+
+	pHy, exists := tracker.GetProfile("alice_hy_v6")
+	if !exists || pHy.RiskScore != 35 {
+		t.Errorf("expected profile for alice_hy_v6 with score 35, got exists=%v profile=%+v", exists, pHy)
+	}
+}

@@ -2,6 +2,8 @@ package detector
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 	"sync"
 )
 
@@ -80,7 +82,7 @@ func (a *LogAuditor) AuditLogLine(coreName, line string) {
 			a.tracker.RecordIncident(
 				primaryID,
 				"SENSITIVE_PORT_PROBE",
-				fmt.Sprintf("%s:%d", event.TargetHost, event.TargetPort),
+				net.JoinHostPort(event.TargetHost, strconv.Itoa(event.TargetPort)),
 				fmt.Sprintf("[%s] Client opened connection to sensitive system port %d", event.CoreName, event.TargetPort),
 				35,
 			)
@@ -91,7 +93,7 @@ func (a *LogAuditor) AuditLogLine(coreName, line string) {
 			a.tracker.RecordIncident(
 				primaryID,
 				"SENSITIVE_PORT_PROBE",
-				fmt.Sprintf("%s:%d", event.TargetHost, event.TargetPort),
+				net.JoinHostPort(event.TargetHost, strconv.Itoa(event.TargetPort)),
 				fmt.Sprintf("[%s] Core blocked unauthorized request to port %d", event.CoreName, event.TargetPort),
 				35,
 			)
