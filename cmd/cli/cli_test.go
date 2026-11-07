@@ -325,19 +325,25 @@ func TestCLI_Supervisor_Extended(t *testing.T) {
 		dummyBin, err = exec.LookPath("cmd")
 	}
 	if err == nil {
+		mockBinName := "sing-box" + filepath.Ext(dummyBin)
+		targetMock := filepath.Join(tmpDir, mockBinName)
+		if data, rErr := os.ReadFile(dummyBin); rErr == nil {
+			_ = os.WriteFile(targetMock, data, 0755)
+			dummyBin = targetMock
+		}
 		cfgFile := filepath.Join(tmpDir, "cfg.json")
 		_ = os.WriteFile(cfgFile, []byte(`{"inbounds":[]}`), 0644)
 
 		// Start
-		os.Args = []string{"sentinel-core", "supervisor", "start", "--core", "xray", "--bin", dummyBin, "--config", cfgFile}
+		os.Args = []string{"sentinel-core", "supervisor", "start", "--core", "sing-box", "--bin", dummyBin, "--config", cfgFile}
 		_ = captureOutput(func() { handleSupervisor() })
 
 		// Restart
-		os.Args = []string{"sentinel-core", "supervisor", "restart", "--core", "xray", "--bin", dummyBin, "--config", cfgFile}
+		os.Args = []string{"sentinel-core", "supervisor", "restart", "--core", "sing-box", "--bin", dummyBin, "--config", cfgFile}
 		_ = captureOutput(func() { handleSupervisor() })
 
 		// Stop
-		os.Args = []string{"sentinel-core", "supervisor", "stop", "--core", "xray"}
+		os.Args = []string{"sentinel-core", "supervisor", "stop", "--core", "sing-box"}
 		_ = captureOutput(func() { handleSupervisor() })
 
 		// Validate

@@ -828,6 +828,59 @@ func TestProcessManager_DetectCoreVersion(t *testing.T) {
 	}
 }
 
+func TestParseCoreVersionOutput(t *testing.T) {
+	cases := []struct {
+		name     string
+		output   string
+		expected string
+	}{
+		{
+			name:     "Hysteria banner with tab",
+			output:   "░█░█░█░█░█▀▀░▀█▀░█▀▀░█▀▄░▀█▀░█▀█░░░▀▀▄\nVersion:\tv2.12.1\nBuildDate:\t2026-08-09T01:58:23Z\nLibraries:\tquic-go=v0.61.1\n",
+			expected: "v2.12.1",
+		},
+		{
+			name:     "Hysteria simple",
+			output:   "Hysteria v2.13.0\n",
+			expected: "v2.13.0",
+		},
+		{
+			name:     "sing-box version line",
+			output:   "sing-box version 1.14.0-beta.14\nEnvironment: go1.26.5 windows/amd64\n",
+			expected: "v1.14.0-beta.14",
+		},
+		{
+			name:     "Xray version line",
+			output:   "Xray 1.8.24 (Xray, Penetrates Everything.) Custom\n",
+			expected: "v1.8.24",
+		},
+		{
+			name:     "Xray 24 version line",
+			output:   "Xray 24.11.30 (Xray, Penetrates Everything.)\n",
+			expected: "v24.11.30",
+		},
+		{
+			name:     "Hysteria app tag",
+			output:   "hysteria version app/2.13.0\n",
+			expected: "v2.13.0",
+		},
+		{
+			name:     "Empty / invalid output",
+			output:   "invalid garbage\nrandom line",
+			expected: "Unknown",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseCoreVersionOutput(tc.output)
+			if got != tc.expected {
+				t.Errorf("parseCoreVersionOutput(%q) = %q, expected %q", tc.name, got, tc.expected)
+			}
+		})
+	}
+}
+
 func TestNormalizeAndBinBaseName(t *testing.T) {
 	cases := []struct {
 		input       string
