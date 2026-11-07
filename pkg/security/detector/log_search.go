@@ -21,8 +21,9 @@ var (
 	hyAuthTextRegex   = regexp.MustCompile(`auth\s*=\s*([^\s,}]+)`)
 	hyConnTextRegex   = regexp.MustCompile(`connection:\s*([^\s(]+)`)
 	hyEmailRegex      = regexp.MustCompile(`[\w\.-]+@[\w\.-]+\.\w+`)
-	hyDestHostRegex   = regexp.MustCompile(`->\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\d+`)
-	hyClientConnRegex = regexp.MustCompile(`client connected\s+(\S+)`)
+	hyDestHostRegex   = regexp.MustCompile(`->\s*(\[[a-fA-F0-9:]+\]|[^:\s]+):\d+`)
+	hyClientConnRegex = regexp.MustCompile(`client connected:?(?:\s*auth=[^,]+,)?\s*(\[[a-fA-F0-9:]+\]|[^:\s,]+:\d+|\S+)`)
+	hyConnIPRegex     = regexp.MustCompile(`connection:\s*[^\s(]+\s*\(([^)]+)\)`)
 
 	sbInboundTagRegex = regexp.MustCompile(`(?:inbound/[^:]+|inbound[^:]*):\s*\[([a-zA-Z0-9_\.\-]+)\]\s+inbound connection to`)
 	sbBracketUser     = regexp.MustCompile(`\[([a-zA-Z0-9_\.\-]+)\]\s+inbound connection to`)
@@ -238,11 +239,12 @@ func FindEmailInHysteriaLog(lines []string, dstIP string, dstPort int, maxAgeSec
 
 		if dstIP != "" {
 			destHost := extractDestHost(line)
+			cleanDstIP := strings.Trim(dstIP, "[]")
 			if destHost != "" {
-				if destHost != dstIP {
+				if strings.Trim(destHost, "[]") != cleanDstIP {
 					continue
 				}
-			} else if !strings.Contains(line, dstIP) {
+			} else if !strings.Contains(line, cleanDstIP) {
 				continue
 			}
 		}
@@ -279,9 +281,16 @@ func FindClientIPForEmailInHysteriaLog(lines []string, email string, maxAgeSec i
 			}
 		}
 
-		if strings.Contains(line, "client connected") && strings.Contains(line, email) {
-			if m := hyClientConnRegex.FindStringSubmatch(line); len(m) >= 2 {
-				return parseCleanIP(m[1])
+		if strings.Contains(line, email) {
+			if strings.Contains(line, "client connected") {
+				if m := hyClientConnRegex.FindStringSubmatch(line); len(m) >= 2 {
+					return parseCleanIP(m[1])
+				}
+			}
+			if strings.Contains(line, "connection:") {
+				if m := hyConnIPRegex.FindStringSubmatch(line); len(m) >= 2 {
+					return parseCleanIP(m[1])
+				}
 			}
 		}
 	}
@@ -387,11 +396,12 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 		// Verify dstIP strictly if specified
 		if dstIP != "" {
 			destHost := extractDestHost(line)
+			cleanDstIP := strings.Trim(dstIP, "[]")
 			if destHost != "" {
-				if destHost != dstIP {
+				if strings.Trim(destHost, "[]") != cleanDstIP {
 					continue
 				}
-			} else if !strings.Contains(line, dstIP) {
+			} else if !strings.Contains(line, cleanDstIP) {
 				continue
 			}
 		}

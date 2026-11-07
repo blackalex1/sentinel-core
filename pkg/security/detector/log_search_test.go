@@ -2,6 +2,7 @@ package detector
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -67,6 +68,20 @@ func TestLogSearchHysteria(t *testing.T) {
 	emailUnmatched := FindEmailInHysteriaLog(lines, "198.51.100.137", 443, 300)
 	if emailUnmatched != "" {
 		t.Errorf("expected empty email for non-matching dst IP on port 443, got %q", emailUnmatched)
+	}
+
+	// 4. Text-based Hysteria logs
+	textLines := []string{
+		fmt.Sprintf("%s [info] client connected: auth=hysteria_text_user@victim.org, 203.0.113.5:44321", nowStr),
+		fmt.Sprintf("%s [debug] connection: hysteria_text_user@victim.org (203.0.113.5:44321) -> 198.51.100.42:22", nowStr),
+	}
+	emailText := FindEmailInHysteriaLog(textLines, "198.51.100.42", 22, 300)
+	if emailText != "hysteria_text_user@victim.org" {
+		t.Errorf("expected hysteria_text_user@victim.org, got %q", emailText)
+	}
+	ipText := FindClientIPForEmailInHysteriaLog(textLines, "hysteria_text_user@victim.org", 300)
+	if ipText != "203.0.113.5" {
+		t.Errorf("expected 203.0.113.5, got %q", ipText)
 	}
 }
 
@@ -172,5 +187,129 @@ func TestLogSearch_IPv6_RFC3849(t *testing.T) {
 	clientIP := FindClientIPForEmailInHysteriaLog(hyLines, "hy2_ipv6_user@test.example", 300)
 	if clientIP != "2001:db8:cafe::42" {
 		t.Errorf("expected full IPv6 client IP 2001:db8:cafe::42, got %q", clientIP)
+	}
+}
+
+func TestCascadedThreeServerRoutingAndAttribution_IPv4_to_IPv6(t *testing.T) {
+	now := time.Now()
+	nowStr := now.Format("2006/01/02 15:04:05")
+	nowISO := now.UTC().Format("2006-01-02T15:04:05Z")
+	tzPrefix := now.Format("-0700")
+
+	// Target sensitive service (RFC 3849 IPv6 test target on SSH port 22)
+	targetIPv6 := "2001:db8:bad:c0de::1"
+	targetPort := 22
+
+	// =========================================================================
+	// SERVER 1: Gateway / Home Node (Client connects via IPv4, routes out via IPv4)
+	// Real client: attacker_v4_v6@corp.lan from RFC 5737 IP 198.51.100.42
+	// Outbound tunnel to Server 2 over IPv4: 198.51.100.20:443
+	// =========================================================================
+	server1Logs := []string{
+		fmt.Sprintf("%s %s INFO [10001 0ms] inbound/vless[vless-phone-in]: inbound connection from 198.51.100.42:51234", tzPrefix, nowStr),
+		fmt.Sprintf("%s %s INFO [10001 5ms] inbound/vless[vless-phone-in]: [attacker_v4_v6@corp.lan] inbound connection to [%s]:%d", tzPrefix, nowStr, targetIPv6, targetPort),
+		fmt.Sprintf("%s [info] 198.51.100.42:51234 accepted tcp:[%s]:%d [vless-phone-in >> out-server2-v4] email: attacker_v4_v6@corp.lan", nowStr, targetIPv6, targetPort),
+	}
+
+	// =========================================================================
+	// SERVER 2: Intermediate Relay / Transit Hop
+	// Inbound: IPv4 connection from Server 1 (198.51.100.10:45123), user: server1_transit_tunnel@corp.lan
+	// Outbound: IPv6 tunnel to Server 3 ([2001:db8:2000::3]:8443)
+	// =========================================================================
+	server2Logs := []string{
+		fmt.Sprintf(`{"time":"%s","auth":"server1_transit_tunnel@corp.lan","addr":"198.51.100.10:45123"}`, nowISO),
+		fmt.Sprintf(`{"time":"%s","id":"server1_transit_tunnel@corp.lan","reqAddr":"[%s]:%d"}`, nowISO, targetIPv6, targetPort),
+		fmt.Sprintf("%s [info] 198.51.100.10:45123 accepted tcp:[%s]:%d [v4-relay-in >> out-server3-v6] email: server1_transit_tunnel@corp.lan", nowStr, targetIPv6, targetPort),
+	}
+
+	// =========================================================================
+	// SERVER 3: Exit VPS (Receives traffic over IPv6, exits to sensitive target)
+	// Inbound: IPv6 connection from Server 2 ([2001:db8:2000::2]:52341), user: server2_transit_tunnel@corp.lan
+	// Outbound: Direct connection to sensitive target [2001:db8:bad:c0de::1]:22
+	// Also has innocent user browsing HTTPS
+	// =========================================================================
+	server3Logs := []string{
+		fmt.Sprintf(`{"time":"%s","auth":"server2_transit_tunnel@corp.lan","addr":"[2001:db8:2000::2]:52341"}`, nowISO),
+		fmt.Sprintf(`{"time":"%s","id":"server2_transit_tunnel@corp.lan","reqAddr":"[%s]:%d"}`, nowISO, targetIPv6, targetPort),
+		fmt.Sprintf("[TCP] [2001:db8:2000::2]:52341 -> [%s]:%d (user: server2_transit_tunnel@corp.lan)", targetIPv6, targetPort),
+		fmt.Sprintf("%s [info] [2001:db8:2000::2]:52341 accepted tcp:[%s]:%d [v6-exit-in >> direct] email: server2_transit_tunnel@corp.lan", nowStr, targetIPv6, targetPort),
+		// Innocent client on Server 3
+		fmt.Sprintf(`{"time":"%s","id":"innocent_user@corp.lan","reqAddr":"[2001:db8:good::1]:443"}`, nowISO),
+	}
+
+	// -------------------------------------------------------------------------
+	// STEP 1: Investigation on SERVER 3 (Incident detection point)
+	// -------------------------------------------------------------------------
+	s3EmailJSON := FindEmailInHysteriaLog(server3Logs, targetIPv6, targetPort, 45)
+	if s3EmailJSON != "server2_transit_tunnel@corp.lan" {
+		t.Fatalf("Server 3 Hysteria investigation failed, expected 'server2_transit_tunnel@corp.lan', got %q", s3EmailJSON)
+	}
+	s3IP := FindClientIPForEmailInHysteriaLog(server3Logs, s3EmailJSON, 45)
+	if s3IP != "2001:db8:2000::2" {
+		t.Errorf("Server 3 client IP resolution failed, expected '2001:db8:2000::2', got %q", s3IP)
+	}
+
+	// Also verify Xray search on Server 3
+	s3EmailXray, s3IPXray, _ := FindEmailAndIPInXrayLog(server3Logs, "", targetIPv6, targetPort, 45)
+	if s3EmailXray != "server2_transit_tunnel@corp.lan" {
+		t.Fatalf("Server 3 Xray investigation failed, expected 'server2_transit_tunnel@corp.lan', got %q", s3EmailXray)
+	}
+	if s3IPXray != "2001:db8:2000::2" {
+		t.Errorf("Server 3 Xray client IP resolution failed, expected '2001:db8:2000::2', got %q", s3IPXray)
+	}
+
+	// -------------------------------------------------------------------------
+	// STEP 2: Investigation on SERVER 2 (Intermediate relay node)
+	// Server 3 found tunnel from Server 2 -> Now investigate Server 2 for the same target!
+	// -------------------------------------------------------------------------
+	s2EmailHys := FindEmailInHysteriaLog(server2Logs, targetIPv6, targetPort, 45)
+	if s2EmailHys != "server1_transit_tunnel@corp.lan" {
+		t.Fatalf("Server 2 Hysteria investigation failed, expected 'server1_transit_tunnel@corp.lan', got %q", s2EmailHys)
+	}
+	s2IPHys := FindClientIPForEmailInHysteriaLog(server2Logs, s2EmailHys, 45)
+	if s2IPHys != "198.51.100.10" {
+		t.Errorf("Server 2 client IP resolution failed, expected '198.51.100.10', got %q", s2IPHys)
+	}
+
+	s2EmailXray, s2IPXray, _ := FindEmailAndIPInXrayLog(server2Logs, "", targetIPv6, targetPort, 45)
+	if s2EmailXray != "server1_transit_tunnel@corp.lan" {
+		t.Fatalf("Server 2 Xray investigation failed, expected 'server1_transit_tunnel@corp.lan', got %q", s2EmailXray)
+	}
+	if s2IPXray != "198.51.100.10" {
+		t.Errorf("Server 2 Xray client IP resolution failed, expected '198.51.100.10', got %q", s2IPXray)
+	}
+
+	// -------------------------------------------------------------------------
+	// STEP 3: Investigation on SERVER 1 (Origin Gateway)
+	// Server 2 found tunnel from Server 1 -> Now investigate Server 1 for the same target!
+	// Must uncover the TRUE original client attacker_v4_v6@corp.lan!
+	// -------------------------------------------------------------------------
+	s1Email, s1IP, s1Tag := FindEmailAndIPInXrayLog(server1Logs, "", targetIPv6, targetPort, 45)
+	if s1Email != "attacker_v4_v6@corp.lan" {
+		t.Fatalf("Server 1 origin investigation failed, expected 'attacker_v4_v6@corp.lan', got %q", s1Email)
+	}
+	if s1IP != "198.51.100.42" {
+		t.Errorf("Server 1 origin client IP failed, expected '198.51.100.42', got %q", s1IP)
+	}
+	if !strings.Contains(s1Tag, "vless-phone-in") {
+		t.Errorf("Server 1 inbound tag failed, expected 'vless-phone-in', got %q", s1Tag)
+	}
+
+	// -------------------------------------------------------------------------
+	// STEP 4: Test bracketed query equivalence [2001:db8:bad:c0de::1] vs 2001:db8:bad:c0de::1
+	// -------------------------------------------------------------------------
+	bracketQuery := fmt.Sprintf("[%s]", targetIPv6)
+	s1EmailBracket, _, _ := FindEmailAndIPInXrayLog(server1Logs, "", bracketQuery, targetPort, 45)
+	if s1EmailBracket != "attacker_v4_v6@corp.lan" {
+		t.Errorf("Bracketed query %q failed to match on Server 1, got %q", bracketQuery, s1EmailBracket)
+	}
+
+	// -------------------------------------------------------------------------
+	// STEP 5: Negative checks
+	// Innocent user on Server 3 must never be attributed
+	// -------------------------------------------------------------------------
+	innocentCheck := FindEmailInHysteriaLog(server3Logs, "2001:db8:good::1", 22, 45)
+	if innocentCheck != "" {
+		t.Errorf("expected empty email for port 22 on good host, got %q", innocentCheck)
 	}
 }
