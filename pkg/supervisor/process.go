@@ -64,7 +64,13 @@ var allowedSupervisorBinaries = map[string]bool{
 
 func isAllowedCoreBinary(binPath string) bool {
 	base := strings.ToLower(filepath.Base(binPath))
-	return allowedSupervisorBinaries[base]
+	if allowedSupervisorBinaries[base] {
+		return true
+	}
+	if strings.HasPrefix(base, "hysteria") || strings.HasPrefix(base, "sing-box") || strings.HasPrefix(base, "xray") {
+		return true
+	}
+	return false
 }
 
 // StartCore starts a proxy engine process
