@@ -871,6 +871,12 @@ func TestProcessManager_StartStopLifecycle(t *testing.T) {
 	if err != nil {
 		t.Skip("neither powershell nor cmd available for process start test")
 	}
+	mockBinName := "sing-box" + filepath.Ext(dummyBin)
+	targetMock := filepath.Join(tmpDir, mockBinName)
+	if data, rErr := os.ReadFile(dummyBin); rErr == nil {
+		_ = os.WriteFile(targetMock, data, 0755)
+		dummyBin = targetMock
+	}
 
 	dummyConfig = filepath.Join(tmpDir, "dummy_config.json")
 	_ = os.WriteFile(dummyConfig, []byte(`{"test": true}`), 0644)
