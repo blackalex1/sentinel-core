@@ -129,6 +129,12 @@ type ServerProfile struct {
 func (p *ServerProfile) Normalize() {
 	p.Protocol = strings.ToLower(strings.TrimSpace(p.Protocol))
 	p.Address = strings.TrimSpace(p.Address)
+	if strings.HasPrefix(p.Address, "[") && strings.HasSuffix(p.Address, "]") {
+		clean := strings.Trim(p.Address, "[]")
+		if strings.Contains(clean, ":") {
+			p.Address = clean
+		}
+	}
 	if p.Transport == "" {
 		p.Transport = TransportTCP
 	} else {

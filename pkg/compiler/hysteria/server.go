@@ -26,7 +26,12 @@ func (sc *ServerCompiler) CompileServerWithDNS(inbound ast.ServerInboundSpec, fo
 	if inbound.PortHop != "" && strings.Contains(inbound.PortHop, "-") {
 		listenAddr = fmt.Sprintf(":%s", strings.TrimPrefix(inbound.PortHop, ":"))
 	} else if inbound.ListenAddress != "" && inbound.ListenAddress != "0.0.0.0" && inbound.ListenAddress != "::" {
-		listenAddr = fmt.Sprintf("%s:%d", inbound.ListenAddress, inbound.Port)
+		addr := strings.Trim(inbound.ListenAddress, "[]")
+		if strings.Contains(addr, ":") {
+			listenAddr = fmt.Sprintf("[%s]:%d", addr, inbound.Port)
+		} else {
+			listenAddr = fmt.Sprintf("%s:%d", addr, inbound.Port)
+		}
 	}
 
 	adminPort := inbound.AdminPort

@@ -31,7 +31,11 @@ func BuildWireGuardConf(node *ast.ServerProfile) (string, error) {
 	if node.PreSharedKey != "" {
 		sb.WriteString(fmt.Sprintf("PresharedKey = %s\n", node.PreSharedKey))
 	}
-	sb.WriteString(fmt.Sprintf("Endpoint = %s:%d\n", node.Address, node.Port))
+	endpoint := fmt.Sprintf("%s:%d", node.Address, node.Port)
+	if strings.Contains(node.Address, ":") && !strings.HasPrefix(node.Address, "[") {
+		endpoint = fmt.Sprintf("[%s]:%d", strings.Trim(node.Address, "[]"), node.Port)
+	}
+	sb.WriteString(fmt.Sprintf("Endpoint = %s\n", endpoint))
 	sb.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
 	sb.WriteString("PersistentKeepalive = 25\n")
 
