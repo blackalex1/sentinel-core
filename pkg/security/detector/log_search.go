@@ -2,6 +2,7 @@ package detector
 
 import (
 	"encoding/json"
+	"net"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,7 +22,7 @@ var (
 	hyConnTextRegex   = regexp.MustCompile(`connection:\s*([^\s(]+)`)
 	hyEmailRegex      = regexp.MustCompile(`[\w\.-]+@[\w\.-]+\.\w+`)
 	hyDestHostRegex   = regexp.MustCompile(`->\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\d+`)
-	hyClientConnRegex = regexp.MustCompile(`(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`)
+	hyClientConnRegex = regexp.MustCompile(`client connected\s+(\S+)`)
 
 	sbInboundTagRegex = regexp.MustCompile(`(?:inbound/[^:]+|inbound[^:]*):\s*\[([a-zA-Z0-9_\.\-]+)\]\s+inbound connection to`)
 	sbBracketUser     = regexp.MustCompile(`\[([a-zA-Z0-9_\.\-]+)\]\s+inbound connection to`)
@@ -35,19 +36,19 @@ var (
 	sbEndUserRegex    = regexp.MustCompile(`\[([a-zA-Z0-9_\.\-]+@[a-zA-Z0-9_\.\-]+|[a-zA-Z0-9_\.\-]+)\]\s*$`)
 	genericEmailRegex = regexp.MustCompile(`([a-zA-Z0-9_\.\-]+@[a-zA-Z0-9_\.\-]+)`)
 
-	xrayIPAcceptedRegex = regexp.MustCompile(`(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\d+\s+(?:accepted|inbound connection)`)
-	xrayIPFromRegex     = regexp.MustCompile(`from\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`)
+	xrayIPAcceptedRegex = regexp.MustCompile(`(?:\[)?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|[0-9a-fA-F]*:[0-9a-fA-F:]+)(?:\])?:\d+\s+(?:accepted|inbound connection)`)
+	xrayIPFromRegex     = regexp.MustCompile(`from\s+(?:\[)?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|[0-9a-fA-F]*:[0-9a-fA-F:]+)(?:\])?`)
 	xrayTagMatchRegex   = regexp.MustCompile(`(?:accepted|connection)\s+(?:tcp|udp):\S+\s+\[([^\]]+)\]`)
 	sbInboundTagFromPrefix = regexp.MustCompile(`inbound/[a-zA-Z0-9_\.\-]+\[([a-zA-Z0-9_\.\-]+)\]`)
 	sbInboundConnTag    = regexp.MustCompile(`\[([^\]]+)\]\s+inbound connection`)
-	xrayDestMatchRegex  = regexp.MustCompile(`(?:accepted|connection)\s+(?:tcp|udp):([^:]+):`)
+	xrayDestMatchRegex  = regexp.MustCompile(`(?:accepted|connection)\s+(?:tcp|udp):(\[[^\]]+\]|[^:]+):`)
 	ipv4CheckRegex      = regexp.MustCompile(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$`)
 
 	// sing-box two-line format: connID links "inbound connection from IP" and "[user] inbound connection to DST".
 	// sbConnIDLineRegex extracts the connID from any timed log line: [338227781 79ms].
 	sbConnIDLineRegex = regexp.MustCompile(`\[(\d+)\s+[\d.]+(?:ms|µs|us|s|ns|m)\]`)
 	// sbFromIPLineRegex extracts (connID, clientIP) from "inbound connection from IP:PORT" lines.
-	sbFromIPLineRegex = regexp.MustCompile(`\[(\d+)\s+[\d.]+(?:ms|µs|us|s|ns|m)\]\s+\S+:\s+inbound connection from\s+([^\s:]+):\d+`)
+	sbFromIPLineRegex = regexp.MustCompile(`\[(\d+)\s+[\d.]+(?:ms|µs|us|s|ns|m)\]\s+\S+:\s+inbound connection from\s+(?:\[)?([a-fA-F0-9:.]+)(?:\])?:\d+`)
 )
 
 // ParseXrayTimestamp extracts a time.Time from an Xray/Sing-box log line.
@@ -213,8 +214,8 @@ func FindEmailInHysteriaLog(lines []string, dstIP string, dstPort int, maxAgeSec
 				if reqVal == "" {
 					reqVal, _ = obj["req"].(string)
 				}
-				if reqVal != "" && strings.Contains(reqVal, ":") {
-					return strings.Trim(strings.Split(reqVal, ":")[0], "[]")
+				if reqVal != "" {
+					return parseCleanIP(reqVal)
 				}
 			}
 		}
@@ -272,10 +273,7 @@ func FindClientIPForEmailInHysteriaLog(lines []string, email string, maxAgeSec i
 				}
 				if idVal == email {
 					if addr, ok := obj["addr"].(string); ok && addr != "" {
-						if strings.Contains(addr, ":") {
-							return strings.Split(addr, ":")[0]
-						}
-						return addr
+						return parseCleanIP(addr)
 					}
 				}
 			}
@@ -283,7 +281,7 @@ func FindClientIPForEmailInHysteriaLog(lines []string, email string, maxAgeSec i
 
 		if strings.Contains(line, "client connected") && strings.Contains(line, email) {
 			if m := hyClientConnRegex.FindStringSubmatch(line); len(m) >= 2 {
-				return m[1]
+				return parseCleanIP(m[1])
 			}
 		}
 	}
@@ -354,7 +352,12 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 			return strings.Trim(m[1], "[]")
 		}
 		if idx := strings.Index(line, "inbound connection to "); idx != -1 {
-			rem := line[idx+len("inbound connection to "):]
+			rem := strings.TrimSpace(line[idx+len("inbound connection to "):])
+			if strings.HasPrefix(rem, "[") {
+				if endBracket := strings.Index(rem, "]"); endBracket != -1 {
+					return rem[1:endBracket]
+				}
+			}
 			if parts := strings.Split(rem, ":"); len(parts) >= 2 {
 				return strings.Trim(parts[0], "[] \t")
 			}
@@ -425,3 +428,27 @@ func FindEmailAndIPInXrayLog(lines []string, clientIP, dstIP string, dstPort int
 	return "", "", ""
 }
 
+
+func parseCleanIP(addr string) string {
+	clean := strings.TrimSpace(addr)
+	clean = strings.Trim(clean, "[]'\"")
+	if host, _, err := net.SplitHostPort(clean); err == nil {
+		return strings.Trim(host, "[]")
+	}
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return strings.Trim(host, "[]")
+	}
+	if net.ParseIP(clean) != nil {
+		return clean
+	}
+	if idx := strings.LastIndex(clean, ":"); idx != -1 {
+		possibleIP := strings.Trim(clean[:idx], "[]")
+		possiblePort := clean[idx+1:]
+		if _, err := strconv.Atoi(possiblePort); err == nil {
+			if net.ParseIP(possibleIP) != nil {
+				return possibleIP
+			}
+		}
+	}
+	return clean
+}

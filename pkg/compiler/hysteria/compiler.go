@@ -3,6 +3,7 @@ package hysteria
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 	"github.com/blackalex1/sentinel-core/pkg/matrix"
 )
@@ -36,9 +37,13 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		return "", nil, fmt.Errorf("feature negotiation failed for hysteria2: %w", err)
 	}
 
-	serverAddr := fmt.Sprintf("%s:%d", adaptedNode.Address, adaptedNode.Port)
+	cleanAddr := strings.Trim(adaptedNode.Address, "[]")
+	if strings.Contains(cleanAddr, ":") {
+		cleanAddr = "[" + cleanAddr + "]"
+	}
+	serverAddr := fmt.Sprintf("%s:%d", cleanAddr, adaptedNode.Port)
 	if adaptedNode.PortHopping != "" {
-		serverAddr = fmt.Sprintf("%s:%s", adaptedNode.Address, adaptedNode.PortHopping)
+		serverAddr = fmt.Sprintf("%s:%s", cleanAddr, adaptedNode.PortHopping)
 	}
 
 	authPass := adaptedNode.Password

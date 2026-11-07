@@ -9,7 +9,7 @@ import (
 func buildXrayVMessInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 	listenAddr := sb.ListenAddress
 	if listenAddr == "" {
-		listenAddr = "0.0.0.0"
+		listenAddr = "::"
 	}
 
 	settings := map[string]interface{}{}

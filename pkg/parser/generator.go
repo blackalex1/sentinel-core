@@ -10,6 +10,14 @@ import (
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 )
 
+func formatHostPort(host string, port int) string {
+	cleanHost := strings.Trim(host, "[]")
+	if strings.Contains(cleanHost, ":") {
+		return fmt.Sprintf("[%s]:%d", cleanHost, port)
+	}
+	return fmt.Sprintf("%s:%d", cleanHost, port)
+}
+
 // GenerateURI converts a ServerProfile into a canonical, RFC/Standard-compliant proxy link.
 func GenerateURI(p *ast.ServerProfile) (string, error) {
 	if p == nil {
@@ -93,7 +101,7 @@ func generateVLESS(p *ast.ServerProfile) (string, error) {
 	}
 
 	queryStr := q.Encode()
-	uri := fmt.Sprintf("vless://%s@%s:%d", p.UUID, p.Address, p.Port)
+	uri := fmt.Sprintf("vless://%s@%s", p.UUID, formatHostPort(p.Address, p.Port))
 	if queryStr != "" {
 		uri += "?" + queryStr
 	}
@@ -145,7 +153,7 @@ func generateHysteria2(p *ast.ServerProfile) (string, error) {
 		authStr = "secret"
 	}
 
-	uri := fmt.Sprintf("hysteria2://%s@%s:%d", authStr, p.Address, p.Port)
+	uri := fmt.Sprintf("hysteria2://%s@%s", authStr, formatHostPort(p.Address, p.Port))
 	if queryStr != "" {
 		uri += "?" + queryStr
 	}
@@ -186,7 +194,7 @@ func generateTrojan(p *ast.ServerProfile) (string, error) {
 	}
 
 	queryStr := q.Encode()
-	uri := fmt.Sprintf("trojan://%s@%s:%d", url.QueryEscape(p.Password), p.Address, p.Port)
+	uri := fmt.Sprintf("trojan://%s@%s", url.QueryEscape(p.Password), formatHostPort(p.Address, p.Port))
 	if queryStr != "" {
 		uri += "?" + queryStr
 	}
@@ -203,7 +211,7 @@ func generateShadowsocks(p *ast.ServerProfile) (string, error) {
 	}
 	userPass := fmt.Sprintf("%s:%s", cipher, p.Password)
 	b64Auth := base64.URLEncoding.EncodeToString([]byte(userPass))
-	uri := fmt.Sprintf("ss://%s@%s:%d", b64Auth, p.Address, p.Port)
+	uri := fmt.Sprintf("ss://%s@%s", b64Auth, formatHostPort(p.Address, p.Port))
 	if p.Name != "" {
 		uri += "#" + url.QueryEscape(p.Name)
 	}
@@ -214,7 +222,7 @@ func generateVMess(p *ast.ServerProfile) (string, error) {
 	vmessMap := map[string]interface{}{
 		"v":    "2",
 		"ps":   p.Name,
-		"add":  p.Address,
+		"add":  strings.Trim(p.Address, "[]"),
 		"port": strconv.Itoa(p.Port),
 		"id":   p.UUID,
 		"aid":  "0",
@@ -261,7 +269,7 @@ func generateTUIC(p *ast.ServerProfile) (string, error) {
 		q.Set("alpn", strings.Join(p.ALPN, ","))
 	}
 	queryStr := q.Encode()
-	uri := fmt.Sprintf("tuic://%s:%s@%s:%d", p.UUID, url.QueryEscape(p.Password), p.Address, p.Port)
+	uri := fmt.Sprintf("tuic://%s:%s@%s", p.UUID, url.QueryEscape(p.Password), formatHostPort(p.Address, p.Port))
 	if queryStr != "" {
 		uri += "?" + queryStr
 	}
@@ -291,7 +299,7 @@ func generateShadowTLS(p *ast.ServerProfile) (string, error) {
 		password = p.Password
 	}
 	queryStr := q.Encode()
-	uri := fmt.Sprintf("shadowtls://%s@%s:%d", url.QueryEscape(password), p.Address, p.Port)
+	uri := fmt.Sprintf("shadowtls://%s@%s", url.QueryEscape(password), formatHostPort(p.Address, p.Port))
 	if queryStr != "" {
 		uri += "?" + queryStr
 	}
@@ -323,7 +331,7 @@ func generateWireGuard(p *ast.ServerProfile) (string, error) {
 		q.Set("reserved", strings.Join(strVals, ","))
 	}
 	queryStr := q.Encode()
-	uri := fmt.Sprintf("wireguard://%s@%s:%d", url.QueryEscape(p.PrivateKey), p.Address, p.Port)
+	uri := fmt.Sprintf("wireguard://%s@%s", url.QueryEscape(p.PrivateKey), formatHostPort(p.Address, p.Port))
 	if queryStr != "" {
 		uri += "?" + queryStr
 	}
@@ -338,7 +346,7 @@ func generateSocks(p *ast.ServerProfile) (string, error) {
 	if p.Username != "" || p.Password != "" {
 		auth = fmt.Sprintf("%s:%s@", url.QueryEscape(p.Username), url.QueryEscape(p.Password))
 	}
-	uri := fmt.Sprintf("socks5://%s%s:%d", auth, p.Address, p.Port)
+	uri := fmt.Sprintf("socks5://%s%s", auth, formatHostPort(p.Address, p.Port))
 	if p.Name != "" {
 		uri += "#" + url.QueryEscape(p.Name)
 	}
@@ -354,7 +362,7 @@ func generateHTTP(p *ast.ServerProfile) (string, error) {
 	if p.Username != "" || p.Password != "" {
 		auth = fmt.Sprintf("%s:%s@", url.QueryEscape(p.Username), url.QueryEscape(p.Password))
 	}
-	uri := fmt.Sprintf("%s://%s%s:%d", scheme, auth, p.Address, p.Port)
+	uri := fmt.Sprintf("%s://%s%s", scheme, auth, formatHostPort(p.Address, p.Port))
 	if p.Name != "" {
 		uri += "#" + url.QueryEscape(p.Name)
 	}

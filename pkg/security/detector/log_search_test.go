@@ -131,3 +131,42 @@ func TestCascadedTwoPanelRoutingAndAttribution(t *testing.T) {
 		t.Errorf("expected empty email for Telegram user on non-matching IP, got %q", innocentCheck)
 	}
 }
+
+func TestLogSearch_IPv6_RFC3849(t *testing.T) {
+	nowStr := time.Now().Format("2006/01/02 15:04:05")
+	nowISO := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+
+	// 1. Xray with IPv6 client and destination
+	xrayLines := []string{
+		fmt.Sprintf("%s [info] [2001:db8:cafe::42]:54321 accepted tcp:[2001:db8:1000::1]:22 [VLESS-TCP >> direct] email: ipv6_attacker@test.example", nowStr),
+	}
+	email1, ip1, tag1 := FindEmailAndIPInXrayLog(xrayLines, "", "2001:db8:1000::1", 22, 300)
+	if email1 != "ipv6_attacker@test.example" || ip1 != "2001:db8:cafe::42" {
+		t.Errorf("unexpected xray IPv6 search result: email=%q, ip=%q, tag=%q", email1, ip1, tag1)
+	}
+
+	// 2. Sing-box two-line format with IPv6
+	sbLines := []string{
+		fmt.Sprintf("+0300 %s INFO [2001 0ms] inbound/vless[vless-in]: inbound connection from [2001:db8:cafe::42]:54321", nowStr),
+		fmt.Sprintf("+0300 %s INFO [2001 5ms] inbound/vless[vless-in]: [sb_ipv6_user@test.example] inbound connection to [2001:db8:1000::1]:22", nowStr),
+	}
+	email2, ip2, _ := FindEmailAndIPInXrayLog(sbLines, "", "2001:db8:1000::1", 22, 300)
+	if email2 != "sb_ipv6_user@test.example" || ip2 != "2001:db8:cafe::42" {
+		t.Errorf("unexpected sing-box IPv6 result: email=%q, ip=%q", email2, ip2)
+	}
+
+	// 3. Hysteria 2 log with IPv6
+	hyLines := []string{
+		fmt.Sprintf(`{"time":"%s","id":"hy2_ipv6_user@test.example","reqAddr":"[2001:db8:1000::1]:22"}`, nowISO),
+		fmt.Sprintf(`{"time":"%s","auth":"hy2_ipv6_user@test.example","addr":"[2001:db8:cafe::42]:53124"}`, nowISO),
+	}
+	email3 := FindEmailInHysteriaLog(hyLines, "2001:db8:1000::1", 22, 300)
+	if email3 != "hy2_ipv6_user@test.example" {
+		t.Errorf("expected hy2_ipv6_user@test.example, got %q", email3)
+	}
+
+	clientIP := FindClientIPForEmailInHysteriaLog(hyLines, "hy2_ipv6_user@test.example", 300)
+	if clientIP != "2001:db8:cafe::42" {
+		t.Errorf("expected full IPv6 client IP 2001:db8:cafe::42, got %q", clientIP)
+	}
+}

@@ -8,7 +8,7 @@ import (
 func buildXraySOCKSInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 	listenAddr := sb.ListenAddress
 	if listenAddr == "" {
-		listenAddr = "0.0.0.0"
+		listenAddr = "::"
 	}
 
 	settings := map[string]interface{}{}
@@ -68,7 +68,7 @@ func buildXraySOCKSInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 func buildXrayHTTPInbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 	listenAddr := sb.ListenAddress
 	if listenAddr == "" {
-		listenAddr = "0.0.0.0"
+		listenAddr = "::"
 	}
 
 	settings := map[string]interface{}{}

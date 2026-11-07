@@ -478,3 +478,34 @@ func TestHysteriaServerCompiler_TLSVerification(t *testing.T) {
 	}
 }
 
+
+func TestHysteriaClientCompiler_IPv6_RFC3849(t *testing.T) {
+	c := NewCompiler()
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreHysteria2,
+		ServerNode: &ast.ServerProfile{
+			Protocol: ast.ProtoHysteria2,
+			Address:  "2001:db8:1000::1",
+			Port:     8443,
+			Password: "mock_password_ipv6",
+			SNI:      "node.example.test",
+		},
+	}
+	out, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("unexpected compilation error for IPv6: %v", err)
+	}
+	if !strings.Contains(out, `"[2001:db8:1000::1]:8443"`) {
+		t.Errorf("expected server address to be bracketed IPv6, got: %s", out)
+	}
+
+	// Test with port hopping
+	spec.ServerNode.PortHopping = "20000-30000"
+	outHopping, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("unexpected compilation error for IPv6 hopping: %v", err)
+	}
+	if !strings.Contains(outHopping, `"[2001:db8:1000::1]:20000-30000"`) {
+		t.Errorf("expected server address with port hopping to be bracketed IPv6, got: %s", outHopping)
+	}
+}

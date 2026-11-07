@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -34,10 +35,15 @@ func parseShadowsocks(raw string) (*ast.ServerProfile, error) {
 			password = userParts[1]
 		}
 
-		u, err := url.Parse("http://" + hostport)
-		if err == nil {
-			host = u.Hostname()
-			port, _ = strconv.Atoi(u.Port())
+		if h, pStr, err := net.SplitHostPort(hostport); err == nil {
+			host = strings.Trim(h, "[]")
+			port, _ = strconv.Atoi(pStr)
+		} else {
+			u, err := url.Parse("http://" + hostport)
+			if err == nil {
+				host = u.Hostname()
+				port, _ = strconv.Atoi(u.Port())
+			}
 		}
 	} else {
 		// Legacy Base64 whole string
@@ -53,10 +59,12 @@ func parseShadowsocks(raw string) (*ast.ServerProfile, error) {
 				method = userParts[0]
 				password = userParts[1]
 			}
-			hp := strings.SplitN(parts[1], ":", 2)
-			if len(hp) == 2 {
-				host = hp[0]
-				port, _ = strconv.Atoi(hp[1])
+			if h, pStr, err := net.SplitHostPort(parts[1]); err == nil {
+				host = strings.Trim(h, "[]")
+				port, _ = strconv.Atoi(pStr)
+			} else if lastColon := strings.LastIndex(parts[1], ":"); lastColon != -1 {
+				host = strings.Trim(parts[1][:lastColon], "[]")
+				port, _ = strconv.Atoi(parts[1][lastColon+1:])
 			}
 		}
 	}

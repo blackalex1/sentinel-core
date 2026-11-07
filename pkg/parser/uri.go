@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/blackalex1/sentinel-core/pkg/ast"
@@ -15,15 +16,63 @@ func isValidHost(host string) bool {
 	if host == "" {
 		return false
 	}
-	if strings.Contains(host, ":") {
-		return net.ParseIP(host) != nil
+	clean := strings.Trim(host, "[]")
+	if strings.Contains(clean, ":") {
+		return net.ParseIP(clean) != nil
 	}
 	return true
+}
+
+// normalizeUnbracketedIPv6 fixes unbracketed IPv6 URLs before url.Parse.
+// E.g.: "vless://uuid@2001:db8::1:443?query#frag" -> "vless://uuid@[2001:db8::1]:443?query#frag"
+func normalizeUnbracketedIPv6(rawURI string) string {
+	idxScheme := strings.Index(rawURI, "://")
+	if idxScheme == -1 {
+		return rawURI
+	}
+	prefix := rawURI[:idxScheme+3]
+	rest := rawURI[idxScheme+3:]
+
+	idxCut := strings.IndexAny(rest, "/?#")
+	authority := rest
+	suffix := ""
+	if idxCut != -1 {
+		authority = rest[:idxCut]
+		suffix = rest[idxCut:]
+	}
+
+	if strings.Contains(authority, "[") && strings.Contains(authority, "]") {
+		return rawURI
+	}
+
+	userinfo := ""
+	hostport := authority
+	if atIdx := strings.LastIndex(authority, "@"); atIdx != -1 {
+		userinfo = authority[:atIdx+1]
+		hostport = authority[atIdx+1:]
+	}
+
+	if strings.Count(hostport, ":") > 1 {
+		lastColon := strings.LastIndex(hostport, ":")
+		possibleHost := hostport[:lastColon]
+		possiblePort := hostport[lastColon+1:]
+		if ip := net.ParseIP(possibleHost); ip != nil && ip.To4() == nil {
+			if _, err := strconv.Atoi(possiblePort); err == nil {
+				return prefix + userinfo + "[" + possibleHost + "]:" + possiblePort + suffix
+			}
+		}
+		if ip := net.ParseIP(hostport); ip != nil && ip.To4() == nil {
+			return prefix + userinfo + "[" + hostport + "]" + suffix
+		}
+	}
+
+	return rawURI
 }
 
 // extractFragmentAndClean strips out and properly decodes the URI fragment (#name)
 // before passing the URL to net/url.Parse to avoid parser failures on emojis, Unicode,
 // spaces, pipes, and special characters.
+// Also normalizes unbracketed IPv6 host:port into RFC 3986 bracketed form.
 func extractFragmentAndClean(rawURI string) (string, string) {
 	trimmed := strings.TrimSpace(rawURI)
 	fragment := ""
@@ -36,6 +85,7 @@ func extractFragmentAndClean(rawURI string) (string, string) {
 			fragment = rawFrag
 		}
 	}
+	trimmed = normalizeUnbracketedIPv6(trimmed)
 	return trimmed, fragment
 }
 

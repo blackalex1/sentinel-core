@@ -712,3 +712,92 @@ func TestDecodeBase64Safe(t *testing.T) {
 		t.Errorf("expected error on invalid base64")
 	}
 }
+
+func TestParseAndGenerate_IPv6_RFC3849(t *testing.T) {
+	// 1. Bracketed VLESS IPv6
+	vlessBracketed := "vless://00000000-0000-0000-0000-000000000042@[2001:db8:1000::1]:443?security=reality&sni=node.example.test#TestVLESS_IPv6"
+	p, err := ParseURI(vlessBracketed)
+	if err != nil {
+		t.Fatalf("failed to parse bracketed IPv6 VLESS URI: %v", err)
+	}
+	if p.Address != "2001:db8:1000::1" || p.Port != 443 {
+		t.Errorf("unexpected host/port: got %s:%d, expected 2001:db8:1000::1:443", p.Address, p.Port)
+	}
+	genVless, err := GenerateURI(p)
+	if err != nil {
+		t.Fatalf("failed to generate VLESS URI: %v", err)
+	}
+	if !strings.Contains(genVless, "@[2001:db8:1000::1]:443") {
+		t.Errorf("generated VLESS must contain bracketed IPv6: %s", genVless)
+	}
+
+	// 2. Unbracketed VLESS IPv6 (tolerant normalization)
+	vlessUnbracketed := "vless://00000000-0000-0000-0000-000000000042@2001:db8:1000::1:443?security=reality&sni=node.example.test#TestVLESS_Unbracketed"
+	pNorm, err := ParseURI(vlessUnbracketed)
+	if err != nil {
+		t.Fatalf("failed to parse unbracketed IPv6 VLESS URI: %v", err)
+	}
+	if pNorm.Address != "2001:db8:1000::1" || pNorm.Port != 443 {
+		t.Errorf("unexpected host/port from unbracketed URI: got %s:%d", pNorm.Address, pNorm.Port)
+	}
+
+	// 3. Hysteria 2 IPv6 (bracketed and unbracketed)
+	hyBracketed := "hysteria2://mock_password@[2001:db8:cafe::42]:8443?sni=node.example.test#TestHy2_IPv6"
+	pHy, err := ParseURI(hyBracketed)
+	if err != nil {
+		t.Fatalf("failed to parse Hysteria2 IPv6 URI: %v", err)
+	}
+	if pHy.Address != "2001:db8:cafe::42" || pHy.Port != 8443 {
+		t.Errorf("unexpected hysteria2 host/port: %s:%d", pHy.Address, pHy.Port)
+	}
+	genHy, err := GenerateURI(pHy)
+	if err != nil {
+		t.Fatalf("failed to generate Hysteria2 URI: %v", err)
+	}
+	if !strings.Contains(genHy, "@[2001:db8:cafe::42]:8443") {
+		t.Errorf("generated Hysteria 2 must contain bracketed IPv6: %s", genHy)
+	}
+
+	hyUnbracketed := "hysteria2://mock_password@2001:db8:cafe::42:8443?sni=node.example.test#TestHy2_Unbracketed"
+	pHyUnbracketed, err := ParseURI(hyUnbracketed)
+	if err != nil {
+		t.Fatalf("failed to parse unbracketed Hysteria2 IPv6 URI: %v", err)
+	}
+	if pHyUnbracketed.Address != "2001:db8:cafe::42" || pHyUnbracketed.Port != 8443 {
+		t.Errorf("unexpected unbracketed hysteria2 host/port: %s:%d", pHyUnbracketed.Address, pHyUnbracketed.Port)
+	}
+
+	// 4. Trojan IPv6
+	trojanIPv6 := "trojan://mock_password@[2001:db8:beef::99]:443?security=tls&sni=node.example.test#TestTrojan_IPv6"
+	pTr, err := ParseURI(trojanIPv6)
+	if err != nil {
+		t.Fatalf("failed to parse Trojan IPv6 URI: %v", err)
+	}
+	if pTr.Address != "2001:db8:beef::99" || pTr.Port != 443 {
+		t.Errorf("unexpected trojan host/port: %s:%d", pTr.Address, pTr.Port)
+	}
+	genTr, err := GenerateURI(pTr)
+	if err != nil {
+		t.Fatalf("failed to generate Trojan URI: %v", err)
+	}
+	if !strings.Contains(genTr, "@[2001:db8:beef::99]:443") {
+		t.Errorf("generated Trojan must contain bracketed IPv6: %s", genTr)
+	}
+
+	// 5. Shadowsocks IPv6 (SIP002)
+	ssIPv6 := "ss://YWVzLTI1Ni1nY206bW9ja19wYXNz@[2001:db8:1000::1]:8388#TestSS_IPv6"
+	pSS, err := ParseURI(ssIPv6)
+	if err != nil {
+		t.Fatalf("failed to parse Shadowsocks IPv6 URI: %v", err)
+	}
+	if pSS.Address != "2001:db8:1000::1" || pSS.Port != 8388 {
+		t.Errorf("unexpected ss host/port: %s:%d", pSS.Address, pSS.Port)
+	}
+	genSS, err := GenerateURI(pSS)
+	if err != nil {
+		t.Fatalf("failed to generate Shadowsocks URI: %v", err)
+	}
+	if !strings.Contains(genSS, "@[2001:db8:1000::1]:8388") {
+		t.Errorf("generated Shadowsocks must contain bracketed IPv6: %s", genSS)
+	}
+}
