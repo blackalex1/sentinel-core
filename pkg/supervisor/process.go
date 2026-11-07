@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -57,6 +58,7 @@ func (pm *ProcessManager) GetConfigPath(coreName string) string {
 
 var allowedSupervisorBinaries = map[string]bool{
 	"sing-box": true, "sing-box.exe": true,
+	"singbox": true, "singbox.exe": true,
 	"xray": true, "xray.exe": true,
 	"hysteria": true, "hysteria.exe": true,
 	"hysteria2": true, "hysteria2.exe": true,
@@ -64,13 +66,112 @@ var allowedSupervisorBinaries = map[string]bool{
 
 func isAllowedCoreBinary(binPath string) bool {
 	base := strings.ToLower(filepath.Base(binPath))
-	if allowedSupervisorBinaries[base] {
+	base = strings.TrimSuffix(base, ".exe")
+	if allowedSupervisorBinaries[base] || allowedSupervisorBinaries[base+".exe"] {
 		return true
 	}
-	if strings.HasPrefix(base, "hysteria") || strings.HasPrefix(base, "sing-box") || strings.HasPrefix(base, "xray") {
+	if strings.HasPrefix(base, "hysteria") || strings.HasPrefix(base, "sing-box") || strings.HasPrefix(base, "singbox") || strings.HasPrefix(base, "xray") {
 		return true
 	}
 	return false
+}
+
+var ignoredSupervisorExtensions = map[string]bool{
+	".go": true, ".json": true, ".log": true, ".txt": true,
+	".md": true, ".tmp": true, ".dat": true, ".srs": true,
+	".crt": true, ".key": true, ".gz": true, ".zip": true,
+	".tar": true, ".db": true, ".sqlite": true,
+}
+
+func isValidCoreCandidate(fileName, normName string) bool {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	if ignoredSupervisorExtensions[ext] {
+		return false
+	}
+	name := strings.ToLower(fileName)
+	base := strings.TrimSuffix(name, ".exe")
+
+	switch normName {
+	case "hysteria2":
+		return base == "hysteria" || base == "hysteria2" || strings.HasPrefix(base, "hysteria-") || strings.HasPrefix(base, "hysteria2-")
+	case "sing-box":
+		return base == "sing-box" || base == "singbox" || strings.HasPrefix(base, "sing-box-") || strings.HasPrefix(base, "singbox-")
+	case "xray":
+		return base == "xray" || base == "xray-core" || strings.HasPrefix(base, "xray-")
+	default:
+		return base == normName || strings.HasPrefix(base, normName+"-")
+	}
+}
+
+func ensureExecutablePermissions(filePath string) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+	if fi, err := os.Stat(filePath); err == nil {
+		if fi.Mode()&0111 == 0 {
+			_ = os.Chmod(filePath, fi.Mode()|0755)
+		}
+	}
+}
+
+// resolveCoreBinaryPath finds the actual executable path for a core, checking aliases in the directory if binPath does not exist.
+func resolveCoreBinaryPath(coreName, binPath string) (string, error) {
+	if binPath == "" {
+		return "", os.ErrNotExist
+	}
+	cleanBin := filepath.Clean(binPath)
+	if fi, err := os.Stat(cleanBin); err == nil && !fi.IsDir() {
+		ensureExecutablePermissions(cleanBin)
+		return cleanBin, nil
+	}
+
+	normName := normalizeCoreName(coreName)
+	base := filepath.Base(cleanBin)
+
+	// Only search aliases or PATH if the specified binary name is a known alias/pattern of this core
+	if !isValidCoreCandidate(base, normName) {
+		return "", os.ErrNotExist
+	}
+
+	dir := filepath.Dir(cleanBin)
+	hasDir := base != cleanBin && dir != "."
+
+	if hasDir {
+		if entries, err := os.ReadDir(dir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() {
+					continue
+				}
+				if isValidCoreCandidate(e.Name(), normName) {
+					cand := filepath.Join(dir, e.Name())
+					ensureExecutablePermissions(cand)
+					return cand, nil
+				}
+			}
+		}
+	}
+
+	// PATH lookup fallback
+	var pathCandidates []string
+	switch normName {
+	case "hysteria2":
+		pathCandidates = []string{"hysteria2", "hysteria"}
+	case "sing-box":
+		pathCandidates = []string{"sing-box", "singbox"}
+	case "xray":
+		pathCandidates = []string{"xray"}
+	default:
+		pathCandidates = []string{normName}
+	}
+
+	for _, cand := range pathCandidates {
+		if lp, err := exec.LookPath(cand); err == nil {
+			ensureExecutablePermissions(lp)
+			return lp, nil
+		}
+	}
+
+	return "", os.ErrNotExist
 }
 
 // StartCore starts a proxy engine process
@@ -79,13 +180,15 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 	defer pm.mu.Unlock()
 
 	normName := normalizeCoreName(coreName)
-	pm.binPaths[normName] = binPath
-	pm.configPaths[normName] = configPath
 
-	// Verify binary exists
-	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+	resolvedBin, err := resolveCoreBinaryPath(coreName, binPath)
+	if err != nil {
 		return fmt.Errorf("binary not found: %s", binPath)
 	}
+	binPath = resolvedBin
+
+	pm.binPaths[normName] = binPath
+	pm.configPaths[normName] = configPath
 
 	// Verify config exists
 	if configPath != "" {
@@ -352,9 +455,12 @@ func (pm *ProcessManager) IsRunning(coreName string) bool {
 
 // ValidateCoreConfig checks configuration syntax using core engine test flags
 func (pm *ProcessManager) ValidateCoreConfig(coreName, binPath, configPath string) (bool, string, error) {
-	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+	resolvedBin, err := resolveCoreBinaryPath(coreName, binPath)
+	if err != nil {
 		return false, "", fmt.Errorf("binary not found: %s", binPath)
 	}
+	binPath = resolvedBin
+
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return false, "", fmt.Errorf("config not found: %s", configPath)
 	}
@@ -404,64 +510,99 @@ func (pm *ProcessManager) ValidateCoreConfig(coreName, binPath, configPath strin
 	return true, outStr, nil
 }
 
-// DetectCoreVersion queries the binary for its version string
-func (pm *ProcessManager) DetectCoreVersion(coreName, binPath string) string {
-	if _, err := os.Stat(binPath); os.IsNotExist(err) {
-		return "Not Installed"
-	}
+var (
+	versionColonRegex     = regexp.MustCompile(`(?i)version[:\s]+v?([0-9]+(?:\.[0-9]+)+(?:-[a-zA-Z0-9.]+)?|app\/[0-9]+(?:\.[0-9]+)+)`)
+	coreNamedVersionRegex = regexp.MustCompile(`(?i)(?:hysteria|sing-box|singbox|xray)(?:[\s/]+version)?[\s/]+v?([0-9]+(?:\.[0-9]+)+(?:-[a-zA-Z0-9.]+)?|app\/[0-9]+(?:\.[0-9]+)+)`)
+	generalSemverRegex    = regexp.MustCompile(`v?([0-9]+(?:\.[0-9]+)+(?:-[a-zA-Z0-9.]+)?)\b`)
+)
 
-	normName := normalizeCoreName(coreName)
-	var args []string
-	switch normName {
-	case "hysteria2":
-		args = []string{"version"}
-	case "sing-box":
-		args = []string{"version"}
-	default:
-		args = []string{"version"}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	cleanBin := filepath.Clean(binPath)
-	if strings.ContainsAny(cleanBin, "\x00\r\n`|;&$") || !isAllowedCoreBinary(cleanBin) {
-		return "Unknown"
-	}
-
-	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
-	cmd := exec.CommandContext(ctx, cleanBin, args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil && len(out) == 0 {
-		return "Unknown"
-	}
-
-	lines := strings.Split(string(out), "\n")
+func parseCoreVersionOutput(raw string) string {
+	lines := strings.Split(raw, "\n")
 	for _, l := range lines {
 		lTrim := strings.TrimSpace(l)
 		if lTrim == "" {
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(lTrim), "version:") {
-			parts := strings.SplitN(lTrim, ":", 2)
-			if len(parts) == 2 {
-				val := strings.TrimSpace(parts[1])
-				if !strings.HasPrefix(val, "v") && len(val) > 0 && val[0] >= '0' && val[0] <= '9' {
-					val = "v" + val
-				}
-				return val
+		if m := versionColonRegex.FindStringSubmatch(lTrim); len(m) > 1 {
+			v := strings.TrimPrefix(m[1], "app/")
+			if !strings.HasPrefix(v, "v") {
+				return "v" + v
 			}
+			return v
 		}
-
-		parts := strings.Fields(lTrim)
-		for _, p := range parts {
-			clean := strings.Trim(p, "v,()[]{}:")
-			if len(clean) > 0 && clean[0] >= '0' && clean[0] <= '9' && strings.Contains(clean, ".") {
-				return "v" + clean
+		if m := coreNamedVersionRegex.FindStringSubmatch(lTrim); len(m) > 1 {
+			v := strings.TrimPrefix(m[1], "app/")
+			if !strings.HasPrefix(v, "v") {
+				return "v" + v
 			}
+			return v
 		}
 	}
+
+	for _, l := range lines {
+		lTrim := strings.TrimSpace(l)
+		if lTrim == "" || strings.HasPrefix(lTrim, "░") || strings.Contains(lTrim, "http") || strings.Contains(lTrim, "quic-go") {
+			continue
+		}
+		if m := generalSemverRegex.FindStringSubmatch(lTrim); len(m) > 1 {
+			v := m[1]
+			if !strings.HasPrefix(v, "v") {
+				return "v" + v
+			}
+			return v
+		}
+	}
+
 	return "Unknown"
+}
+
+// DetectCoreVersion queries the binary for its version string
+func (pm *ProcessManager) DetectCoreVersion(coreName, binPath string) string {
+	resolvedBin, err := resolveCoreBinaryPath(coreName, binPath)
+	if err != nil {
+		return "Not Installed"
+	}
+
+	normName := normalizeCoreName(coreName)
+	cleanBin := filepath.Clean(resolvedBin)
+	if strings.ContainsAny(cleanBin, "\x00\r\n`|;&$") || !isAllowedCoreBinary(cleanBin) {
+		return "Unknown"
+	}
+
+	var argsList [][]string
+	switch normName {
+	case "xray":
+		argsList = [][]string{{"version"}, {"-version"}}
+	default:
+		argsList = [][]string{{"version"}}
+	}
+
+	binDir := filepath.Dir(cleanBin)
+	var output []byte
+	for _, args := range argsList {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		cmd := exec.CommandContext(ctx, cleanBin, args...)
+		cmd.Dir = binDir
+		cmd.Env = append(os.Environ(),
+			"XRAY_LOCATION_ASSET="+binDir,
+			"V2RAY_LOCATION_ASSET="+binDir,
+		)
+		out, runErr := cmd.CombinedOutput()
+		cancel()
+		if runErr == nil && len(out) > 0 {
+			output = out
+			break
+		}
+		if len(out) > 0 && output == nil {
+			output = out
+		}
+	}
+
+	if len(output) == 0 {
+		return "Unknown"
+	}
+
+	return parseCoreVersionOutput(string(output))
 }
 
 func normalizeCoreName(name string) string {
