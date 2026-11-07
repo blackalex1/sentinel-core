@@ -71,13 +71,15 @@ func TestLogSearchHysteria(t *testing.T) {
 }
 
 func TestCascadedTwoPanelRoutingAndAttribution(t *testing.T) {
-	nowStr := time.Now().Format("2006/01/02 15:04:05")
-	nowISO := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	now := time.Now()
+	nowStr := now.Format("2006/01/02 15:04:05")
+	nowISO := now.UTC().Format("2006-01-02T15:04:05Z")
+	tzPrefix := now.Format("-0700")
 
 	// Panel 1 (Upstream LXC 104) logs:
 	panel1Logs := []string{
-		fmt.Sprintf("+0300 %s INFO [1001 0ms] inbound/vless[vless-phone-in]: inbound connection from 192.168.1.50:41234", nowStr),
-		fmt.Sprintf("+0300 %s INFO [1001 10ms] inbound/vless[vless-phone-in]: [cascaded_user@test.lan] inbound connection to 203.0.113.195:22", nowStr),
+		fmt.Sprintf("%s %s INFO [1001 0ms] inbound/vless[vless-phone-in]: inbound connection from 192.168.1.50:41234", tzPrefix, nowStr),
+		fmt.Sprintf("%s %s INFO [1001 10ms] inbound/vless[vless-phone-in]: [cascaded_user@test.lan] inbound connection to 203.0.113.195:22", tzPrefix, nowStr),
 		fmt.Sprintf("%s [info] 192.168.1.50:41234 accepted tcp:203.0.113.195:22 [vless-phone-in >> out-vps-test] email: cascaded_user@test.lan", nowStr),
 	}
 
@@ -133,8 +135,10 @@ func TestCascadedTwoPanelRoutingAndAttribution(t *testing.T) {
 }
 
 func TestLogSearch_IPv6_RFC3849(t *testing.T) {
-	nowStr := time.Now().Format("2006/01/02 15:04:05")
-	nowISO := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	now := time.Now()
+	nowStr := now.Format("2006/01/02 15:04:05")
+	nowISO := now.UTC().Format("2006-01-02T15:04:05Z")
+	tzPrefix := now.Format("-0700")
 
 	// 1. Xray with IPv6 client and destination
 	xrayLines := []string{
@@ -147,8 +151,8 @@ func TestLogSearch_IPv6_RFC3849(t *testing.T) {
 
 	// 2. Sing-box two-line format with IPv6
 	sbLines := []string{
-		fmt.Sprintf("+0300 %s INFO [2001 0ms] inbound/vless[vless-in]: inbound connection from [2001:db8:cafe::42]:54321", nowStr),
-		fmt.Sprintf("+0300 %s INFO [2001 5ms] inbound/vless[vless-in]: [sb_ipv6_user@test.example] inbound connection to [2001:db8:1000::1]:22", nowStr),
+		fmt.Sprintf("%s %s INFO [2001 0ms] inbound/vless[vless-in]: inbound connection from [2001:db8:cafe::42]:54321", tzPrefix, nowStr),
+		fmt.Sprintf("%s %s INFO [2001 5ms] inbound/vless[vless-in]: [sb_ipv6_user@test.example] inbound connection to [2001:db8:1000::1]:22", tzPrefix, nowStr),
 	}
 	email2, ip2, _ := FindEmailAndIPInXrayLog(sbLines, "", "2001:db8:1000::1", 22, 300)
 	if email2 != "sb_ipv6_user@test.example" || ip2 != "2001:db8:cafe::42" {
