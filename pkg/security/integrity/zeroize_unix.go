@@ -22,6 +22,7 @@ func isWritableMemory(ptr unsafe.Pointer) bool {
 		return false
 	}
 
+	// nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block
 	b := unsafe.Slice((*byte)(ptr), 1)
 	_, err := syscall.Read(p[0], b)
 	return err == nil

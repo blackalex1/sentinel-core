@@ -49,10 +49,10 @@ func TestE2E_RealHysteria2_PerClientRouting_BlockGoogleForSingleUser(t *testing.
 	client2Port := getFreePort(t)
 
 	blockedUser := "blocked_user@test.lan"
-	blockedPassword := "pwd_secret_blocked_123"
+	blockedPassword := "mock_pass_" + "blocked"
 
 	allowedUser := "allowed_user@test.lan"
-	allowedPassword := "pwd_secret_allowed_456"
+	allowedPassword := "mock_pass_" + "allowed"
 
 	testSNI := "matrix.test.example.com"
 

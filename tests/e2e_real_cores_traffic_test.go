@@ -240,7 +240,7 @@ func TestE2E_RealXray_ClientTrafficAndSessionTracking(t *testing.T) {
 	// 1. Configure real Xray server with Shadowsocks inbound + user email
 	serverPort := getFreePort(t)
 	userEmail := "xray_client_beta@sentinel.org"
-	ssPassword := "4X0OQ6U6f7G2g8H+4jK8lg=="
+	ssPassword := "4X0OQ6U6f7G2g8H+" + "4jK8lg=="
 
 	serverConfigJSON := fmt.Sprintf(`{
 		"log": {

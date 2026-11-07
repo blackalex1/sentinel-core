@@ -31,10 +31,13 @@ func ZeroizeString(s *string) {
 	}()
 
 	length := len(*s)
+	// nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block
 	bytePtr := unsafe.StringData(*s)
 
+	// nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block
 	if bytePtr != nil && length > 0 && isWritableMemory(unsafe.Pointer(bytePtr)) {
 		for i := 0; i < length; i++ {
+			// nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block
 			*(*byte)(unsafe.Add(unsafe.Pointer(bytePtr), i)) = 0
 		}
 	}

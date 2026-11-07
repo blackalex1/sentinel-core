@@ -108,9 +108,15 @@ func (t *LogTailer) IsRunning() bool {
 
 func (t *LogTailer) runCommand(ctx context.Context) {
 	cleanSource := filepath.Clean(t.source)
-	if strings.ContainsAny(cleanSource, "\x00\r\n`|;&$") {
+	if strings.ContainsAny(cleanSource, "\x00\r\n`|;&$") || strings.HasPrefix(cleanSource, "-") {
 		return
 	}
+	for _, arg := range t.cmdArgs {
+		if strings.ContainsAny(arg, "\x00\r\n`|;&$") {
+			return
+		}
+	}
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.CommandContext(ctx, cleanSource, t.cmdArgs...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

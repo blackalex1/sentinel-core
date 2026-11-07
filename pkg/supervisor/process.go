@@ -55,6 +55,18 @@ func (pm *ProcessManager) GetConfigPath(coreName string) string {
 	return pm.configPaths[normalizeCoreName(coreName)]
 }
 
+var allowedSupervisorBinaries = map[string]bool{
+	"sing-box": true, "sing-box.exe": true,
+	"xray": true, "xray.exe": true,
+	"hysteria": true, "hysteria.exe": true,
+	"hysteria2": true, "hysteria2.exe": true,
+}
+
+func isAllowedCoreBinary(binPath string) bool {
+	base := strings.ToLower(filepath.Base(binPath))
+	return allowedSupervisorBinaries[base]
+}
+
 // StartCore starts a proxy engine process
 func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error {
 	pm.mu.Lock()
@@ -101,10 +113,11 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 	}
 
 	cleanBin := filepath.Clean(binPath)
-	if strings.ContainsAny(cleanBin, "\x00\r\n`|;&$") {
-		return fmt.Errorf("invalid binary path: %q", binPath)
+	if strings.ContainsAny(cleanBin, "\x00\r\n`|;&$") || !isAllowedCoreBinary(cleanBin) {
+		return fmt.Errorf("invalid or unauthorized binary path: %q", binPath)
 	}
 
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.Command(cleanBin, args...)
 	cmd.Dir = binDir
 	cmd.Env = append(os.Environ(),
@@ -365,10 +378,11 @@ func (pm *ProcessManager) ValidateCoreConfig(coreName, binPath, configPath strin
 	defer cancel()
 
 	cleanBin := filepath.Clean(binPath)
-	if strings.ContainsAny(cleanBin, "\x00\r\n`|;&$") {
-		return false, "", fmt.Errorf("invalid binary path: %q", binPath)
+	if strings.ContainsAny(cleanBin, "\x00\r\n`|;&$") || !isAllowedCoreBinary(cleanBin) {
+		return false, "", fmt.Errorf("invalid or unauthorized binary path: %q", binPath)
 	}
 
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.CommandContext(ctx, cleanBin, args...)
 	cmd.Dir = binDir
 	cmd.Env = append(os.Environ(),
@@ -405,10 +419,11 @@ func (pm *ProcessManager) DetectCoreVersion(coreName, binPath string) string {
 	defer cancel()
 
 	cleanBin := filepath.Clean(binPath)
-	if strings.ContainsAny(cleanBin, "\x00\r\n`|;&$") {
+	if strings.ContainsAny(cleanBin, "\x00\r\n`|;&$") || !isAllowedCoreBinary(cleanBin) {
 		return "Unknown"
 	}
 
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.CommandContext(ctx, cleanBin, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil && len(out) == 0 {

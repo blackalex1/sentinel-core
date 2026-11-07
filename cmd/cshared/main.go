@@ -35,6 +35,7 @@ func SentinelGetEngineVersion() *C.char {
 //export SentinelFreeString
 func SentinelFreeString(str *C.char) {
 	if str != nil {
+		// nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block
 		C.free(unsafe.Pointer(str))
 	}
 }
