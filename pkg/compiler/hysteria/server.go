@@ -68,7 +68,6 @@ func (sc *ServerCompiler) CompileServerWithDNS(inbound ast.ServerInboundSpec, fo
 	if inbound.SNI != "" {
 		tlsMap["sni"] = inbound.SNI
 	}
-	tlsMap["sniGuard"] = "disable"
 	if len(tlsMap) > 0 {
 		configObj["tls"] = tlsMap
 	}
