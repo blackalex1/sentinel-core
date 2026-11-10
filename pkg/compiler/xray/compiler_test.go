@@ -214,20 +214,7 @@ func TestXrayCompiler_BuildXrayOutbound_Protocols(t *testing.T) {
 		t.Errorf("expected wireguard protocol: %+v", obWg)
 	}
 
-	// 9. Hysteria 2 Outbound (Local SOCKS vs Native Remote)
-	hy2NodeLocal := &ast.ServerProfile{
-		Protocol: ast.ProtoHysteria2,
-		Address:  "127.0.0.1",
-		Port:     20808,
-	}
-	obHy2Local, err := BuildXrayOutbound(hy2NodeLocal)
-	if err != nil {
-		t.Fatalf("failed to build Hysteria2 local outbound: %v", err)
-	}
-	if obHy2Local["protocol"] != "socks" {
-		t.Errorf("expected socks protocol for hy2 local outbound: %+v", obHy2Local)
-	}
-
+	// 9. Hysteria 2 Outbound
 	hy2NodeRemote := &ast.ServerProfile{
 		Protocol:             ast.ProtoHysteria2,
 		Address:              "hy2.example.com",
@@ -235,6 +222,10 @@ func TestXrayCompiler_BuildXrayOutbound_Protocols(t *testing.T) {
 		Password:             "dummy_secret_password_123",
 		SNI:                  "sni.example.com",
 		PinnedPeerCertSha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		ObfsPassword:         "obfsSecret123",
+		PortHopping:          "2443-8443",
+		BandwidthUp:          "100",
+		BandwidthDown:        "200",
 	}
 	obHy2Remote, err := BuildXrayOutbound(hy2NodeRemote)
 	if err != nil {
@@ -242,6 +233,22 @@ func TestXrayCompiler_BuildXrayOutbound_Protocols(t *testing.T) {
 	}
 	if obHy2Remote["protocol"] != "hysteria" {
 		t.Errorf("expected hysteria protocol for hy2 remote outbound: %+v", obHy2Remote)
+	}
+	streamSettings, ok := obHy2Remote["streamSettings"].(map[string]interface{})
+	if !ok || streamSettings["network"] != "hysteria" {
+		t.Errorf("expected hysteria stream network: %+v", streamSettings)
+	}
+	finalmask, ok := streamSettings["finalmask"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected finalmask in streamSettings: %+v", streamSettings)
+	}
+	sal, ok := finalmask["salamander"].(map[string]interface{})
+	if !ok || sal["password"] != "obfsSecret123" {
+		t.Errorf("expected salamander password in finalmask: %+v", finalmask)
+	}
+	hop, ok := finalmask["udphop"].(map[string]interface{})
+	if !ok || hop["ports"] != "2443-8443" {
+		t.Errorf("expected udphop ports in finalmask: %+v", finalmask)
 	}
 
 	// 10. Direct and Block
@@ -880,7 +887,7 @@ func TestXrayCompiler_AllInboundProtocols(t *testing.T) {
 						"security": "none",
 					},
 				},
-				// Outbound Hysteria2 (must be converted to socks and network=hysteria stripped)
+				// Outbound Hysteria2 (native hysteria outbound preserved)
 				{
 					"tag":      "hy2-out",
 					"protocol": "hysteria2",
@@ -947,6 +954,11 @@ func TestXrayCompiler_AllInboundProtocols(t *testing.T) {
 		// Verify vision is not in vless-fallback (security=none)
 		// by verifying it only exists where security=reality
 	}
+
+	// 9. Check Outbound Hysteria2: protocol is native hysteria, network is hysteria
+	if !strings.Contains(cfg, `"tag": "hy2-out"`) || !strings.Contains(cfg, `"protocol": "hysteria"`) {
+		t.Errorf("expected native hysteria outbound for hy2-out: %s", cfg)
+	}
 }
 
 
@@ -975,5 +987,236 @@ func TestCompile_XrayBlockIPv6(t *testing.T) {
 	}
 	if !strings.Contains(cfg, `"outboundTag": "blocked"`) {
 		t.Errorf("expected outboundTag: blocked in compiled Xray config, got: %s", cfg)
+	}
+}
+
+func TestCompile_XrayMultiHopChain(t *testing.T) {
+	c := NewCompiler()
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreXray,
+		ChainNodes: []*ast.ServerProfile{
+			{
+				Name:      "EntryNode",
+				Protocol:  ast.ProtoVLESS,
+				Address:   "1.1.1.1",
+				Port:      443,
+				UUID:      "a0000000-0000-0000-0000-000000000001",
+				Flow:      "xtls-rprx-vision",
+				Security:  ast.SecurityReality,
+				PublicKey: "abc123realitypubkey",
+				ShortID:   "abcd",
+			},
+			{
+				Name:     "RelayNode",
+				Protocol: ast.ProtoVMess,
+				Address:  "2.2.2.2",
+				Port:     443,
+				UUID:     "b0000000-0000-0000-0000-000000000002",
+			},
+			{
+				Name:     "ExitNode",
+				Protocol: ast.ProtoShadowsocks,
+				Address:  "3.3.3.3",
+				Port:     8388,
+				Password: "sspassword123",
+				Cipher:   "aes-128-gcm",
+			},
+		},
+		Routing: &ast.RoutingSpec{
+			DefaultAction: ast.ActionProxy,
+			Rules: []ast.RoutingRule{
+				{
+					Action:  ast.ActionProxy,
+					Domains: []string{"domain:instagram.com"},
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile multi-hop xray config: %v", err)
+	}
+
+	// 1. Verify proxySettings chaining
+	if !strings.Contains(cfg, `"tag": "chain-1-EntryNode"`) {
+		t.Errorf("expected chain-1-EntryNode tag in config, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"tag": "chain-2-RelayNode"`) {
+		t.Errorf("expected chain-2-RelayNode tag in config, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"tag": "chain-3-ExitNode"`) {
+		t.Errorf("expected chain-3-ExitNode tag in config, got:\n%s", cfg)
+	}
+
+	// RelayNode and ExitNode must proxy through streamSettings.sockopt.dialerProxy
+	if !strings.Contains(cfg, `"dialerProxy": "chain-1-EntryNode"`) {
+		t.Errorf("expected dialerProxy chain-1-EntryNode in config, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"dialerProxy": "chain-2-RelayNode"`) {
+		t.Errorf("expected dialerProxy chain-2-RelayNode in config, got:\n%s", cfg)
+	}
+
+	// 2. Direct rule must be created ONLY for EntryNode IP (1.1.1.1) to avoid routing loop
+	if !strings.Contains(cfg, `"ip": [\n        "1.1.1.1"\n      ]`) && !strings.Contains(cfg, `"1.1.1.1"`) {
+		t.Errorf("expected direct rule for entry node IP 1.1.1.1, got:\n%s", cfg)
+	}
+	// Exit node IP (3.3.3.3) must NOT be in direct rule
+	if strings.Contains(cfg, `"ip": [\n        "3.3.3.3"\n      ]`) {
+		t.Errorf("exit node IP 3.3.3.3 should NOT have direct rule, got:\n%s", cfg)
+	}
+
+	// 3. Routing rule for instagram.com must target the exit node
+	if !strings.Contains(cfg, `"outboundTag": "chain-3-ExitNode"`) {
+		t.Errorf("expected routing rule to target chain-3-ExitNode, got:\n%s", cfg)
+	}
+}
+
+func TestCompile_XrayMultiHopChain_PreservesExitNodeVisionFlow(t *testing.T) {
+	c := NewCompiler()
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreXray,
+		ChainNodes: []*ast.ServerProfile{
+			{
+				Name:     "Gateway",
+				Protocol: ast.ProtoSocks,
+				Address:  "127.0.0.1",
+				Port:     10808,
+			},
+			{
+				Name:      "ExitNode",
+				Protocol:  ast.ProtoVLESS,
+				Address:   "relay.example.com",
+				Port:      443,
+				UUID:      "10000000-0000-4000-8000-000000000107",
+				Flow:      "xtls-rprx-vision",
+				Security:  ast.SecurityReality,
+				PublicKey: "kPubMockKeyForUnitTestsOnly0000000000000002",
+				ShortID:   "e5f6a7b8",
+				SNI:       "github.com",
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile multi-hop xray config: %v", err)
+	}
+
+	if !strings.Contains(cfg, `"flow": "xtls-rprx-vision"`) {
+		t.Errorf("expected exit node to preserve xtls-rprx-vision flow, but got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"dialerProxy": "chain-1-Gateway"`) {
+		t.Errorf("expected exit node to have dialerProxy chain-1-Gateway, got:\n%s", cfg)
+	}
+}
+
+
+func TestXrayCompiler_RawConfig_PreserveInboundsAndPureRouting(t *testing.T) {
+	c := NewCompiler()
+	rawJSON := `{
+  "inbounds": [
+    {
+      "tag": "balancer-loop-1-in",
+      "protocol": "dokodemo-door",
+      "port": 12345
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy-1",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [{"address": "1.2.3.4", "port": 443}]
+      }
+    }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "inboundTag": ["balancer-loop-1-in"],
+        "outboundTag": "proxy-1"
+      }
+    ]
+  }
+}`
+
+	spec := &ast.ConfigSpec{
+		TargetCore:    ast.CoreXray,
+		RawJSONConfig: rawJSON,
+		ClientInbound: &ast.ClientInboundSpec{
+			Mode:          ast.InboundModeSystemProxy,
+			SocksPort:     10818,
+			ListenAddress: "127.0.0.1",
+			AuthEnabled:   true,
+			AuthUsername:  "crypto_user",
+			AuthPassword:  "crypto_pass",
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile rawJSON config: %v", err)
+	}
+
+	// 1. Verify that balancer-loop-1-in was preserved
+	if !strings.Contains(cfg, `"balancer-loop-1-in"`) {
+		t.Errorf("expected existing inbound balancer-loop-1-in to be preserved, got:\n%s", cfg)
+	}
+
+	// 2. Verify that socks-in with password auth was added
+	if !strings.Contains(cfg, `"socks-in"`) || !strings.Contains(cfg, `"crypto_user"`) || !strings.Contains(cfg, `"crypto_pass"`) {
+		t.Errorf("expected socks-in with auth to be injected, got:\n%s", cfg)
+	}
+
+	// 3. Verify that raw routing rules were untouched and not polluted
+	if !strings.Contains(cfg, `"balancer-loop-1-in"`) {
+		t.Errorf("expected untouched routing rule for balancer-loop-1-in, got:\n%s", cfg)
+	}
+}
+
+func TestXrayCompiler_RawConfig_BalancerFallbackInjection(t *testing.T) {
+	c := NewCompiler()
+	rawJSON := `{
+  "outbounds": [
+    {"tag": "node-alpha", "protocol": "vless"},
+    {"tag": "node-beta", "protocol": "vless"}
+  ],
+  "routing": {
+    "balancers": [
+      {
+        "tag": "my-balancer",
+        "selector": ["node-alpha", "node-beta"],
+        "strategy": {"type": "leastLoad"}
+      }
+    ],
+    "rules": [
+      {
+        "type": "field",
+        "network": "tcp,udp",
+        "balancerTag": "my-balancer"
+      }
+    ]
+  }
+}`
+
+	spec := &ast.ConfigSpec{
+		TargetCore:    ast.CoreXray,
+		RawJSONConfig: rawJSON,
+		ClientInbound: &ast.ClientInboundSpec{
+			Mode:          ast.InboundModeSystemProxy,
+			SocksPort:     10818,
+			ListenAddress: "127.0.0.1",
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile rawJSON config: %v", err)
+	}
+
+	if !strings.Contains(cfg, `"fallbackTag": "node-alpha"`) {
+		t.Errorf("expected fallbackTag: node-alpha to be injected into balancer, got:\n%s", cfg)
 	}
 }

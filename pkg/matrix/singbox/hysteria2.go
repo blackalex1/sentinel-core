@@ -14,7 +14,7 @@ func GetHysteria2Capability(lang string) types.ProtocolCapability {
 		DisplayName:         "Hysteria 2",
 		Description:         i18n.T(loc, "PROTO_HYSTERIA2_DESC"),
 		DefaultPort:         443,
-		SupportedEngines:    []string{"hysteria2", "sing-box"},
+		SupportedEngines:    []string{"xray-core", "sing-box", "hysteria2"},
 		SupportedTransports: []string{"quic"},
 		SupportedSecurity:   []string{"tls"},
 		Features:            []string{"port_hopping", "salamander_obfs", "bandwidth_up_down", "webhook_auth"},

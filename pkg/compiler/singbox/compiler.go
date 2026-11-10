@@ -30,7 +30,40 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 
 	// 1. Negotiate active server node features
 	var primaryOutbounds []map[string]interface{}
-	if spec.ServerNode != nil {
+	if len(spec.ChainNodes) >= 2 {
+		for i, node := range spec.ChainNodes {
+			adaptedNode, warnings, err := c.negotiator.Negotiate(
+				node,
+				ast.CoreSingBox,
+				spec.CoreVersion,
+				spec.StrictMode,
+			)
+			if err != nil {
+				return "", nil, fmt.Errorf("feature negotiation failed for sing-box chain hop %d: %w", i+1, err)
+			}
+			allWarnings = append(allWarnings, warnings...)
+
+			tag := fmt.Sprintf("chain-hop-%d", i+1)
+			if node.Name != "" {
+				tag = fmt.Sprintf("chain-%d-%s", i+1, node.Name)
+			}
+
+			outboundObj, err := BuildSingBoxOutboundWithTag(tag, adaptedNode)
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to build chain hop %d outbound: %w", i+1, err)
+			}
+
+			if i > 0 {
+				prevTag := fmt.Sprintf("chain-hop-%d", i)
+				if spec.ChainNodes[i-1].Name != "" {
+					prevTag = fmt.Sprintf("chain-%d-%s", i, spec.ChainNodes[i-1].Name)
+				}
+				outboundObj["detour"] = prevTag
+			}
+
+			primaryOutbounds = append(primaryOutbounds, outboundObj)
+		}
+	} else if spec.ServerNode != nil {
 		adaptedNode, warnings, err := c.negotiator.Negotiate(
 			spec.ServerNode,
 			ast.CoreSingBox,
@@ -282,7 +315,13 @@ func buildSingBoxDNS(spec *ast.ConfigSpec) map[string]interface{} {
 	dnsRules := []map[string]interface{}{}
 
 	detourTag := ""
-	if spec.ServerNode != nil {
+	if len(spec.ChainNodes) >= 2 {
+		lastNode := spec.ChainNodes[len(spec.ChainNodes)-1]
+		detourTag = fmt.Sprintf("chain-hop-%d", len(spec.ChainNodes))
+		if lastNode.Name != "" {
+			detourTag = fmt.Sprintf("chain-%d-%s", len(spec.ChainNodes), lastNode.Name)
+		}
+	} else if spec.ServerNode != nil {
 		if spec.ServerNode.Name != "" {
 			detourTag = spec.ServerNode.Name
 		} else {

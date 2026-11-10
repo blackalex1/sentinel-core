@@ -95,7 +95,17 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 	}
 
 	downloadDetour := "direct"
-	if spec.ServerNode != nil {
+	if len(spec.ChainNodes) >= 2 {
+		lastNode := spec.ChainNodes[len(spec.ChainNodes)-1]
+		exitTag := fmt.Sprintf("chain-hop-%d", len(spec.ChainNodes))
+		if lastNode.Name != "" {
+			exitTag = fmt.Sprintf("chain-%d-%s", len(spec.ChainNodes), lastNode.Name)
+		}
+		if !isDirect {
+			downloadDetour = exitTag
+		}
+		route["final"] = exitTag
+	} else if spec.ServerNode != nil {
 		if !isDirect {
 			// Client mode multi-tier fallback: Direct CDN mirrors blocked/unavailable. Fall back to proxy tunnel.
 			if spec.ServerNode.Name != "" {
@@ -140,7 +150,13 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 			if r.OutboundTag != "" {
 				outbound = r.OutboundTag
 			} else if r.Action == ast.ActionProxy {
-				if spec.ServerNode != nil && spec.ServerNode.Name != "" {
+				if len(spec.ChainNodes) >= 2 {
+					lastNode := spec.ChainNodes[len(spec.ChainNodes)-1]
+					outbound = fmt.Sprintf("chain-hop-%d", len(spec.ChainNodes))
+					if lastNode.Name != "" {
+						outbound = fmt.Sprintf("chain-%d-%s", len(spec.ChainNodes), lastNode.Name)
+					}
+				} else if spec.ServerNode != nil && spec.ServerNode.Name != "" {
 					outbound = spec.ServerNode.Name
 				} else {
 					outbound = "proxy"

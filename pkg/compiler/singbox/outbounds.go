@@ -9,15 +9,27 @@ import (
 
 // BuildSingBoxOutbound converts an ast.ServerProfile into a Sing-box JSON outbound object.
 func BuildSingBoxOutbound(node *ast.ServerProfile) (map[string]interface{}, error) {
+	tag := "proxy"
+	if node != nil && node.Name != "" {
+		tag = node.Name
+	}
+	return BuildSingBoxOutboundWithTag(tag, node)
+}
+
+// BuildSingBoxOutboundWithTag converts an ast.ServerProfile into a Sing-box JSON outbound object with an explicit tag.
+func BuildSingBoxOutboundWithTag(tag string, node *ast.ServerProfile) (map[string]interface{}, error) {
 	if node == nil {
 		return nil, fmt.Errorf("node profile cannot be nil")
 	}
 
-	proto := strings.ToLower(node.Protocol)
-	tag := "proxy"
-	if node.Name != "" {
-		tag = node.Name
+	if tag == "" {
+		tag = "proxy"
+		if node.Name != "" {
+			tag = node.Name
+		}
 	}
+
+	proto := strings.ToLower(node.Protocol)
 
 	switch proto {
 	case ast.ProtoVLESS:

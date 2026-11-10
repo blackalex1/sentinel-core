@@ -16,6 +16,7 @@ type ConfigSpec struct {
 	CoreVersion   string             `json:"coreVersion,omitempty"` // e.g. "1.11.4", "1.12.0", "1.8.16"
 	StrictMode    bool               `json:"strictMode"`            // If true, fail on unsupported features instead of graceful fallback
 	ServerNode    *ServerProfile     `json:"serverNode,omitempty"`  // Primary active outbound server
+	ChainNodes    []*ServerProfile   `json:"chainNodes,omitempty"`  // Ordered multi-hop chain [Hop1 (Entry), Hop2, ..., HopN (Exit)]
 	ClientInbound *ClientInboundSpec `json:"clientInbound,omitempty"`
 	ServerInbounds []ServerInboundSpec `json:"serverInbounds,omitempty"`
 	Routing       *RoutingSpec       `json:"routing,omitempty"`

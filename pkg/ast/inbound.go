@@ -18,9 +18,10 @@ type ClientInboundSpec struct {
 	ListenAddress string      `json:"listenAddress"` // e.g. "127.0.0.1" or "0.0.0.0"
 
 	// SOCKS5 Authentication (for mobile loopback leak protection)
-	AuthEnabled  bool   `json:"authEnabled,omitempty"`
-	AuthUsername string `json:"authUsername,omitempty"`
-	AuthPassword string `json:"authPassword,omitempty"`
+	AuthEnabled      bool   `json:"authEnabled,omitempty"`
+	AuthUsername     string `json:"authUsername,omitempty"`
+	AuthPassword     string `json:"authPassword,omitempty"`
+	SniffingDisabled bool   `json:"sniffingDisabled,omitempty"`
 
 	// TUN Settings
 	TunInterfaceName string   `json:"tunInterfaceName,omitempty"` // e.g. "sentinel-tun"

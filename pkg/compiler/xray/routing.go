@@ -1,6 +1,7 @@
 package xray
 
 import (
+	"fmt"
 	"net"
 	"strings"
 	"github.com/blackalex1/sentinel-core/pkg/ast"
@@ -20,7 +21,21 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 	rules = append(rules, dnsRule)
 
 	// 0.1 Ensure direct connection to server IP/host to prevent routing loopbacks
-	if spec.ServerNode != nil && spec.ServerNode.Address != "" {
+	if len(spec.ChainNodes) >= 2 {
+		entryNode := spec.ChainNodes[0]
+		if entryNode != nil && entryNode.Address != "" {
+			srvRule := map[string]interface{}{
+				"type":        "field",
+				"outboundTag": "direct",
+			}
+			if net.ParseIP(entryNode.Address) != nil {
+				srvRule["ip"] = []string{entryNode.Address}
+			} else {
+			srvRule["domain"] = []string{entryNode.Address}
+			}
+			rules = append(rules, srvRule)
+		}
+	} else if spec.ServerNode != nil && spec.ServerNode.Address != "" {
 		srvRule := map[string]interface{}{
 			"type":        "field",
 			"outboundTag": "direct",
@@ -75,7 +90,13 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 			if r.OutboundTag != "" {
 				tag = r.OutboundTag
 			} else if r.Action == ast.ActionProxy {
-				if spec.ServerNode != nil && spec.ServerNode.Name != "" {
+				if len(spec.ChainNodes) >= 2 {
+					last := spec.ChainNodes[len(spec.ChainNodes)-1]
+					tag = fmt.Sprintf("chain-hop-%d", len(spec.ChainNodes))
+					if last.Name != "" {
+						tag = fmt.Sprintf("chain-%d-%s", len(spec.ChainNodes), last.Name)
+					}
+				} else if spec.ServerNode != nil && spec.ServerNode.Name != "" {
 					tag = spec.ServerNode.Name
 				} else {
 					tag = "proxy"

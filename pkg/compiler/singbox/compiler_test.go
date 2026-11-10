@@ -1146,3 +1146,74 @@ func TestCompile_BlockIPv6Rule(t *testing.T) {
 		t.Errorf("expected outbound: block in compiled config, got: %s", cfg)
 	}
 }
+
+func TestCompile_SingBoxMultiHopChain(t *testing.T) {
+	c := NewCompiler()
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreSingBox,
+		ChainNodes: []*ast.ServerProfile{
+			{
+				Name:      "EntryNode",
+				Protocol:  ast.ProtoHysteria2,
+				Address:   "1.1.1.1",
+				Port:      443,
+				Password:  "hy2pass123",
+			},
+			{
+				Name:      "RelayNode",
+				Protocol:  ast.ProtoTrojan,
+				Address:   "2.2.2.2",
+				Port:      443,
+				Password:  "trojanpass123",
+			},
+			{
+				Name:      "ExitNode",
+				Protocol:  ast.ProtoVLESS,
+				Address:   "3.3.3.3",
+				Port:      443,
+				UUID:      "c0000000-0000-0000-0000-000000000003",
+			},
+		},
+		Routing: &ast.RoutingSpec{
+			DefaultAction: ast.ActionProxy,
+			Rules: []ast.RoutingRule{
+				{
+					Action:  ast.ActionProxy,
+					Domains: []string{"domain:youtube.com"},
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile multi-hop sing-box config: %v", err)
+	}
+
+	// 1. Tags
+	if !strings.Contains(cfg, `"tag": "chain-1-EntryNode"`) {
+		t.Errorf("expected chain-1-EntryNode tag in config, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"tag": "chain-2-RelayNode"`) {
+		t.Errorf("expected chain-2-RelayNode tag in config, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"tag": "chain-3-ExitNode"`) {
+		t.Errorf("expected chain-3-ExitNode tag in config, got:\n%s", cfg)
+	}
+
+	// 2. Detour chaining
+	if !strings.Contains(cfg, `"detour": "chain-1-EntryNode"`) {
+		t.Errorf("expected detour: chain-1-EntryNode for RelayNode, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"detour": "chain-2-RelayNode"`) {
+		t.Errorf("expected detour: chain-2-RelayNode for ExitNode, got:\n%s", cfg)
+	}
+
+	// 3. Final routing to exit node
+	if !strings.Contains(cfg, `"final": "chain-3-ExitNode"`) {
+		t.Errorf("expected final route to be chain-3-ExitNode, got:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, `"outbound": "chain-3-ExitNode"`) {
+		t.Errorf("expected routing rule to target chain-3-ExitNode, got:\n%s", cfg)
+	}
+}

@@ -46,8 +46,9 @@ func BuildClientConfig(spec *ast.ConfigSpec) (*BuildResult, error) {
 		hasRouting := spec.Routing != nil && len(spec.Routing.Rules) > 0
 		hasTun := spec.ClientInbound != nil && (spec.ClientInbound.Mode == ast.InboundModeDesktopTun || spec.ClientInbound.Mode == ast.InboundModeMobileVpn)
 		hasServerInbounds := len(spec.ServerInbounds) > 0
+		hasChain := len(spec.ChainNodes) >= 2
 
-		if hasRouting || hasTun || hasServerInbounds {
+		if hasRouting || hasTun || hasServerInbounds || hasChain {
 			if spec.StrictMode {
 				return nil, fmt.Errorf("%s", i18n.TGlobal("HY2_STRICT_REJECT"))
 			}

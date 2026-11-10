@@ -5,19 +5,29 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+Push-Location $PSScriptRoot
+try {
+
 # Automatically resolve version from Git if not explicitly specified
 if ([string]::IsNullOrWhiteSpace($Version) -or $Version -eq "auto") {
-    $gitTag = git describe --tags --exact-match 2>$null
-    if ($LASTEXITCODE -eq 0 -and $gitTag) {
-        $Version = $gitTag
-    } else {
-        $gitDesc = git describe --tags --always 2>$null
-        if ($LASTEXITCODE -eq 0 -and $gitDesc) {
-            $Version = $gitDesc
+    try {
+        $gitTag = git describe --tags --exact-match 2>$null
+        if ($LASTEXITCODE -eq 0 -and $gitTag) {
+            $Version = $gitTag
         } else {
-            $gitCommit = git rev-parse --short HEAD 2>$null
-            $Version = if ($gitCommit) { "git-$gitCommit" } else { "dev" }
+            $gitDesc = git describe --tags --always 2>$null
+            if ($LASTEXITCODE -eq 0 -and $gitDesc) {
+                $Version = $gitDesc
+            } else {
+                $gitCommit = git rev-parse --short HEAD 2>$null
+                $Version = if ($gitCommit) { "git-$gitCommit" } else { "1.0.0" }
+            }
         }
+    } catch {
+        $Version = "1.0.0"
+    }
+    if ([string]::IsNullOrWhiteSpace($Version)) {
+        $Version = "1.0.0"
     }
 }
 
@@ -59,7 +69,14 @@ foreach ($t in $targets) {
     
     Write-Host "Compiling $($t.Out) (16 KB page-aligned) -> $targetFile" -ForegroundColor Yellow
     go build -buildmode=c-shared -ldflags="$ldflags" -o $targetFile ./cmd/cshared
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to build $($t.Out) with code $LASTEXITCODE"
+    }
     Write-Host "Built $($t.Out) successfully." -ForegroundColor Green
 }
 
 Write-Host "All Android native libraries built and deployed successfully!" -ForegroundColor Green
+}
+finally {
+    Pop-Location
+}

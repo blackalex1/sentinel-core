@@ -22,6 +22,17 @@ func BuildXrayInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 
 		// SOCKS Inbound
 		if cb.SocksPort > 0 {
+			sniffing := map[string]interface{}{
+				"enabled": false,
+			}
+			if !cb.SniffingDisabled && !cb.AuthEnabled {
+				sniffing = map[string]interface{}{
+					"enabled":      true,
+					"destOverride": []string{"http", "tls", "quic"},
+					"routeOnly":    true,
+				}
+			}
+
 			socksIn := map[string]interface{}{
 				"tag":      "socks-in",
 				"port":     cb.SocksPort,
@@ -31,11 +42,7 @@ func BuildXrayInbounds(spec *ast.ConfigSpec) []map[string]interface{} {
 					"udp":  true,
 					"auth": "noauth",
 				},
-				"sniffing": map[string]interface{}{
-					"enabled":      true,
-					"destOverride": []string{"http", "tls", "quic"},
-					"routeOnly":    false,
-				},
+				"sniffing": sniffing,
 			}
 
 			if cb.AuthEnabled && cb.AuthUsername != "" {

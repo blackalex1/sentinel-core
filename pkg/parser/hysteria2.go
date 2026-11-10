@@ -18,12 +18,23 @@ func parseHysteria2(raw string) (*ast.ServerProfile, error) {
 	}
 
 	port := 443
-	if u.Port() != "" {
-		p, err := strconv.Atoi(u.Port())
-		if err != nil || p <= 0 || p > 65535 {
-			return nil, fmt.Errorf("invalid port in hysteria2 URI: %s", u.Port())
+	rawPort := u.Port()
+	var portHoppingFromHost string
+	if rawPort != "" {
+		if strings.Contains(rawPort, "-") {
+			parts := strings.Split(rawPort, "-")
+			p, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+			if err == nil && p > 0 && p <= 65535 {
+				port = p
+				portHoppingFromHost = rawPort
+			}
+		} else {
+			p, err := strconv.Atoi(rawPort)
+			if err != nil || p <= 0 || p > 65535 {
+				return nil, fmt.Errorf("invalid port in hysteria2 URI: %s", rawPort)
+			}
+			port = p
 		}
-		port = p
 	}
 
 	if !isValidHost(u.Hostname()) {
@@ -51,6 +62,9 @@ func parseHysteria2(raw string) (*ast.ServerProfile, error) {
 	}
 	if portHopping == "" {
 		portHopping = q.Get("hop")
+	}
+	if portHopping == "" {
+		portHopping = portHoppingFromHost
 	}
 
 	var alpn []string

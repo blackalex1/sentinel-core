@@ -15,7 +15,7 @@ func GetOutboundHysteria2Capability(lang string) types.ProtocolCapability {
 		DisplayName:      "Hysteria 2",
 		Description:      i18n.T(loc, "UI_OUTBOUND_HYSTERIA2_DESC"),
 		DefaultPort:      443,
-		SupportedEngines: []string{"hysteria2", "sing-box"},
+		SupportedEngines: []string{"xray-core", "sing-box", "hysteria2"},
 		Tabs:             []string{"basic", "security", "fallbacks"},
 		TabDefinitions: []types.TabDefinition{
 			{

@@ -38,53 +38,54 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		var rawConfig map[string]interface{}
 		if err := json.Unmarshal([]byte(rawJSON), &rawConfig); err == nil && len(rawConfig) > 0 {
 			// Inject our built inbounds (mobile VPN tun-in and local socks-in)
-			inbounds := BuildXrayInbounds(spec)
-			rawConfig["inbounds"] = inbounds
-
-			// Ensure log config
-			logLevel := spec.LogLevel
-			if logLevel == "" {
-				logLevel = "debug"
+			builtInbounds := BuildXrayInbounds(spec)
+			var finalInbounds []interface{}
+			for _, bi := range builtInbounds {
+				finalInbounds = append(finalInbounds, bi)
 			}
-			rawConfig["log"] = map[string]interface{}{
-				"loglevel": logLevel,
-			}
-
-			// Prepend custom threat/app blocks to routing rules if specified
-			if spec.Routing != nil {
-				var prependRules []map[string]interface{}
-				for _, r := range spec.Routing.Rules {
-					if r.Action == ast.ActionBlock {
-						ruleMap := map[string]interface{}{
-							"type":        "field",
-							"outboundTag": "block",
+			// Preserve any existing non-tun / non-socks inbounds from rawConfig (e.g. loopback inbounds for balancers)
+			if existingInbounds, ok := rawConfig["inbounds"].([]interface{}); ok {
+				for _, ei := range existingInbounds {
+					if eiMap, ok := ei.(map[string]interface{}); ok {
+						tag, _ := eiMap["tag"].(string)
+						if tag != "tun-in" && tag != "socks-in" {
+							finalInbounds = append(finalInbounds, ei)
 						}
-						if len(r.IPs) > 0 {
-							ruleMap["ip"] = r.IPs
-						}
-						if len(r.Domains) > 0 {
-							ruleMap["domain"] = r.Domains
-						}
-						if len(r.Ports) > 0 {
-							ruleMap["port"] = strings.Join(r.Ports, ",")
-						}
-						if len(r.PackageUIDs) > 0 {
-							ruleMap["user"] = r.PackageUIDs
-						}
-						prependRules = append(prependRules, ruleMap)
 					}
 				}
-				if len(prependRules) > 0 {
-					if routingMap, ok := rawConfig["routing"].(map[string]interface{}); ok {
-						if existingRules, ok := routingMap["rules"].([]interface{}); ok {
-							var merged []interface{}
-							for _, pr := range prependRules {
-								merged = append(merged, pr)
+			}
+			rawConfig["inbounds"] = finalInbounds
+
+			// Ensure balancers in subscription raw configs have fallbackTag to prevent fatal empty tag drops
+			if routing, ok := rawConfig["routing"].(map[string]interface{}); ok {
+				if balancers, ok := routing["balancers"].([]interface{}); ok {
+					for _, b := range balancers {
+						if bMap, ok := b.(map[string]interface{}); ok {
+							fallback, _ := bMap["fallbackTag"].(string)
+							if fallback == "" {
+								var candidateTag string
+								if selList, ok := bMap["selector"].([]interface{}); ok && len(selList) > 0 {
+									if s, ok := selList[0].(string); ok && s != "" {
+										candidateTag = s
+									}
+								} else if selList, ok := bMap["selectors"].([]interface{}); ok && len(selList) > 0 {
+									if s, ok := selList[0].(string); ok && s != "" {
+										candidateTag = s
+									}
+								}
+								if candidateTag != "" {
+									bMap["fallbackTag"] = candidateTag
+								}
 							}
-							merged = append(merged, existingRules...)
-							routingMap["rules"] = merged
 						}
 					}
+				}
+			}
+
+			// Ensure log config if specified
+			if spec.LogLevel != "" {
+				rawConfig["log"] = map[string]interface{}{
+					"loglevel": spec.LogLevel,
 				}
 			}
 
@@ -98,7 +99,58 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 
 	// 1. Negotiate active server node features
 	var primaryOutbound map[string]interface{}
-	if spec.ServerNode != nil {
+	var chainOutbounds []map[string]interface{}
+
+	if len(spec.ChainNodes) >= 2 {
+		for i, node := range spec.ChainNodes {
+			adaptedNode, warnings, err := c.negotiator.Negotiate(
+				node,
+				ast.CoreXray,
+				spec.CoreVersion,
+				spec.StrictMode,
+			)
+			if err != nil {
+				return "", nil, fmt.Errorf("feature negotiation failed for chain hop %d: %w", i+1, err)
+			}
+			allWarnings = append(allWarnings, warnings...)
+
+			tag := fmt.Sprintf("chain-hop-%d", i+1)
+			if node.Name != "" {
+				tag = fmt.Sprintf("chain-%d-%s", i+1, node.Name)
+			}
+
+			// If previous hop in the chain already uses xtls-rprx-vision, nested vision over another vision transport is invalid.
+			// However, if previous hop is a standard stream (e.g. SOCKS5 loopback entry gateway), flow: xtls-rprx-vision is preserved.
+			if i > 0 && spec.ChainNodes[i-1].Flow == "xtls-rprx-vision" && adaptedNode.Flow == "xtls-rprx-vision" {
+				adaptedNode.Flow = ""
+			}
+
+			outboundObj, err := BuildXrayOutboundWithTag(tag, adaptedNode)
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to build chain hop %d outbound: %w", i+1, err)
+			}
+
+			if i > 0 {
+				prevTag := fmt.Sprintf("chain-hop-%d", i)
+				if spec.ChainNodes[i-1].Name != "" {
+					prevTag = fmt.Sprintf("chain-%d-%s", i, spec.ChainNodes[i-1].Name)
+				}
+				streamSettings, ok := outboundObj["streamSettings"].(map[string]interface{})
+				if !ok || streamSettings == nil {
+					streamSettings = make(map[string]interface{})
+					outboundObj["streamSettings"] = streamSettings
+				}
+				sockopt, ok := streamSettings["sockopt"].(map[string]interface{})
+				if !ok || sockopt == nil {
+					sockopt = make(map[string]interface{})
+					streamSettings["sockopt"] = sockopt
+				}
+				sockopt["dialerProxy"] = prevTag
+			}
+
+			chainOutbounds = append(chainOutbounds, outboundObj)
+		}
+	} else if spec.ServerNode != nil {
 		adaptedNode, warnings, err := c.negotiator.Negotiate(
 			spec.ServerNode,
 			ast.CoreXray,
@@ -122,7 +174,14 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 
 	// 3. Build Outbounds
 	outbounds := make([]map[string]interface{}, 0)
-	if primaryOutbound != nil {
+	if len(chainOutbounds) > 0 {
+		// Put exit node (last hop) first so it becomes the default outbound for unmatched traffic
+		exitNodeObj := chainOutbounds[len(chainOutbounds)-1]
+		outbounds = append(outbounds, exitNodeObj)
+		for i := 0; i < len(chainOutbounds)-1; i++ {
+			outbounds = append(outbounds, chainOutbounds[i])
+		}
+	} else if primaryOutbound != nil {
 		outbounds = append(outbounds, primaryOutbound)
 	}
 
@@ -156,22 +215,8 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 				settingsMap = make(map[string]interface{})
 			}
 
-			if proto == "hysteria2" || proto == "hysteria" {
-				proto = "socks"
-				socksPort := 10808
-				if p, ok := settingsMap["port"].(float64); ok && p > 0 {
-					socksPort = int(p)
-				} else if p, ok := settingsMap["port"].(int); ok && p > 0 {
-					socksPort = p
-				}
-				settingsMap = map[string]interface{}{
-					"servers": []map[string]interface{}{
-						{
-							"address": "127.0.0.1",
-							"port":    socksPort,
-						},
-					},
-				}
+			if proto == "hysteria2" {
+				proto = "hysteria"
 			} else if proto == "socks" {
 				if _, ok := settingsMap["servers"]; !ok {
 					addr, _ := settingsMap["address"].(string)
@@ -260,11 +305,6 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 				}
 			}
 
-			if proto == "socks" && streamSettingsMap != nil {
-				if net, ok := streamSettingsMap["network"].(string); ok && net == "hysteria" {
-					streamSettingsMap = nil
-				}
-			}
 
 			xrayOb := map[string]interface{}{
 				"protocol": proto,

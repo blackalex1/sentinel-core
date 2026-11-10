@@ -9,15 +9,27 @@ import (
 
 // BuildXrayOutbound converts an ast.ServerProfile into an Xray JSON outbound structure.
 func BuildXrayOutbound(node *ast.ServerProfile) (map[string]interface{}, error) {
+	tag := "proxy"
+	if node != nil && node.Name != "" {
+		tag = node.Name
+	}
+	return BuildXrayOutboundWithTag(tag, node)
+}
+
+// BuildXrayOutboundWithTag converts an ast.ServerProfile into an Xray JSON outbound structure with an explicit tag.
+func BuildXrayOutboundWithTag(tag string, node *ast.ServerProfile) (map[string]interface{}, error) {
 	if node == nil {
 		return nil, fmt.Errorf("node profile cannot be nil")
 	}
 
-	proto := strings.ToLower(node.Protocol)
-	tag := "proxy"
-	if node.Name != "" {
-		tag = node.Name
+	if tag == "" {
+		tag = "proxy"
+		if node.Name != "" {
+			tag = node.Name
+		}
 	}
+
+	proto := strings.ToLower(node.Protocol)
 
 	switch proto {
 	case ast.ProtoVLESS:
