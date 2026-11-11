@@ -11,6 +11,7 @@
     "domain:tracker",
     "domain:peerexchange",
     "keyword:torrent",
-    "keyword:tracker"
+    "keyword:tracker",
+    "keyword:peerexchange"
   ]
 }

@@ -107,7 +107,25 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 				tag = "block"
 			}
 
-			createBaseRule := func() map[string]interface{} {
+			var networks []string
+			var allAppProtocols []string
+			var nonBitTorrentAppProtocols []string
+			hasBitTorrent := false
+			for _, p := range r.Protocols {
+				pLower := strings.ToLower(p)
+				if pLower == "tcp" || pLower == "udp" {
+					networks = append(networks, pLower)
+				} else {
+					allAppProtocols = append(allAppProtocols, pLower)
+					if pLower == "bittorrent" {
+						hasBitTorrent = true
+					} else {
+						nonBitTorrentAppProtocols = append(nonBitTorrentAppProtocols, pLower)
+					}
+				}
+			}
+
+			createBaseRule := func(appProtos []string) map[string]interface{} {
 				ruleMap := map[string]interface{}{
 					"type":        "field",
 					"outboundTag": tag,
@@ -115,23 +133,11 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 				if len(r.Ports) > 0 {
 					ruleMap["port"] = strings.Join(r.Ports, ",")
 				}
-				if len(r.Protocols) > 0 {
-					var networks []string
-					var appProtocols []string
-					for _, p := range r.Protocols {
-						pLower := strings.ToLower(p)
-						if pLower == "tcp" || pLower == "udp" {
-							networks = append(networks, pLower)
-						} else {
-							appProtocols = append(appProtocols, pLower)
-						}
-					}
-					if len(networks) > 0 {
-						ruleMap["network"] = strings.Join(networks, ",")
-					}
-					if len(appProtocols) > 0 {
-						ruleMap["protocol"] = appProtocols
-					}
+				if len(networks) > 0 {
+					ruleMap["network"] = strings.Join(networks, ",")
+				}
+				if len(appProtos) > 0 {
+					ruleMap["protocol"] = append([]string(nil), appProtos...)
 				}
 				if len(r.Users) > 0 {
 					ruleMap["user"] = r.Users
@@ -160,24 +166,27 @@ func BuildXrayRouting(spec *ast.ConfigSpec) map[string]interface{} {
 			hasDomains := len(cleanDomains) > 0
 			hasIPs := len(r.IPs) > 0
 
-			if hasDomains && hasIPs {
-				domainRule := createBaseRule()
-				domainRule["domain"] = cleanDomains
-				rules = append(rules, domainRule)
+			// BitTorrent sniffing cannot simultaneously match HTTP/TLS tracker domains or raw IPs with empty host.
+			splitBitTorrent := hasBitTorrent && (hasDomains || hasIPs)
+			ruleAppProtos := allAppProtocols
+			if splitBitTorrent {
+				btRule := createBaseRule([]string{"bittorrent"})
+				rules = append(rules, btRule)
+				ruleAppProtos = nonBitTorrentAppProtocols
+			}
 
-				ipRule := createBaseRule()
-				ipRule["ip"] = r.IPs
-				rules = append(rules, ipRule)
-			} else if hasDomains {
-				domainRule := createBaseRule()
+			if hasDomains {
+				domainRule := createBaseRule(ruleAppProtos)
 				domainRule["domain"] = cleanDomains
 				rules = append(rules, domainRule)
-			} else if hasIPs {
-				ipRule := createBaseRule()
+			}
+			if hasIPs {
+				ipRule := createBaseRule(ruleAppProtos)
 				ipRule["ip"] = r.IPs
 				rules = append(rules, ipRule)
-			} else {
-				baseRule := createBaseRule()
+			}
+			if !hasDomains && !hasIPs && !splitBitTorrent {
+				baseRule := createBaseRule(ruleAppProtos)
 				if len(baseRule) > 2 {
 					rules = append(rules, baseRule)
 				}

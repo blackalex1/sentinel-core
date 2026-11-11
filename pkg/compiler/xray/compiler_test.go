@@ -1,6 +1,7 @@
 package xray
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -1221,5 +1222,61 @@ func TestXrayCompiler_RawConfig_BalancerFallbackInjection(t *testing.T) {
 
 	if !strings.Contains(cfg, `"fallbackTag": "node-alpha"`) {
 		t.Errorf("expected fallbackTag: node-alpha to be injected into balancer, got:\n%s", cfg)
+	}
+}
+
+func TestXrayCompiler_BitTorrentSplitAndCombinedProtocol(t *testing.T) {
+	c := NewCompiler()
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreXray,
+		Routing: &ast.RoutingSpec{
+			Rules: []ast.RoutingRule{
+				{
+					Action:    ast.ActionBlock,
+					Protocols: []string{"bittorrent"},
+					Domains:   []string{"domain:torrent", "keyword:peerexchange"},
+				},
+				{
+					Action:    ast.ActionBlock,
+					Protocols: []string{"quic"},
+					Domains:   []string{"youtube.com"},
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("compile failed: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(cfg), &parsed); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	rules := parsed["routing"].(map[string]interface{})["rules"].([]interface{})
+
+	var foundBTProtoOnly, foundBTDomainOnly, foundQUICCombined bool
+	for _, r := range rules {
+		rm := r.(map[string]interface{})
+		protos, hasProto := rm["protocol"].([]interface{})
+		_, hasDomain := rm["domain"]
+
+		if hasProto && len(protos) == 1 && protos[0] == "bittorrent" && !hasDomain {
+			foundBTProtoOnly = true
+		}
+		if !hasProto && hasDomain {
+			foundBTDomainOnly = true
+		}
+		if hasProto && len(protos) == 1 && protos[0] == "quic" && hasDomain {
+			foundQUICCombined = true
+		}
+	}
+
+	if !foundBTProtoOnly || !foundBTDomainOnly {
+		t.Errorf("expected bittorrent rule to split protocol vs domain rules; foundBTProtoOnly=%v foundBTDomainOnly=%v rules=%v", foundBTProtoOnly, foundBTDomainOnly, rules)
+	}
+	if !foundQUICCombined {
+		t.Errorf("expected non-bittorrent rule (quic+domain) to remain single combined rule, rules=%v", rules)
 	}
 }

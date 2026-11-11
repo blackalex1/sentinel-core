@@ -54,14 +54,18 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 		sniffingInbounds = append(sniffingInbounds, "tun-in")
 	}
 	for _, sb := range spec.ServerInbounds {
-		if sb.Sniffing != nil {
-			if enabled, ok := sb.Sniffing["enabled"].(bool); ok && enabled {
-				tag := sb.Tag
-				if tag == "" {
-					tag = fmt.Sprintf("inbound-%d", sb.Port)
-				}
-				sniffingInbounds = append(sniffingInbounds, tag)
+		sniffEnabled := true
+		if len(sb.Sniffing) > 0 {
+			if enabled, ok := sb.Sniffing["enabled"].(bool); ok {
+				sniffEnabled = enabled
 			}
+		}
+		if sniffEnabled {
+			tag := sb.Tag
+			if tag == "" {
+				tag = fmt.Sprintf("inbound-%d", sb.Port)
+			}
+			sniffingInbounds = append(sniffingInbounds, tag)
 		}
 	}
 
@@ -174,7 +178,25 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 				outbound = "block"
 			}
 
-			createBaseRule := func() map[string]interface{} {
+			var networks []string
+			var allAppProtocols []string
+			var nonBitTorrentAppProtocols []string
+			hasBitTorrent := false
+			for _, p := range r.Protocols {
+				pLower := strings.ToLower(p)
+				if pLower == "tcp" || pLower == "udp" {
+					networks = append(networks, pLower)
+				} else {
+					allAppProtocols = append(allAppProtocols, pLower)
+					if pLower == "bittorrent" {
+						hasBitTorrent = true
+					} else {
+						nonBitTorrentAppProtocols = append(nonBitTorrentAppProtocols, pLower)
+					}
+				}
+			}
+
+			createBaseRule := func(appProtos []string) map[string]interface{} {
 				base := map[string]interface{}{
 					"outbound": outbound,
 				}
@@ -204,23 +226,11 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 						base["port_range"] = rangePorts
 					}
 				}
-				if len(r.Protocols) > 0 {
-					var networks []string
-					var appProtocols []string
-					for _, p := range r.Protocols {
-						pLower := strings.ToLower(p)
-						if pLower == "tcp" || pLower == "udp" {
-							networks = append(networks, pLower)
-						} else {
-							appProtocols = append(appProtocols, pLower)
-						}
-					}
-					if len(networks) > 0 {
-						base["network"] = networks
-					}
-					if len(appProtocols) > 0 {
-						base["protocol"] = appProtocols
-					}
+				if len(networks) > 0 {
+					base["network"] = networks
+				}
+				if len(appProtos) > 0 {
+					base["protocol"] = append([]string(nil), appProtos...)
 				}
 				if len(r.Users) > 0 {
 					base["auth_user"] = r.Users
@@ -329,39 +339,18 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 			hasDomainMatchers := len(regexList) > 0 || len(suffixDomains) > 0 || len(exactDomains) > 0 || len(keywordList) > 0 || len(domainRuleSets) > 0
 			hasIPMatchers := len(rawIPs) > 0 || len(ipRuleSets) > 0 || hasIPv6All
 
-			if hasDomainMatchers && hasIPMatchers {
-				// Split into two rules so domains and IPs match independently
-				dRule := createBaseRule()
-				if len(regexList) > 0 {
-					dRule["domain_regex"] = regexList
-				}
-				if len(suffixDomains) > 0 {
-					dRule["domain_suffix"] = suffixDomains
-				}
-				if len(exactDomains) > 0 {
-					dRule["domain"] = exactDomains
-				}
-				if len(keywordList) > 0 {
-					dRule["domain_keyword"] = keywordList
-				}
-				if len(domainRuleSets) > 0 {
-					dRule["rule_set"] = domainRuleSets
-				}
-				rules = append(rules, dRule)
+			// BitTorrent sniffing cannot simultaneously match HTTP/TLS tracker domains or raw IPs with empty host.
+			splitBitTorrent := hasBitTorrent && (hasDomainMatchers || hasIPMatchers)
+			ruleAppProtos := allAppProtocols
+			if splitBitTorrent {
+				btRule := createBaseRule(nil)
+				btRule["protocol"] = []string{"bittorrent"}
+				rules = append(rules, btRule)
+				ruleAppProtos = nonBitTorrentAppProtocols
+			}
 
-				iRule := createBaseRule()
-				if hasIPv6All {
-					iRule["ip_version"] = 6
-				}
-				if len(rawIPs) > 0 {
-					iRule["ip_cidr"] = rawIPs
-				}
-				if len(ipRuleSets) > 0 {
-					iRule["rule_set"] = ipRuleSets
-				}
-				rules = append(rules, iRule)
-			} else if hasDomainMatchers {
-				dRule := createBaseRule()
+			if hasDomainMatchers {
+				dRule := createBaseRule(ruleAppProtos)
 				if len(regexList) > 0 {
 					dRule["domain_regex"] = regexList
 				}
@@ -378,8 +367,9 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 					dRule["rule_set"] = domainRuleSets
 				}
 				rules = append(rules, dRule)
-			} else if hasIPMatchers {
-				iRule := createBaseRule()
+			}
+			if hasIPMatchers {
+				iRule := createBaseRule(ruleAppProtos)
 				if hasIPv6All {
 					iRule["ip_version"] = 6
 				}
@@ -390,8 +380,9 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 					iRule["rule_set"] = ipRuleSets
 				}
 				rules = append(rules, iRule)
-			} else {
-				baseRule := createBaseRule()
+			}
+			if !hasDomainMatchers && !hasIPMatchers && !splitBitTorrent {
+				baseRule := createBaseRule(ruleAppProtos)
 				if len(baseRule) > 1 || r.OutboundTag != "" || r.Action != "" {
 					rules = append(rules, baseRule)
 				}
