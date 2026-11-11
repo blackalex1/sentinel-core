@@ -18,7 +18,7 @@ jobs:
   # 1. Strict test suite execution with Go race detector
   test:
     name: 🧪 Run Unit & Integration Tests (Go Race Detector)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -30,11 +30,6 @@ jobs:
           cache: true
           cache-dependency-path: go.mod
 
-      - name: Install dependencies (libpcap)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libpcap-dev
-
       - name: Run Full Test Suite (Multi-threaded & Parallel)
         run: |
           CPU_COUNT=$(nproc 2>/dev/null || echo 4)
@@ -45,7 +40,7 @@ jobs:
   build-and-release:
     name: 🚀 Cross-Compile & Publish Release
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -59,6 +54,11 @@ jobs:
 
       - name: Install cross-compilers for Linux/Windows FFI
         run: |
+          if ! getent hosts azure.archive.ubuntu.com >/dev/null 2>&1; then
+            echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8" | sudo tee /etc/resolv.conf >/dev/null
+          fi
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee -a /etc/apt/apt.conf.d/80-retries >/dev/null
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu gcc-mingw-w64-x86-64
 
