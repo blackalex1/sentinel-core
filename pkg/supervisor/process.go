@@ -283,6 +283,8 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 					}
 					if sbCfg.Experimental.ClashAPI.ExternalController != "" {
 						GetController().Configure(sbCfg.Experimental.ClashAPI.ExternalController, nil, nil)
+						GetController().ConfigureSingBoxFailoverFromFile(sbCfg.Experimental.ClashAPI.ExternalController, configPath)
+						GetController().StartSingBoxFailoverWatcher()
 					}
 				}
 			} else if normName == "xray" {
@@ -321,11 +323,16 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 	go func(name string, proc *exec.Cmd, stopTail chan struct{}) {
 		err := proc.Wait()
 		close(stopTail)
+		isCurrent := false
 		pm.mu.Lock()
 		if current, exists := pm.processes[name]; exists && current == proc {
 			delete(pm.processes, name)
+			isCurrent = true
 		}
 		pm.mu.Unlock()
+		if isCurrent && name == "sing-box" {
+			GetController().StopSingBoxFailoverWatcher()
+		}
 		log.Printf("[sentinel-core] %s", i18n.TGlobal("LOG_SUPERVISOR_FINISHED", name, err))
 	}(normName, cmd, stopCh)
 
@@ -375,6 +382,9 @@ func (pm *ProcessManager) StopCore(coreName string) error {
 			_ = exec.Command("killall", "-9", binBase).Run()
 			_ = exec.Command("pkill", "-9", "-x", binBase).Run()
 		}
+	}
+	if normName == "sing-box" {
+		GetController().StopSingBoxFailoverWatcher()
 	}
 	if normName == "hysteria2" {
 		ResetHysteriaCumulativeTraffic()

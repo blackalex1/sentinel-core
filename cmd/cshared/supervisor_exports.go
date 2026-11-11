@@ -152,3 +152,38 @@ func SentinelPushLogLine(core *C.char, line *C.char) *C.char {
 	supervisor.GetLogBroadcaster().PushLine(goCore, l)
 	return C.CString(`{"success": true}`)
 }
+
+//export SentinelConfigureSingBoxFailover
+func SentinelConfigureSingBoxFailover(clashAddr *C.char, groupsJSON *C.char) *C.char {
+	addr := safeGoString(clashAddr)
+	raw := safeGoString(groupsJSON)
+	var groups []supervisor.SingBoxFailoverGroup
+	if raw != "" {
+		if err := json.Unmarshal([]byte(raw), &groups); err != nil {
+			errResp, _ := json.Marshal(map[string]any{"success": false, "error": err.Error()})
+			return C.CString(string(errResp))
+		}
+	}
+	supervisor.GetController().ConfigureSingBoxFailover(addr, groups)
+	return C.CString(`{"success": true}`)
+}
+
+//export SentinelEnsureSingBoxFailover
+func SentinelEnsureSingBoxFailover(clashAddr *C.char) *C.char {
+	addr := safeGoString(clashAddr)
+	ctrl := supervisor.GetController()
+	if addr != "" {
+		ctrl.Configure(addr, nil, nil)
+	}
+	ctrl.StartSingBoxFailoverWatcher()
+	return C.CString(`{"success": true}`)
+}
+
+//export SentinelStepSingBoxFailover
+func SentinelStepSingBoxFailover() *C.char {
+	if err := supervisor.GetController().StepSingBoxFailover(); err != nil {
+		errResp, _ := json.Marshal(map[string]any{"success": false, "error": err.Error()})
+		return C.CString(string(errResp))
+	}
+	return C.CString(`{"success": true}`)
+}

@@ -1217,3 +1217,133 @@ func TestCompile_SingBoxMultiHopChain(t *testing.T) {
 		t.Errorf("expected routing rule to target chain-3-ExitNode, got:\n%s", cfg)
 	}
 }
+
+func TestSingboxCompiler_FallbackStrategiesAndClashModeOrder(t *testing.T) {
+	c := NewCompiler()
+
+	buildSpec := func(strategy string, clashAddr string, interval int) *ast.ConfigSpec {
+		return &ast.ConfigSpec{
+			TargetCore:      ast.CoreSingBox,
+			ClashAPIAddress: clashAddr,
+			Routing: &ast.RoutingSpec{
+				DefaultAction: ast.ActionDirect,
+				Outbounds: []map[string]interface{}{
+					{
+						"tag":      "hy2-out",
+						"protocol": "hysteria2",
+						"settings": map[string]interface{}{
+							"address":               "1.2.3.4",
+							"port":                  443,
+							"password":              "secret",
+							"backup_outbounds":      []string{"vless-bak"},
+							"fallback_strategy":     strategy,
+							"health_check_interval": interval,
+						},
+					},
+					{
+						"tag":      "vless-bak",
+						"protocol": "vless",
+						"settings": map[string]interface{}{
+							"address": "5.6.7.8",
+							"port":    443,
+							"id":      "uuid-1234",
+						},
+					},
+				},
+				Rules: []ast.RoutingRule{
+					{
+						Action:      ast.ActionProxy,
+						OutboundTag: "hy2-out",
+						InboundTags: []string{"inbound-11"},
+					},
+				},
+			},
+		}
+	}
+
+	// 1. Strict priority + ClashAPI -> selector with default=primary, interrupt_exist_connections=false, clash_mode before inbound rule
+	cfgJSON, warnings, err := c.Compile(buildSpec("priority", "127.0.0.1:9090", 120))
+	if err != nil {
+		t.Fatalf("compile failed: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings for Clash-managed priority, got %+v", warnings)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(cfgJSON), &parsed); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	outbounds := parsed["outbounds"].([]interface{})
+	var hyGroup map[string]interface{}
+	for _, ob := range outbounds {
+		m := ob.(map[string]interface{})
+		if m["tag"] == "hy2-out" {
+			hyGroup = m
+			break
+		}
+	}
+	if hyGroup == nil {
+		t.Fatalf("missing hy2-out group")
+	}
+	if hyGroup["type"] != "selector" {
+		t.Errorf("expected selector type for priority+clash_api, got %v", hyGroup["type"])
+	}
+	if hyGroup["default"] != "hy2-out-primary" {
+		t.Errorf("expected default=hy2-out-primary, got %v", hyGroup["default"])
+	}
+	if hyGroup["interrupt_exist_connections"] != false {
+		t.Errorf("expected interrupt_exist_connections=false, got %v", hyGroup["interrupt_exist_connections"])
+	}
+
+	rules := parsed["route"].(map[string]interface{})["rules"].([]interface{})
+	clashIdx, inboundIdx := -1, -1
+	for i, r := range rules {
+		rm := r.(map[string]interface{})
+		if rm["clash_mode"] == "Direct" {
+			clashIdx = i
+		}
+		if rm["outbound"] == "hy2-out" {
+			inboundIdx = i
+		}
+	}
+	if clashIdx < 0 || inboundIdx < 0 || clashIdx >= inboundIdx {
+		t.Errorf("expected clash_mode=Direct (idx %d) before inbound rule (idx %d)", clashIdx, inboundIdx)
+	}
+
+	// 2. least_ping + custom 180s interval -> urltest with tolerance=50, interval="180s" (not 15s), interrupt_exist_connections=false
+	cfgLeast, _, err := c.Compile(buildSpec("least_ping", "127.0.0.1:9090", 180))
+	if err != nil {
+		t.Fatalf("compile least_ping failed: %v", err)
+	}
+	var parsedLeast map[string]interface{}
+	_ = json.Unmarshal([]byte(cfgLeast), &parsedLeast)
+	for _, ob := range parsedLeast["outbounds"].([]interface{}) {
+		m := ob.(map[string]interface{})
+		if m["tag"] == "hy2-out" {
+			if m["type"] != "urltest" {
+				t.Errorf("expected urltest for least_ping, got %v", m["type"])
+			}
+			if int(m["tolerance"].(float64)) != 50 {
+				t.Errorf("expected tolerance 50 for least_ping, got %v", m["tolerance"])
+			}
+			if m["interval"] != "180s" {
+				t.Errorf("expected interval 180s (not capped to 15s), got %v", m["interval"])
+			}
+			if m["interrupt_exist_connections"] != false {
+				t.Errorf("expected interrupt_exist_connections=false, got %v", m["interrupt_exist_connections"])
+			}
+		}
+	}
+
+	// 3. round_robin -> urltest tolerance=50 + downgrade NegotiationWarning
+	cfgRR, rrWarnings, err := c.Compile(buildSpec("round_robin", "127.0.0.1:9090", 0))
+	if err != nil {
+		t.Fatalf("compile round_robin failed: %v", err)
+	}
+	if len(rrWarnings) == 0 {
+		t.Errorf("expected warning for round_robin on sing-box")
+	}
+	if !strings.Contains(cfgRR, `"interval": "30s"`) {
+		t.Errorf("expected default interval 30s, got:\n%s", cfgRR)
+	}
+}

@@ -180,12 +180,12 @@ func TestMultiProtocol_DeepFallbackChain_SingBox(t *testing.T) {
 		t.Fatalf("failed to compile Sing-box deep fallback config: %v", err)
 	}
 
-	// Verifications in compiled JSON
-	if !strings.Contains(cfgJSON, `"type": "urltest"`) {
-		t.Fatalf("expected urltest group in Sing-box config, got:\n%s", cfgJSON)
+	// Verifications in compiled JSON (Clash API strict priority emits selector + default primary)
+	if !strings.Contains(cfgJSON, `"type": "selector"`) || !strings.Contains(cfgJSON, `"default": "mock-hy2-main-primary"`) {
+		t.Fatalf("expected selector strict-priority group in Sing-box config, got:\n%s", cfgJSON)
 	}
 	if !strings.Contains(cfgJSON, `"tag": "mock-hy2-main"`) {
-		t.Fatalf("expected urltest tag mock-hy2-main, got:\n%s", cfgJSON)
+		t.Fatalf("expected selector tag mock-hy2-main, got:\n%s", cfgJSON)
 	}
 	if !strings.Contains(cfgJSON, `"mock-hy2-main-primary"`) {
 		t.Fatalf("expected primary node tag mock-hy2-main-primary, got:\n%s", cfgJSON)
@@ -493,8 +493,8 @@ func TestCrossCore_SeamlessSwitching_SingBox_And_Xray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sing-box compilation failed: %v", err)
 	}
-	if !strings.Contains(sbCfgJSON, `"type": "urltest"`) {
-		t.Errorf("Sing-box missing urltest: %s", sbCfgJSON)
+	if !strings.Contains(sbCfgJSON, `"type": "selector"`) || !strings.Contains(sbCfgJSON, `"default": "node-primary-primary"`) {
+		t.Errorf("Sing-box missing priority selector: %s", sbCfgJSON)
 	}
 	if singboxBin != "" {
 		tmpFile, _ := os.CreateTemp("", "sb-switch-*.json")

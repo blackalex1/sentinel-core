@@ -75,19 +75,22 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		}
 		allWarnings = append(allWarnings, warnings...)
 
+		hasClashAPI := spec.ClashAPIAddress != ""
 		if len(adaptedNode.BackupProfiles) > 0 {
-			urltestOb, compiledNodes, err := BuildSingboxMultiNodeFallback(adaptedNode, adaptedNode.BackupProfiles)
+			fallbackOb, compiledNodes, err := BuildSingboxMultiNodeFallbackWithMode(adaptedNode, adaptedNode.BackupProfiles, hasClashAPI)
 			if err != nil {
 				return "", nil, err
 			}
-			primaryOutbounds = append(primaryOutbounds, urltestOb)
+			primaryOutbounds = append(primaryOutbounds, fallbackOb)
 			primaryOutbounds = append(primaryOutbounds, compiledNodes...)
+			allWarnings = append(allWarnings, CollectFallbackStrategyWarnings(adaptedNode.FallbackStrategy, hasClashAPI)...)
 		} else if len(adaptedNode.BackupOutbounds) > 0 {
-			urltestOb, primaryNodeObj, err := BuildSingboxNodeFallback(adaptedNode)
+			fallbackOb, primaryNodeObj, err := BuildSingboxNodeFallbackWithMode(adaptedNode, hasClashAPI)
 			if err != nil {
 				return "", nil, err
 			}
-			primaryOutbounds = append(primaryOutbounds, urltestOb, primaryNodeObj)
+			primaryOutbounds = append(primaryOutbounds, fallbackOb, primaryNodeObj)
+			allWarnings = append(allWarnings, CollectFallbackStrategyWarnings(adaptedNode.FallbackStrategy, hasClashAPI)...)
 		} else {
 			outboundObj, err := BuildSingBoxOutbound(adaptedNode)
 			if err != nil {
@@ -121,11 +124,13 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 				continue
 			}
 
-			if urltestOb, primaryCompiled, hasFallback := BuildSingboxRawFallback(ob); hasFallback {
-				outbounds = append(outbounds, urltestOb)
+			hasClashAPI := spec.ClashAPIAddress != ""
+			if fallbackOb, primaryCompiled, strategy, hasFallback := BuildSingboxRawFallbackWithMode(ob, hasClashAPI); hasFallback {
+				outbounds = append(outbounds, fallbackOb)
 				if primaryCompiled != nil {
 					outbounds = append(outbounds, primaryCompiled)
 				}
+				allWarnings = append(allWarnings, CollectFallbackStrategyWarnings(strategy, hasClashAPI)...)
 			} else {
 				outboundObj := CompileRawOutboundToSingbox(ob)
 				if outboundObj != nil {

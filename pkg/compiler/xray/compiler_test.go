@@ -647,6 +647,9 @@ func TestXrayCompiler_AdditionalBranches(t *testing.T) {
 	if !strings.Contains(cfg, `"my-user-id"`) {
 		t.Errorf("expected my-user-id: %s", cfg)
 	}
+	if !strings.Contains(cfg, `"version": 2`) {
+		t.Errorf("expected hysteria outbound version 2 fallback: %s", cfg)
+	}
 }
 
 func TestXrayCompiler_FallbackBalancer(t *testing.T) {

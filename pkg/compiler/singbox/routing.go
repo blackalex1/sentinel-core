@@ -94,6 +94,14 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 		}
 	}
 
+	// Evaluate Clash Direct mode before custom/inbound rules so toggling Direct mode isn't shadowed by inbound catch-alls.
+	if spec.ClashAPIAddress != "" {
+		rules = append(rules, map[string]interface{}{
+			"clash_mode": "Direct",
+			"outbound":   "direct",
+		})
+	}
+
 	downloadDetour := "direct"
 	if len(spec.ChainNodes) >= 2 {
 		lastNode := spec.ChainNodes[len(spec.ChainNodes)-1]
@@ -389,13 +397,6 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 				}
 			}
 		}
-	}
-
-	if spec.ClashAPIAddress != "" {
-		rules = append(rules, map[string]interface{}{
-			"clash_mode": "Direct",
-			"outbound":   "direct",
-		})
 	}
 
 	route["rules"] = rules

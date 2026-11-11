@@ -46,7 +46,7 @@ func BuildOutboundFallbackTab(lang string) types.TabDefinition {
 						Type:        "number",
 						Label:       i18n.T(loc, "UI_FIELD_HEALTH_CHECK_INT"),
 						HelpText:    i18n.T(loc, "UI_HELP_HEALTH_CHECK_INT"),
-						Default:     300,
+						Default:     30,
 						GridColumn:  "col-6",
 					},
 				},

@@ -215,8 +215,11 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 				settingsMap = make(map[string]interface{})
 			}
 
-			if proto == "hysteria2" {
+			if proto == "hysteria2" || proto == "hysteria" {
 				proto = "hysteria"
+				if v, ok := settingsMap["version"]; !ok || v == nil || v == 0 || v == float64(0) {
+					settingsMap["version"] = 2
+				}
 			} else if proto == "socks" {
 				if _, ok := settingsMap["servers"]; !ok {
 					addr, _ := settingsMap["address"].(string)

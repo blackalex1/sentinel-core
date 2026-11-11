@@ -15,11 +15,13 @@ import (
 
 // Controller manages core processes, telemetry, and operations
 type Controller struct {
-	mu            sync.RWMutex
-	startTime     time.Time
-	clashAPIAddr  string
-	hysteriaPorts []int
-	logPaths      map[string]string
+	mu                sync.RWMutex
+	startTime         time.Time
+	clashAPIAddr      string
+	clashAddrExplicit bool
+	hysteriaPorts     []int
+	logPaths          map[string]string
+	failover          *SingBoxFailoverController
 }
 
 var (
@@ -62,6 +64,7 @@ func (c *Controller) Configure(clashAddr string, hysteriaPorts []int, logPaths m
 
 	if clashAddr != "" {
 		c.clashAPIAddr = clashAddr
+		c.clashAddrExplicit = true
 	}
 	if len(hysteriaPorts) > 0 {
 		c.hysteriaPorts = hysteriaPorts
@@ -127,10 +130,23 @@ func (c *Controller) getActiveHysteriaPorts() []int {
 	return result
 }
 
+func normalizeClashAddrHost(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if strings.HasPrefix(addr, ":") {
+		return "127.0.0.1" + addr
+	}
+	return addr
+}
+
 func (c *Controller) getActiveClashAddr() string {
 	c.mu.RLock()
 	clashAddr := c.clashAPIAddr
+	explicit := c.clashAddrExplicit
 	c.mu.RUnlock()
+
+	if explicit && strings.TrimSpace(clashAddr) != "" {
+		return normalizeClashAddrHost(clashAddr)
+	}
 
 	searchDirs := []string{
 		".", "bin", "config", "../bin", "../config",
@@ -155,18 +171,14 @@ func (c *Controller) getActiveClashAddr() string {
 					} `json:"experimental"`
 				}
 				if err := json.Unmarshal(data, &cfg); err == nil && cfg.Experimental.ClashAPI.ExternalController != "" {
-					addr := cfg.Experimental.ClashAPI.ExternalController
-					if strings.HasPrefix(addr, ":") {
-						return "127.0.0.1" + addr
-					}
-					return addr
+					return normalizeClashAddrHost(cfg.Experimental.ClashAPI.ExternalController)
 				}
 			}
 		}
 	}
 
 	if clashAddr != "" {
-		return clashAddr
+		return normalizeClashAddrHost(clashAddr)
 	}
 	return "127.0.0.1:9090"
 }

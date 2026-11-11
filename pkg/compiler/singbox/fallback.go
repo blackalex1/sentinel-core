@@ -5,13 +5,65 @@ import (
 	"strings"
 
 	"github.com/blackalex1/sentinel-core/pkg/ast"
+	"github.com/blackalex1/sentinel-core/pkg/matrix"
 )
+
+const (
+	defaultSingboxProbeURL      = "https://www.gstatic.com/generate_204"
+	defaultSingboxProbeInterval = 30
+	defaultSingboxToleranceMs   = 50
+)
+
+// IsStrictPriorityStrategy reports whether strategy requests strict primary-first failover.
+func IsStrictPriorityStrategy(strategy string) bool {
+	s := strings.ToLower(strings.TrimSpace(strategy))
+	return s == "" || s == "priority" || s == "primary" || s == "fallback"
+}
+
+// IsRoundRobinStrategy reports whether strategy requests round-robin or random balancing.
+func IsRoundRobinStrategy(strategy string) bool {
+	s := strings.ToLower(strings.TrimSpace(strategy))
+	return s == "load_balance" || s == "round_robin" || s == "random"
+}
+
+// NormalizeSingboxProbeInterval clamps interval into [5, 3600] seconds, defaulting to 30s.
+func NormalizeSingboxProbeInterval(probeInterval int) int {
+	if probeInterval <= 0 {
+		return defaultSingboxProbeInterval
+	}
+	if probeInterval < 5 {
+		return 5
+	}
+	if probeInterval > 3600 {
+		return 3600
+	}
+	return probeInterval
+}
+
+// CollectFallbackStrategyWarnings returns compatibility warnings when Sing-box adapts a failover strategy.
+func CollectFallbackStrategyWarnings(strategy string, clashManaged bool) []matrix.NegotiationWarning {
+	var warnings []matrix.NegotiationWarning
+	if IsRoundRobinStrategy(strategy) {
+		warnings = append(warnings, matrix.NegotiationWarning{
+			Feature: matrix.Feature("fallback_strategy:" + strings.TrimSpace(strategy)),
+			Message: "sing-box does not natively support round-robin/random outbound groups; using least-latency urltest with 50ms tolerance",
+			Action:  "downgrade_to_urltest_least_ping",
+		})
+	} else if IsStrictPriorityStrategy(strategy) && !clashManaged {
+		warnings = append(warnings, matrix.NegotiationWarning{
+			Feature: matrix.Feature("fallback_strategy:priority"),
+			Message: "strict priority without Clash API controller falls back to urltest with 50ms tolerance",
+			Action:  "downgrade_to_urltest",
+		})
+	}
+	return warnings
+}
 
 // ExtractSingboxFallbackSettings parses and extracts fallback parameters from settings map.
 func ExtractSingboxFallbackSettings(sMap map[string]interface{}, tag string) ([]string, string, int, string) {
 	var validBackups []string
-	probeURL := "https://www.gstatic.com/generate_204"
-	probeInt := 15
+	probeURL := defaultSingboxProbeURL
+	probeInt := defaultSingboxProbeInterval
 	fallbackStrat := "priority"
 
 	if sMap == nil {
@@ -62,48 +114,63 @@ func ExtractSingboxFallbackSettings(sMap map[string]interface{}, tag string) ([]
 	return validBackups, probeURL, probeInt, fallbackStrat
 }
 
-// CalculateSingboxTolerance determines tolerance in ms according to strategy.
+// CalculateSingboxTolerance determines urltest tolerance in ms according to strategy.
+// A 50ms hysteresis threshold avoids both 1ms jitter flapping (0ms) and backup lock-in (5000ms).
 func CalculateSingboxTolerance(strategy string) int {
-	strategy = strings.ToLower(strings.TrimSpace(strategy))
-	if strategy == "priority" || strategy == "primary" || strategy == "fallback" || strategy == "" {
-		return 5000
-	}
-	if strategy == "least_ping" {
-		return 0
-	}
-	if strategy == "load_balance" || strategy == "round_robin" || strategy == "random" {
-		return 50
-	}
-	return 5000
+	return defaultSingboxToleranceMs
 }
 
-// BuildSingboxFallbackGroup constructs an urltest outbound group and renamed primary node.
-func BuildSingboxFallbackGroup(tag string, primaryCompiled map[string]interface{}, backups []string, probeURL string, probeInterval int, strategy string) map[string]interface{} {
-	primaryTag := tag + "-primary"
-	toleranceVal := CalculateSingboxTolerance(strategy)
-	if probeInterval <= 0 || probeInterval > 60 {
-		probeInterval = 15
+func buildFallbackOutboundGroup(tag string, outbounds []string, probeURL string, probeInterval int, strategy string, clashManaged bool) map[string]interface{} {
+	if strings.TrimSpace(probeURL) == "" {
+		probeURL = defaultSingboxProbeURL
 	}
+	if clashManaged && IsStrictPriorityStrategy(strategy) && len(outbounds) > 0 {
+		return map[string]interface{}{
+			"type":                        "selector",
+			"tag":                         tag,
+			"outbounds":                   outbounds,
+			"default":                     outbounds[0],
+			"interrupt_exist_connections": false,
+		}
+	}
+
+	interval := NormalizeSingboxProbeInterval(probeInterval)
 	idleTimeoutSec := 1800
-	if probeInterval >= idleTimeoutSec {
-		idleTimeoutSec = probeInterval * 2
+	if interval >= idleTimeoutSec {
+		idleTimeoutSec = interval * 2
 	}
-	idleTimeoutStr := fmt.Sprintf("%ds", idleTimeoutSec)
 
 	return map[string]interface{}{
 		"type":                        "urltest",
 		"tag":                         tag,
-		"outbounds":                   append([]string{primaryTag}, backups...),
+		"outbounds":                   outbounds,
 		"url":                         probeURL,
-		"interval":                    fmt.Sprintf("%ds", probeInterval),
-		"tolerance":                   toleranceVal,
-		"idle_timeout":                idleTimeoutStr,
-		"interrupt_exist_connections": true,
+		"interval":                    fmt.Sprintf("%ds", interval),
+		"tolerance":                   CalculateSingboxTolerance(strategy),
+		"idle_timeout":                fmt.Sprintf("%ds", idleTimeoutSec),
+		"interrupt_exist_connections": false,
 	}
 }
 
-// BuildSingboxNodeFallback handles ast.ServerProfile fallback generation.
+// BuildSingboxFallbackGroup constructs a standalone urltest outbound group using default Clash-unmanaged mode.
+func BuildSingboxFallbackGroup(tag string, primaryCompiled map[string]interface{}, backups []string, probeURL string, probeInterval int, strategy string) map[string]interface{} {
+	return BuildSingboxFallbackGroupWithMode(tag, primaryCompiled, backups, probeURL, probeInterval, strategy, false)
+}
+
+// BuildSingboxFallbackGroupWithMode constructs a selector (for Clash-managed priority) or urltest outbound group.
+func BuildSingboxFallbackGroupWithMode(tag string, primaryCompiled map[string]interface{}, backups []string, probeURL string, probeInterval int, strategy string, clashManaged bool) map[string]interface{} {
+	primaryTag := tag + "-primary"
+	outbounds := append([]string{primaryTag}, backups...)
+	return buildFallbackOutboundGroup(tag, outbounds, probeURL, probeInterval, strategy, clashManaged)
+}
+
+// BuildSingboxNodeFallback handles ast.ServerProfile fallback generation in standalone mode.
 func BuildSingboxNodeFallback(adaptedNode *ast.ServerProfile) (map[string]interface{}, map[string]interface{}, error) {
+	return BuildSingboxNodeFallbackWithMode(adaptedNode, false)
+}
+
+// BuildSingboxNodeFallbackWithMode handles ast.ServerProfile fallback generation, emitting a selector for Clash-managed priority.
+func BuildSingboxNodeFallbackWithMode(adaptedNode *ast.ServerProfile, clashManaged bool) (map[string]interface{}, map[string]interface{}, error) {
 	primaryTag := adaptedNode.Name
 	if primaryTag == "" {
 		primaryTag = "proxy"
@@ -117,29 +184,32 @@ func BuildSingboxNodeFallback(adaptedNode *ast.ServerProfile) (map[string]interf
 
 	probeURL := adaptedNode.HealthCheckURL
 	if probeURL == "" {
-		probeURL = "https://www.gstatic.com/generate_204"
+		probeURL = defaultSingboxProbeURL
 	}
-	probeInt := adaptedNode.HealthCheckInterval
-	if probeInt <= 0 {
-		probeInt = 15
-	}
+	probeInt := NormalizeSingboxProbeInterval(adaptedNode.HealthCheckInterval)
 
-	urltestOb := BuildSingboxFallbackGroup(primaryTag, primaryNodeObj, adaptedNode.BackupOutbounds, probeURL, probeInt, adaptedNode.FallbackStrategy)
-	return urltestOb, primaryNodeObj, nil
+	groupOb := BuildSingboxFallbackGroupWithMode(primaryTag, primaryNodeObj, adaptedNode.BackupOutbounds, probeURL, probeInt, adaptedNode.FallbackStrategy, clashManaged)
+	return groupOb, primaryNodeObj, nil
 }
 
-// BuildSingboxRawFallback handles raw dictionary outbound fallback generation.
+// BuildSingboxRawFallback handles raw dictionary outbound fallback generation in standalone mode.
 func BuildSingboxRawFallback(ob map[string]interface{}) (map[string]interface{}, map[string]interface{}, bool) {
+	groupOb, primaryCompiled, _, ok := BuildSingboxRawFallbackWithMode(ob, false)
+	return groupOb, primaryCompiled, ok
+}
+
+// BuildSingboxRawFallbackWithMode handles raw dictionary outbound fallback generation and returns the resolved strategy.
+func BuildSingboxRawFallbackWithMode(ob map[string]interface{}, clashManaged bool) (map[string]interface{}, map[string]interface{}, string, bool) {
 	tag, _ := ob["tag"].(string)
 	if tag == "" {
-		return nil, nil, false
+		return nil, nil, "", false
 	}
 
 	sMap := parseMapOrJSON(ob["settings"])
 	validBackups, probeURL, probeInt, fallbackStrat := ExtractSingboxFallbackSettings(sMap, tag)
 
 	if len(validBackups) == 0 {
-		return nil, nil, false
+		return nil, nil, "", false
 	}
 
 	primaryTag := tag + "-primary"
@@ -150,12 +220,17 @@ func BuildSingboxRawFallback(ob map[string]interface{}) (map[string]interface{},
 	primaryObDict["tag"] = primaryTag
 	primaryCompiled := CompileRawOutboundToSingbox(primaryObDict)
 
-	urltestOb := BuildSingboxFallbackGroup(tag, primaryCompiled, validBackups, probeURL, probeInt, fallbackStrat)
-	return urltestOb, primaryCompiled, true
+	groupOb := BuildSingboxFallbackGroupWithMode(tag, primaryCompiled, validBackups, probeURL, probeInt, fallbackStrat, clashManaged)
+	return groupOb, primaryCompiled, fallbackStrat, true
 }
 
-// BuildSingboxMultiNodeFallback constructs an urltest outbound group and compiles all primary + backup profiles into outbound objects.
+// BuildSingboxMultiNodeFallback constructs a multi-node fallback group in standalone mode.
 func BuildSingboxMultiNodeFallback(adaptedNode *ast.ServerProfile, backupProfiles []*ast.ServerProfile) (map[string]interface{}, []map[string]interface{}, error) {
+	return BuildSingboxMultiNodeFallbackWithMode(adaptedNode, backupProfiles, false)
+}
+
+// BuildSingboxMultiNodeFallbackWithMode constructs a multi-node selector/urltest outbound group and compiles all profiles.
+func BuildSingboxMultiNodeFallbackWithMode(adaptedNode *ast.ServerProfile, backupProfiles []*ast.ServerProfile, clashManaged bool) (map[string]interface{}, []map[string]interface{}, error) {
 	groupTag := adaptedNode.Name
 	if groupTag == "" {
 		groupTag = "proxy"
@@ -197,36 +272,14 @@ func BuildSingboxMultiNodeFallback(adaptedNode *ast.ServerProfile, backupProfile
 	if probeURL == "" {
 		probeURL = "https://api.telegram.org"
 	}
-	probeInt := adaptedNode.HealthCheckInterval
-	if probeInt <= 0 {
-		probeInt = 15
-	}
+	probeInt := NormalizeSingboxProbeInterval(adaptedNode.HealthCheckInterval)
 	strategy := adaptedNode.FallbackStrategy
 	if strategy == "" {
 		strategy = "priority"
 	}
 
-	toleranceVal := CalculateSingboxTolerance(strategy)
-	if probeInt <= 0 || probeInt > 60 {
-		probeInt = 15
-	}
-	idleTimeoutSec := 1800
-	if probeInt >= idleTimeoutSec {
-		idleTimeoutSec = probeInt * 2
-	}
-	idleTimeoutStr := fmt.Sprintf("%ds", idleTimeoutSec)
-	urltestGroup := map[string]interface{}{
-		"type":                        "urltest",
-		"tag":                         groupTag,
-		"outbounds":                   outboundTags,
-		"url":                         probeURL,
-		"interval":                    fmt.Sprintf("%ds", probeInt),
-		"tolerance":                   toleranceVal,
-		"idle_timeout":                idleTimeoutStr,
-		"interrupt_exist_connections": true,
-	}
-
-	return urltestGroup, compiledNodes, nil
+	groupOb := buildFallbackOutboundGroup(groupTag, outboundTags, probeURL, probeInt, strategy, clashManaged)
+	return groupOb, compiledNodes, nil
 }
 
 
