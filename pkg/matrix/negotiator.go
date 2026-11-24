@@ -109,5 +109,24 @@ func (n *Negotiator) Negotiate(
 		}
 	}
 
+	// Negotiate deprecated H2 HTTP transport for Xray-core -> XHTTP stream-one
+	if targetCore == ast.CoreXray {
+		t := strings.ToLower(adaptedNode.Transport)
+		if t == "h2" || t == "http" {
+			if strictMode {
+				return nil, nil, errors.New("Xray-core 26+ removed h2/http transport; use xhttp (stream-one) instead")
+			}
+			adaptedNode.Transport = ast.TransportXHTTP
+			if adaptedNode.XHTTPMode == "" {
+				adaptedNode.XHTTPMode = "stream-one"
+			}
+			warnings = append(warnings, NegotiationWarning{
+				Feature: FeatureReality,
+				Message: "Xray removed legacy H2/HTTP transport; migrated to XHTTP stream-one",
+				Action:  "MIGRATED_H2_TO_XHTTP_STREAM_ONE",
+			})
+		}
+	}
+
 	return &adaptedNode, warnings, nil
 }

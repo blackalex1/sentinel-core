@@ -19,40 +19,67 @@ func buildInboundSniffing(sb *ast.ServerInboundSpec) map[string]interface{} {
 
 // buildInboundStreamSettings constructs streamSettings for Xray inbounds (TCP, TLS, Reality)
 func buildInboundStreamSettings(sb *ast.ServerInboundSpec) map[string]interface{} {
+	network := sb.Transport
+	if network == "" {
+		network = "tcp"
+	}
 	streamSettings := map[string]interface{}{
-		"network": "tcp",
+		"network": network,
 	}
 	if sb.StreamSettings != nil && len(sb.StreamSettings) > 0 {
 		for k, v := range sb.StreamSettings {
 			streamSettings[k] = v
 		}
+		if netVal, ok := streamSettings["network"].(string); !ok || netVal == "" {
+			streamSettings["network"] = network
+		}
 	}
 
 	if sb.Security == ast.SecurityReality || streamSettings["security"] == "reality" {
 		streamSettings["security"] = "reality"
-		if _, ok := streamSettings["realitySettings"]; !ok {
-			streamSettings["realitySettings"] = map[string]interface{}{
-				"show":        false,
-				"dest":        sb.SNI + ":443",
-				"xver":        0,
-				"serverNames": []string{sb.SNI},
-				"privateKey":  sb.PrivateKey,
-				"shortIds":    sb.ShortIDs,
+		rs, hasRS := streamSettings["realitySettings"].(map[string]interface{})
+		if !hasRS || rs == nil {
+			rs = map[string]interface{}{}
+		}
+		if _, ok := rs["show"]; !ok {
+			rs["show"] = false
+		}
+		if dest, ok := rs["dest"].(string); !ok || dest == "" {
+			if sb.SNI != "" {
+				rs["dest"] = sb.SNI + ":443"
 			}
 		}
+		if _, ok := rs["xver"]; !ok {
+			rs["xver"] = 0
+		}
+		if _, ok := rs["serverNames"]; !ok && sb.SNI != "" {
+			rs["serverNames"] = []string{sb.SNI}
+		}
+		if pk, ok := rs["privateKey"].(string); !ok || pk == "" {
+			rs["privateKey"] = sb.PrivateKey
+		}
+		if _, ok := rs["shortIds"]; !ok && len(sb.ShortIDs) > 0 {
+			rs["shortIds"] = sb.ShortIDs
+		}
+		streamSettings["realitySettings"] = rs
 	} else if sb.Security == ast.SecurityTLS || streamSettings["security"] == "tls" {
 		streamSettings["security"] = "tls"
-		if _, ok := streamSettings["tlsSettings"]; !ok {
-			streamSettings["tlsSettings"] = map[string]interface{}{
-				"serverName": sb.SNI,
-				"certificates": []map[string]interface{}{
-					{
-						"certificateFile": sb.CertPath,
-						"keyFile":         sb.KeyPath,
-					},
+		ts, hasTS := streamSettings["tlsSettings"].(map[string]interface{})
+		if !hasTS || ts == nil {
+			ts = map[string]interface{}{}
+		}
+		if sn, ok := ts["serverName"].(string); !ok || sn == "" {
+			ts["serverName"] = sb.SNI
+		}
+		if _, ok := ts["certificates"]; !ok && (sb.CertPath != "" || sb.KeyPath != "") {
+			ts["certificates"] = []map[string]interface{}{
+				{
+					"certificateFile": sb.CertPath,
+					"keyFile":         sb.KeyPath,
 				},
 			}
 		}
+		streamSettings["tlsSettings"] = ts
 	}
 
 	return streamSettings

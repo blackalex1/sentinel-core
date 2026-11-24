@@ -3,10 +3,55 @@ package xray
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 	"github.com/blackalex1/sentinel-core/pkg/matrix"
 )
+
+func collectUsedLocalPorts(spec *ast.ConfigSpec) map[int]bool {
+	used := make(map[int]bool)
+	if spec.ClientInbound != nil {
+		for _, p := range []int{
+			spec.ClientInbound.SocksPort,
+			spec.ClientInbound.HTTPPort,
+			spec.ClientInbound.LanHTTPPort,
+			spec.ClientInbound.LanSocksPort,
+		} {
+			if p > 0 {
+				used[p] = true
+			}
+		}
+	}
+	for _, sb := range spec.ServerInbounds {
+		if sb.Port > 0 {
+			used[sb.Port] = true
+		}
+	}
+	return used
+}
+
+func allocateFreeLocalUDPPort(used map[int]bool) int {
+	for attempt := 0; attempt < 20; attempt++ {
+		pc, err := net.ListenPacket("udp4", "127.0.0.1:0")
+		if err != nil {
+			continue
+		}
+		addr, ok := pc.LocalAddr().(*net.UDPAddr)
+		_ = pc.Close()
+		if ok && addr.Port > 0 && !used[addr.Port] {
+			used[addr.Port] = true
+			return addr.Port
+		}
+	}
+	for p := 49152; p < 65000; p++ {
+		if !used[p] {
+			used[p] = true
+			return p
+		}
+	}
+	return 54321
+}
 
 // Compiler compiles an ast.ConfigSpec into a complete Xray-core JSON configuration.
 type Compiler struct {
@@ -100,6 +145,9 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 	// 1. Negotiate active server node features
 	var primaryOutbound map[string]interface{}
 	var chainOutbounds []map[string]interface{}
+	var bridgeInbounds []map[string]interface{}
+	var bridgeRoutingRules []map[string]interface{}
+	usedLocalPorts := collectUsedLocalPorts(spec)
 
 	if len(spec.ChainNodes) >= 2 {
 		for i, node := range spec.ChainNodes {
@@ -125,27 +173,72 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 				adaptedNode.Flow = ""
 			}
 
-			outboundObj, err := BuildXrayOutboundWithTag(tag, adaptedNode)
-			if err != nil {
-				return "", nil, fmt.Errorf("failed to build chain hop %d outbound: %w", i+1, err)
-			}
-
-			if i > 0 {
+			// Xray's Hysteria2 QUIC transport with finalmask.udp hangs when paired with sockopt.dialerProxy.
+			// Route Hysteria2 cascade hops through a local dokodemo-door UDP bridge targeting the previous hop outbound.
+			useUdpBridge := i > 0 && strings.EqualFold(adaptedNode.Protocol, ast.ProtoHysteria2)
+			var outboundObj map[string]interface{}
+			if useUdpBridge {
 				prevTag := fmt.Sprintf("chain-hop-%d", i)
 				if spec.ChainNodes[i-1].Name != "" {
 					prevTag = fmt.Sprintf("chain-%d-%s", i, spec.ChainNodes[i-1].Name)
 				}
-				streamSettings, ok := outboundObj["streamSettings"].(map[string]interface{})
-				if !ok || streamSettings == nil {
-					streamSettings = make(map[string]interface{})
-					outboundObj["streamSettings"] = streamSettings
+				nodeCopy := *adaptedNode
+				if !isLoopbackHost(nodeCopy.Address) {
+					origAddr := nodeCopy.Address
+					origPort := resolveHysteriaTargetPort(nodeCopy.Port, nodeCopy.PortHopping)
+					if nodeCopy.SNI == "" {
+						nodeCopy.SNI = origAddr
+					}
+					bridgePort := allocateFreeLocalUDPPort(usedLocalPorts)
+					bridgeTag := fmt.Sprintf("hy2-udp-bridge-%d", i+1)
+					nodeCopy.Address = "127.0.0.1"
+					nodeCopy.Port = bridgePort
+					nodeCopy.PortHopping = ""
+
+					bridgeInbounds = append(bridgeInbounds, map[string]interface{}{
+						"tag":      bridgeTag,
+						"port":     bridgePort,
+						"listen":   "127.0.0.1",
+						"protocol": "dokodemo-door",
+						"settings": map[string]interface{}{
+							"address": origAddr,
+							"port":    origPort,
+							"network": "udp",
+						},
+					})
+					bridgeRoutingRules = append(bridgeRoutingRules, map[string]interface{}{
+						"type":        "field",
+						"inboundTag":  []string{bridgeTag},
+						"outboundTag": prevTag,
+					})
 				}
-				sockopt, ok := streamSettings["sockopt"].(map[string]interface{})
-				if !ok || sockopt == nil {
-					sockopt = make(map[string]interface{})
-					streamSettings["sockopt"] = sockopt
+				outboundObj, err = buildXrayOutboundWithCoreVersion(tag, &nodeCopy, spec.CoreVersion)
+				if err != nil {
+					return "", nil, fmt.Errorf("failed to build chain hop %d outbound: %w", i+1, err)
 				}
-				sockopt["dialerProxy"] = prevTag
+			} else {
+				outboundObj, err = buildXrayOutboundWithCoreVersion(tag, adaptedNode, spec.CoreVersion)
+				if err != nil {
+					return "", nil, fmt.Errorf("failed to build chain hop %d outbound: %w", i+1, err)
+				}
+
+				if i > 0 {
+					prevTag := fmt.Sprintf("chain-hop-%d", i)
+					if spec.ChainNodes[i-1].Name != "" {
+						prevTag = fmt.Sprintf("chain-%d-%s", i, spec.ChainNodes[i-1].Name)
+					}
+					streamSettings, ok := outboundObj["streamSettings"].(map[string]interface{})
+					if !ok || streamSettings == nil {
+						streamSettings = make(map[string]interface{})
+						outboundObj["streamSettings"] = streamSettings
+					}
+					sockopt, ok := streamSettings["sockopt"].(map[string]interface{})
+					if !ok || sockopt == nil {
+						sockopt = make(map[string]interface{})
+						streamSettings["sockopt"] = sockopt
+					}
+					sockopt["dialerProxy"] = prevTag
+				}
 			}
 
 			chainOutbounds = append(chainOutbounds, outboundObj)
@@ -162,7 +255,11 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		}
 		allWarnings = append(allWarnings, warnings...)
 
-		outboundObj, err := BuildXrayOutbound(adaptedNode)
+		primaryTag := "proxy"
+		if adaptedNode.Name != "" {
+			primaryTag = adaptedNode.Name
+		}
+		outboundObj, err := buildXrayOutboundWithCoreVersion(primaryTag, adaptedNode, spec.CoreVersion)
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to build xray primary outbound: %w", err)
 		}
@@ -171,6 +268,9 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 
 	// 2. Build Inbounds
 	inbounds := BuildXrayInbounds(spec)
+	if len(bridgeInbounds) > 0 {
+		inbounds = append(inbounds, bridgeInbounds...)
+	}
 
 	// 3. Build Outbounds
 	outbounds := make([]map[string]interface{}, 0)
@@ -393,6 +493,13 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 
 	// 4. Build Routing
 	routing := BuildXrayRouting(spec)
+	if len(bridgeRoutingRules) > 0 {
+		if existingRules, ok := routing["rules"].([]map[string]interface{}); ok {
+			routing["rules"] = append(bridgeRoutingRules, existingRules...)
+		} else {
+			routing["rules"] = bridgeRoutingRules
+		}
+	}
 	if len(spec.ServerInbounds) > 0 {
 		apiRule := map[string]interface{}{
 			"type":        "field",

@@ -81,8 +81,14 @@ func buildHysteria2Inbound(sb *ast.ServerInboundSpec) map[string]interface{} {
 		inbound["masquerade"] = masqMap
 	}
 
-	// 5. TLS
-	if tlsMap := buildInboundTLS(sb); tlsMap != nil {
+	// 5. TLS (Hysteria 2 always requires TLS in sing-box)
+	tlsMap := buildInboundTLS(sb)
+	if tlsMap == nil {
+		tlsSpec := *sb
+		tlsSpec.Security = ast.SecurityTLS
+		tlsMap = buildInboundTLS(&tlsSpec)
+	}
+	if tlsMap != nil {
 		inbound["tls"] = tlsMap
 	}
 

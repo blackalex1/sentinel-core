@@ -67,6 +67,7 @@ func parseVMess(raw string) (*ast.ServerProfile, error) {
 		Transport:   v.Net,
 		Path:        v.Path,
 		Host:        v.Host,
+		HeaderType:  v.Type,
 		SNI:         v.SNI,
 		Fingerprint: v.FP,
 		ALPN:        alpn,

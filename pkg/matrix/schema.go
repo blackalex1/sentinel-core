@@ -50,6 +50,8 @@ func GetConfigurationSchema(lang string) *types.ConfigurationSchema {
 			ast.ProtoShadowsocks: xray.GetOutboundShadowsocksCapability(langLower),
 			"ss":                 xray.GetOutboundSSCapability(langLower),
 			ast.ProtoVMess:       xray.GetOutboundVMessCapability(langLower),
+			ast.ProtoTUIC:        singbox.GetOutboundTUICCapability(langLower),
+			ast.ProtoShadowTLS:   singbox.GetOutboundShadowTLSCapability(langLower),
 			ast.ProtoWireGuard:   xray.GetOutboundWireGuardCapability(langLower),
 			"wg":                 xray.GetOutboundWGCapability(langLower),
 			"warp":               xray.GetOutboundWARPCapability(langLower),

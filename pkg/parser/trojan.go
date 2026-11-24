@@ -58,6 +58,9 @@ func parseTrojan(raw string) (*ast.ServerProfile, error) {
 		Path:        q.Get("path"),
 		Host:        q.Get("host"),
 		ServiceName: q.Get("serviceName"),
+		HeaderType:  q.Get("headerType"),
+		XHTTPMode:   q.Get("mode"),
+		MultiMode:   strings.EqualFold(q.Get("mode"), "multi"),
 		ALPN:        alpn,
 		Insecure:    q.Get("allowInsecure") == "1" || q.Get("insecure") == "1",
 	}

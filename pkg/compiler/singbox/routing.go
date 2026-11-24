@@ -147,6 +147,9 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 		}
 		if downloadDetour == "direct" {
 			for _, r := range spec.Routing.Rules {
+				if !r.IsEnabled() {
+					continue
+				}
 				if r.OutboundTag != "" && r.OutboundTag != "direct" && r.OutboundTag != "block" {
 					downloadDetour = r.OutboundTag
 					break
@@ -158,6 +161,9 @@ func BuildSingBoxRoute(spec *ast.ConfigSpec, isV112 bool) (map[string]interface{
 	// User defined routing rules
 	if spec.Routing != nil {
 		for _, r := range spec.Routing.Rules {
+			if !r.IsEnabled() {
+				continue
+			}
 			outbound := string(r.Action)
 			if r.OutboundTag != "" {
 				outbound = r.OutboundTag

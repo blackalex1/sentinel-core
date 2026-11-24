@@ -108,6 +108,10 @@ func CompileRawOutboundToSingbox(ob map[string]interface{}) map[string]interface
 		return compileRawShadowsocksOutbound(tag, sMap, tsMap)
 	case "wireguard", "wg":
 		return compileRawWireguardOutbound(tag, sMap, tsMap)
+	case "tuic":
+		return compileRawTUICOutbound(tag, sMap, tsMap)
+	case "shadowtls":
+		return compileRawShadowTLSOutbound(tag, sMap, tsMap)
 	case "socks", "http":
 		return compileRawSocksHttpOutbound(tag, proto, sMap, tsMap)
 	default:

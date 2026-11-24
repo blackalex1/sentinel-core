@@ -4,58 +4,68 @@ import "github.com/blackalex1/sentinel-core/pkg/routing"
 
 // SelectOption represents a selectable option in dropdown fields
 type SelectOption struct {
-	Value       string `json:"value"`
-	Label       string `json:"label"`
-	Description string `json:"description,omitempty"`
+	Value            string                 `json:"value"`
+	Label            string                 `json:"label"`
+	Description      string                 `json:"description,omitempty"`
+	SupportedEngines []string               `json:"supportedEngines,omitempty"`
+	ShowIf           map[string]interface{} `json:"showIf,omitempty"`
 }
 
 // FormField defines a single input/control in the Schema-Driven UI
 type FormField struct {
-	ID          string                 `json:"id"`
-	TargetField string                 `json:"targetField"`
-	Type        string                 `json:"type"` // "text", "number", "password", "select", "checkbox", "keypair_generator", "password_generator", "port_generator", "clients_manager", "json_editor"
-	Label       string                 `json:"label"`
-	Placeholder string                 `json:"placeholder,omitempty"`
-	HelpText    string                 `json:"helpText,omitempty"`
-	Default     interface{}            `json:"default,omitempty"`
-	Options     []SelectOption         `json:"options,omitempty"`
-	GridColumn  string                 `json:"gridColumn,omitempty"` // "col-12", "col-6", "col-4"
-	ShowIf      map[string]interface{} `json:"showIf,omitempty"`     // Conditional visibility map
-	Min         *int                   `json:"min,omitempty"`
-	Max         *int                   `json:"max,omitempty"`
+	ID               string                 `json:"id"`
+	TargetField      string                 `json:"targetField"`
+	Type             string                 `json:"type"` // "text", "number", "password", "select", "checkbox", "keypair_generator", "password_generator", "port_generator", "clients_manager", "json_editor"
+	Label            string                 `json:"label"`
+	Placeholder      string                 `json:"placeholder,omitempty"`
+	HelpText         string                 `json:"helpText,omitempty"`
+	Default          interface{}            `json:"default,omitempty"`
+	Options          []SelectOption         `json:"options,omitempty"`
+	GridColumn       string                 `json:"gridColumn,omitempty"` // "col-12", "col-6", "col-4"
+	SupportedEngines []string               `json:"supportedEngines,omitempty"`
+	ShowIf           map[string]interface{} `json:"showIf,omitempty"` // Conditional visibility map
+	Min              *int                   `json:"min,omitempty"`
+	Max              *int                   `json:"max,omitempty"`
 }
 
 // FieldGroup defines a card/subgroup containing related fields
 type FieldGroup struct {
-	ID          string                 `json:"id"`
-	Title       string                 `json:"title,omitempty"`
-	Description string                 `json:"description,omitempty"`
-	ShowIf      map[string]interface{} `json:"showIf,omitempty"`
-	Fields      []FormField            `json:"fields"`
+	ID               string                 `json:"id"`
+	Title            string                 `json:"title,omitempty"`
+	Description      string                 `json:"description,omitempty"`
+	SupportedEngines []string               `json:"supportedEngines,omitempty"`
+	ShowIf           map[string]interface{} `json:"showIf,omitempty"`
+	Fields           []FormField            `json:"fields"`
 }
 
 // TabDefinition defines a single tab in the modal with its groups and fields
 type TabDefinition struct {
-	ID     string       `json:"id"`
-	Title  string       `json:"title"`
-	Icon   string       `json:"icon,omitempty"`
-	ShowIf map[string]interface{} `json:"showIf,omitempty"`
-	Groups []FieldGroup `json:"groups"`
+	ID               string                 `json:"id"`
+	Title            string                 `json:"title"`
+	Icon             string                 `json:"icon,omitempty"`
+	SupportedEngines []string               `json:"supportedEngines,omitempty"`
+	ShowIf           map[string]interface{} `json:"showIf,omitempty"`
+	Groups           []FieldGroup           `json:"groups"`
 }
 
 // ProtocolCapability defines allowed configurations for a specific protocol in the UI
 type ProtocolCapability struct {
-	Protocol            string              `json:"protocol"`            // "vless", "hysteria2", "trojan", etc.
-	DisplayName         string              `json:"displayName"`         // "VLESS", "Hysteria 2", "Trojan", etc.
+	Protocol            string              `json:"protocol"`                     // "vless", "hysteria2", "trojan", etc.
+	DisplayName         string              `json:"displayName"`                  // "VLESS", "Hysteria 2", "Trojan", etc.
 	Description         string              `json:"description,omitempty"`
-	DefaultPort         int                 `json:"defaultPort"`         // 443
-	SupportedEngines    []string            `json:"supportedEngines"`    // ["xray-core", "sing-box"]
-	SupportedTransports []string            `json:"supportedTransports"` // ["tcp", "ws", "grpc", "xhttp"]
-	SupportedSecurity   []string            `json:"supportedSecurity"`   // ["reality", "tls", "none"]
-	SupportedFlows      map[string][]string `json:"supportedFlows,omitempty"` // {"reality": ["xtls-rprx-vision"], "tls": ["xtls-rprx-vision", "none"]}
+	DefaultPort         int                 `json:"defaultPort"`                  // 443
+	DefaultTransport    string              `json:"defaultTransport,omitempty"`   // "tcp", "ws", "quic", etc.
+	DefaultSecurity     string              `json:"defaultSecurity,omitempty"`    // "reality", "tls", "none"
+	SupportedEngines    []string            `json:"supportedEngines"`             // ["xray-core", "sing-box"]
+	SupportedTransports []string            `json:"supportedTransports"`          // ["tcp", "ws", "grpc", "xhttp"]
+	EngineTransports    map[string][]string `json:"engineTransports,omitempty"`   // {"xray-core": [...], "sing-box": [...]}
+	SupportedSecurity   []string            `json:"supportedSecurity"`            // ["reality", "tls", "none"]
+	EngineSecurity      map[string][]string `json:"engineSecurity,omitempty"`     // {"xray-core": [...], "sing-box": [...]}
+	EngineFingerprints  map[string][]string `json:"engineFingerprints,omitempty"` // {"xray-core": [...], "sing-box": [...]}
+	SupportedFlows      map[string][]string `json:"supportedFlows,omitempty"`     // {"reality": ["xtls-rprx-vision"], "tls": ["xtls-rprx-vision", "none"]}
 	SupportedCiphers    []string            `json:"supportedCiphers,omitempty"`
-	Features            []string            `json:"features,omitempty"` // ["port_hopping", "salamander_obfs", "post_quantum"]
-	Tabs                []string            `json:"tabs"`               // ["basic", "stream", "security", "sniffing", "advanced"]
+	Features            []string            `json:"features,omitempty"`           // ["port_hopping", "salamander_obfs", "post_quantum"]
+	Tabs                []string            `json:"tabs"`                         // ["basic", "stream", "security", "sniffing", "advanced"]
 	TabDefinitions      []TabDefinition     `json:"tabDefinitions,omitempty"`
 }
 

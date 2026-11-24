@@ -93,6 +93,14 @@ func generateVLESS(p *ast.ServerProfile) (string, error) {
 	if p.ServiceName != "" {
 		q.Set("serviceName", p.ServiceName)
 	}
+	if p.HeaderType != "" && !strings.EqualFold(p.HeaderType, "none") {
+		q.Set("headerType", p.HeaderType)
+	}
+	if p.XHTTPMode != "" && (strings.EqualFold(p.Transport, ast.TransportXHTTP) || strings.EqualFold(p.Transport, ast.TransportSplitHTTP)) {
+		q.Set("mode", p.XHTTPMode)
+	} else if p.MultiMode && strings.EqualFold(p.Transport, ast.TransportGRPC) {
+		q.Set("mode", "multi")
+	}
 	if len(p.ALPN) > 0 {
 		q.Set("alpn", strings.Join(p.ALPN, ","))
 	}

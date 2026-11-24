@@ -13,10 +13,18 @@ func GetTUICCapability(lang string) types.ProtocolCapability {
 		DisplayName:         "TUIC v5",
 		Description:         i18n.T(loc, "PROTO_TUIC_DESC"),
 		DefaultPort:         8443,
+		DefaultTransport:    "quic",
+		DefaultSecurity:     "tls",
 		SupportedEngines:    []string{"sing-box"},
 		SupportedTransports: []string{"quic"},
 		SupportedSecurity:   []string{"tls"},
-		Features:            []string{"congestion_control_bbr", "zero_rtt"},
-		Tabs:                []string{"basic", "stream", "sniffing", "advanced"},
+		EngineTransports: map[string][]string{
+			"sing-box": {"quic"},
+		},
+		EngineSecurity: map[string][]string{
+			"sing-box": {"tls"},
+		},
+		Features: []string{"congestion_control_bbr", "zero_rtt"},
+		Tabs:     []string{"basic", "stream", "sniffing", "advanced"},
 	}
 }

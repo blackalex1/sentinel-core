@@ -34,7 +34,7 @@ func buildXrayStreamSettings(node *ast.ServerProfile) map[string]interface{} {
 		fp = "chrome"
 	}
 	switch fp {
-	case "chrome", "firefox", "safari", "ios", "edge", "qq", "360", "random", "randomized":
+	case "chrome", "firefox", "safari", "ios", "android", "edge", "qq", "360", "random", "randomized":
 		// valid for xray
 	default:
 		fp = "chrome"
@@ -70,8 +70,27 @@ func buildXrayStreamSettings(node *ast.ServerProfile) map[string]interface{} {
 		stream["tlsSettings"] = tlsSettings
 	}
 
-	// Transport settings (gRPC, WS, xHTTP)
+	// Transport settings (TCP HTTP header, gRPC, WS, HTTPUpgrade, H2, xHTTP)
 	switch network {
+	case "tcp":
+		if node.HeaderType == "http" {
+			tcpReq := map[string]interface{}{
+				"version": "1.1",
+				"method":  "GET",
+				"path":    []string{firstNonEmpty(node.Path, "/")},
+			}
+			if node.Host != "" {
+				tcpReq["headers"] = map[string]interface{}{
+					"Host": []string{node.Host},
+				}
+			}
+			stream["tcpSettings"] = map[string]interface{}{
+				"header": map[string]interface{}{
+					"type":    "http",
+					"request": tcpReq,
+				},
+			}
+		}
 	case "grpc":
 		serviceName := node.ServiceName
 		if serviceName == "" {
@@ -79,6 +98,9 @@ func buildXrayStreamSettings(node *ast.ServerProfile) map[string]interface{} {
 		}
 		grpcSettings := map[string]interface{}{
 			"serviceName": serviceName,
+		}
+		if node.MultiMode {
+			grpcSettings["multiMode"] = true
 		}
 		if node.Host != "" {
 			grpcSettings["authority"] = node.Host
@@ -94,13 +116,40 @@ func buildXrayStreamSettings(node *ast.ServerProfile) map[string]interface{} {
 			}
 		}
 		stream["wsSettings"] = wsSettings
+	case "httpupgrade":
+		huSettings := map[string]interface{}{
+			"path": firstNonEmpty(node.Path, "/"),
+		}
+		if node.Host != "" {
+			huSettings["host"] = node.Host
+		}
+		stream["httpupgradeSettings"] = huSettings
+	case "h2", "http":
+		httpSettings := map[string]interface{}{
+			"path": firstNonEmpty(node.Path, "/"),
+		}
+		if node.Host != "" {
+			httpSettings["host"] = []string{node.Host}
+		}
+		stream["httpSettings"] = httpSettings
 	case "xhttp", "splithttp":
+		mode := node.XHTTPMode
+		if mode == "" {
+			mode = "auto"
+		}
 		stream["xhttpSettings"] = map[string]interface{}{
 			"path": node.Path,
 			"host": node.Host,
-			"mode": "auto",
+			"mode": mode,
 		}
 	}
 
 	return stream
+}
+
+func firstNonEmpty(val, fallback string) string {
+	if val != "" {
+		return val
+	}
+	return fallback
 }

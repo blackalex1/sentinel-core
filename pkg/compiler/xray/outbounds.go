@@ -18,6 +18,10 @@ func BuildXrayOutbound(node *ast.ServerProfile) (map[string]interface{}, error) 
 
 // BuildXrayOutboundWithTag converts an ast.ServerProfile into an Xray JSON outbound structure with an explicit tag.
 func BuildXrayOutboundWithTag(tag string, node *ast.ServerProfile) (map[string]interface{}, error) {
+	return buildXrayOutboundWithCoreVersion(tag, node, "")
+}
+
+func buildXrayOutboundWithCoreVersion(tag string, node *ast.ServerProfile, coreVersion string) (map[string]interface{}, error) {
 	if node == nil {
 		return nil, fmt.Errorf("node profile cannot be nil")
 	}
@@ -43,7 +47,7 @@ func BuildXrayOutboundWithTag(tag string, node *ast.ServerProfile) (map[string]i
 	case ast.ProtoWireGuard:
 		return buildXrayWireGuardOutbound(tag, node)
 	case ast.ProtoHysteria2:
-		return buildXrayHysteria2Outbound(tag, node)
+		return buildXrayHysteria2Outbound(tag, node, supportsXrayUdpHop(coreVersion))
 	case ast.ProtoSocks, "socks5":
 		return buildXraySocksOutbound(tag, node)
 	case ast.ProtoHTTP, "https":

@@ -211,5 +211,201 @@ func TestConfigurationSchema_StrictValidation(t *testing.T) {
 				t.Errorf("[%s] wireguard must NOT include '%s' tab. Got: %+v", lang, tab, wg.Tabs)
 			}
 		}
+
+		// ==================== ENGINE SPECIFICITY (INBOUND & OUTBOUND) ====================
+		if !sliceContains(vless.EngineTransports["xray-core"], "xhttp") {
+			t.Errorf("[%s] vless inbound xray-core must support xhttp", lang)
+		}
+		if sliceContains(vless.EngineTransports["sing-box"], "xhttp") || sliceContains(vless.EngineTransports["sing-box"], "mkcp") {
+			t.Errorf("[%s] vless inbound sing-box must not list xhttp or mkcp", lang)
+		}
+
+		obVless, ok := schema.OutboundProtocols[ast.ProtoVLESS]
+		if !ok {
+			t.Fatalf("[%s] outbound vless missing", lang)
+		}
+		if !sliceContains(obVless.EngineTransports["xray-core"], "xhttp") || sliceContains(obVless.EngineTransports["sing-box"], "xhttp") {
+			t.Errorf("[%s] outbound vless EngineTransports mismatch: %+v", lang, obVless.EngineTransports)
+		}
+		if len(obVless.EngineFingerprints["xray-core"]) == 0 || sliceContains(obVless.EngineFingerprints["xray-core"], "opera") {
+			t.Errorf("[%s] outbound vless EngineFingerprints invalid: %+v", lang, obVless.EngineFingerprints)
+		}
+
+		var foundFlow, foundEnc, foundXhttpMode, foundMultiMode bool
+		for _, tab := range obVless.TabDefinitions {
+			for _, grp := range tab.Groups {
+				for _, f := range grp.Fields {
+					switch f.ID {
+					case "ob-flow":
+						foundFlow = true
+						if len(f.ShowIf) == 0 {
+							t.Errorf("[%s] ob-flow must have ShowIf constraints", lang)
+						}
+					case "ob-vless-encryption":
+						foundEnc = true
+						if len(f.SupportedEngines) != 1 || f.SupportedEngines[0] != "xray-core" {
+							t.Errorf("[%s] ob-vless-encryption must be xray-core only, got %+v", lang, f.SupportedEngines)
+						}
+					case "ob-xhttp-mode":
+						foundXhttpMode = true
+						if len(f.SupportedEngines) != 1 || f.SupportedEngines[0] != "xray-core" {
+							t.Errorf("[%s] ob-xhttp-mode must be xray-core only, got %+v", lang, f.SupportedEngines)
+						}
+					case "ob-grpc-multi-mode":
+						foundMultiMode = true
+						if len(f.SupportedEngines) != 1 || f.SupportedEngines[0] != "xray-core" {
+							t.Errorf("[%s] ob-grpc-multi-mode must be xray-core only, got %+v", lang, f.SupportedEngines)
+						}
+					}
+				}
+			}
+		}
+		if !foundFlow || !foundEnc || !foundXhttpMode || !foundMultiMode {
+			t.Errorf("[%s] outbound vless missing expected fields (flow=%v enc=%v xhttp=%v multi=%v)", lang, foundFlow, foundEnc, foundXhttpMode, foundMultiMode)
+		}
+
+		obTuic, ok := schema.OutboundProtocols[ast.ProtoTUIC]
+		if !ok || len(obTuic.SupportedEngines) != 1 || obTuic.SupportedEngines[0] != "sing-box" {
+			t.Errorf("[%s] outbound tuic missing or wrong engines: %+v", lang, obTuic.SupportedEngines)
+		}
+		obShadowTLS, ok := schema.OutboundProtocols[ast.ProtoShadowTLS]
+		if !ok || len(obShadowTLS.SupportedEngines) != 1 || obShadowTLS.SupportedEngines[0] != "sing-box" {
+			t.Errorf("[%s] outbound shadowtls missing or wrong engines: %+v", lang, obShadowTLS.SupportedEngines)
+		}
+	}
+}
+
+func sliceContains(items []string, target string) bool {
+	for _, it := range items {
+		if it == target {
+			return true
+		}
+	}
+	return false
+}
+
+func assertExactEngines(t *testing.T, context string, got []string, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("%s: expected SupportedEngines %v, got %v", context, want, got)
+		return
+	}
+	for _, w := range want {
+		if !sliceContains(got, w) {
+			t.Errorf("%s: missing engine %q in %v (want %v)", context, w, got, want)
+		}
+	}
+}
+
+func checkSingleEngineMention(t *testing.T, context, text string, supportedEngines []string, parentEngines []string) {
+	t.Helper()
+	if text == "" {
+		return
+	}
+	lower := strings.ToLower(text)
+	xrayOnly := strings.Contains(lower, "только xray") || strings.Contains(lower, "только для xray") || strings.Contains(lower, "xray only") || strings.Contains(lower, "only for xray")
+	sbOnly := strings.Contains(lower, "только sing-box") || strings.Contains(lower, "только для sing-box") || strings.Contains(lower, "sing-box only") || strings.Contains(lower, "only for sing-box")
+
+	effective := supportedEngines
+	if len(effective) == 0 {
+		effective = parentEngines
+	}
+	if xrayOnly && !(len(effective) == 1 && effective[0] == "xray-core") {
+		t.Errorf("%s: text %q claims Xray-only but effective SupportedEngines=%v", context, text, effective)
+	}
+	if sbOnly && !(len(effective) == 1 && effective[0] == "sing-box") {
+		t.Errorf("%s: text %q claims Sing-box-only but effective SupportedEngines=%v", context, text, effective)
+	}
+}
+
+// TestStrictEngineIsolationAndCapabilities verifies that no engine-specific field, option, tab,
+// or hint/instruction leaks across cores that do not implement that capability.
+func TestStrictEngineIsolationAndCapabilities(t *testing.T) {
+	for _, lang := range []string{"ru", "en"} {
+		schema := GetConfigurationSchema(lang)
+		if schema == nil {
+			t.Fatalf("[%s] schema is nil", lang)
+		}
+
+		sections := []struct {
+			name  string
+			items map[string]types.ProtocolCapability
+		}{
+			{"inbound", schema.Protocols},
+			{"outbound", schema.OutboundProtocols},
+		}
+
+		for _, sec := range sections {
+			for proto, capDef := range sec.items {
+				protoEngines := capDef.SupportedEngines
+				for _, tab := range capDef.TabDefinitions {
+					tabEngines := tab.SupportedEngines
+					if len(tabEngines) == 0 {
+						tabEngines = protoEngines
+					}
+					checkSingleEngineMention(t, lang+"/"+sec.name+"/"+proto+"/tab:"+tab.ID, tab.Title, tab.SupportedEngines, protoEngines)
+
+					if sec.name == "inbound" && proto == "hysteria2" && tab.ID == "sniffing" {
+						assertExactEngines(t, lang+"/inbound/hysteria2/tab:sniffing", tab.SupportedEngines, []string{"sing-box"})
+					}
+
+					for _, grp := range tab.Groups {
+						grpEngines := grp.SupportedEngines
+						if len(grpEngines) == 0 {
+							grpEngines = tabEngines
+						}
+						checkSingleEngineMention(t, lang+"/"+sec.name+"/"+proto+"/group:"+grp.Title, grp.Title, grp.SupportedEngines, tabEngines)
+						checkSingleEngineMention(t, lang+"/"+sec.name+"/"+proto+"/group-desc:"+grp.Title, grp.Description, grp.SupportedEngines, tabEngines)
+
+						for _, f := range grp.Fields {
+							fieldEngines := f.SupportedEngines
+							if len(fieldEngines) == 0 {
+								fieldEngines = grpEngines
+							}
+							ctx := lang + "/" + sec.name + "/" + proto + "/field:" + f.ID + "(" + f.TargetField + ")"
+							checkSingleEngineMention(t, ctx+"/label", f.Label, f.SupportedEngines, grpEngines)
+							checkSingleEngineMention(t, ctx+"/helptext", f.HelpText, f.SupportedEngines, grpEngines)
+
+							switch f.TargetField {
+							case "streamSettings.realitySettings.spiderX", "spiderX",
+								"xhttpMode", "streamSettings.xhttpSettings.mode", "streamSettings.xhttpSettings.path",
+								"multiMode", "streamSettings.grpcSettings.multiMode",
+								"headerType", "encryption", "settings.encryption",
+								"decryption", "settings.decryption", "streamSettings.vlessDecryption",
+								"fallbacks", "settings.fallbacks.0.dest", "settings.fallbacks.0.path", "settings.fallbacks.0.xver", "settings.fallbacks.0.alpn":
+								assertExactEngines(t, ctx, fieldEngines, []string{"xray-core"})
+							}
+
+							if sec.name == "outbound" && proto == "hysteria2" {
+								switch f.TargetField {
+								case "upMbps", "downMbps":
+									assertExactEngines(t, ctx, fieldEngines, []string{"hysteria2", "sing-box"})
+								case "pinnedPeerCertSha256":
+									assertExactEngines(t, ctx, fieldEngines, []string{"xray-core", "hysteria2"})
+								}
+							}
+
+							if sec.name == "outbound" && (proto == "tuic" || proto == "shadowtls") {
+								assertExactEngines(t, ctx, fieldEngines, []string{"sing-box"})
+							}
+
+							for _, opt := range f.Options {
+								optCtx := ctx + "/opt:" + opt.Value
+								checkSingleEngineMention(t, optCtx+"/label", opt.Label, opt.SupportedEngines, fieldEngines)
+								checkSingleEngineMention(t, optCtx+"/desc", opt.Description, opt.SupportedEngines, fieldEngines)
+								switch opt.Value {
+								case "xhttp", "mkcp", "xtls-rprx-vision-udp443", "xchacha20-ietf-poly1305":
+									assertExactEngines(t, optCtx, opt.SupportedEngines, []string{"xray-core"})
+								case "h2":
+									if f.TargetField == "network" || f.TargetField == "streamSettings.network" {
+										assertExactEngines(t, optCtx, opt.SupportedEngines, []string{"sing-box"})
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 }

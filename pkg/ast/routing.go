@@ -11,8 +11,10 @@ const (
 
 // RoutingRule defines a single traffic-routing matcher
 type RoutingRule struct {
-	Action     RouteAction `json:"action"`     // proxy, direct, block
-	OutboundTag string     `json:"outboundTag,omitempty"`
+	Action      RouteAction `json:"action"`                // proxy, direct, block
+	OutboundTag string      `json:"outboundTag,omitempty"`
+	Enable      *bool       `json:"enable,omitempty"`
+	Enabled     *bool       `json:"enabled,omitempty"` // alias for enable
 
 	// Matchers
 	Domains          []string `json:"domains,omitempty"`          // e.g. ["domain:google.com", "geosite:category-ads-all"]
@@ -25,6 +27,17 @@ type RoutingRule struct {
 	ProcessNames     []string `json:"processNames,omitempty"`     // Windows/Linux process binaries e.g. ["discord.exe"]
 	InboundTags      []string `json:"inboundTags,omitempty"`
 	IPVersion        int      `json:"ipVersion,omitempty"`
+}
+
+// IsEnabled returns true if the rule is not explicitly disabled
+func (r *RoutingRule) IsEnabled() bool {
+	if r.Enable != nil && !*r.Enable {
+		return false
+	}
+	if r.Enabled != nil && !*r.Enabled {
+		return false
+	}
+	return true
 }
 
 // RoutingSpec contains the full collection of routing rules and global route switches

@@ -243,13 +243,28 @@ func TestXrayCompiler_BuildXrayOutbound_Protocols(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected finalmask in streamSettings: %+v", streamSettings)
 	}
-	sal, ok := finalmask["salamander"].(map[string]interface{})
-	if !ok || sal["password"] != "obfsSecret123" {
-		t.Errorf("expected salamander password in finalmask: %+v", finalmask)
+	udpMasks, ok := finalmask["udp"].([]map[string]interface{})
+	if !ok || len(udpMasks) != 1 {
+		t.Fatalf("expected 1 default udp mask (salamander only without coreVersion 26.10+): %+v", finalmask)
 	}
-	hop, ok := finalmask["udphop"].(map[string]interface{})
-	if !ok || hop["ports"] != "2443-8443" {
-		t.Errorf("expected udphop ports in finalmask: %+v", finalmask)
+	if udpMasks[0]["type"] != "salamander" {
+		t.Errorf("expected salamander mask, got %+v", udpMasks[0])
+	}
+	if salSettings, ok := udpMasks[0]["settings"].(map[string]interface{}); !ok || salSettings["password"] != "obfsSecret123" {
+		t.Errorf("expected salamander password in finalmask.udp: %+v", udpMasks[0])
+	}
+
+	obHy2V2610, err := buildXrayOutboundWithCoreVersion("hy2", hy2NodeRemote, "v26.10.17")
+	if err != nil {
+		t.Fatalf("failed to build Hysteria2 26.10 outbound: %v", err)
+	}
+	fm2610 := obHy2V2610["streamSettings"].(map[string]interface{})["finalmask"].(map[string]interface{})
+	udp2610 := fm2610["udp"].([]map[string]interface{})
+	if len(udp2610) != 2 || udp2610[1]["type"] != "udphop" {
+		t.Fatalf("expected salamander + udphop for coreVersion 26.10.17, got %+v", udp2610)
+	}
+	if hopSettings, ok := udp2610[1]["settings"].(map[string]interface{}); !ok || hopSettings["ports"] != "2443-8443" || hopSettings["mode"] != "intervalremote" {
+		t.Errorf("expected udphop settings in finalmask.udp: %+v", udp2610[1])
 	}
 
 	// 10. Direct and Block
@@ -1115,6 +1130,105 @@ func TestCompile_XrayMultiHopChain_PreservesExitNodeVisionFlow(t *testing.T) {
 	}
 }
 
+func TestCompile_XrayMultiHopChain_Hysteria2_UsesUdpBridge(t *testing.T) {
+	c := NewCompiler()
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreXray,
+		ClientInbound: &ast.ClientInboundSpec{
+			Mode:      ast.InboundModeMobileVpn,
+			SocksPort: 10808,
+		},
+		ChainNodes: []*ast.ServerProfile{
+			{
+				Name:     "entry-gateway",
+				Protocol: ast.ProtoSocks,
+				Address:  "127.0.0.1",
+				Port:     18991,
+				Username: "entryuser",
+				Password: "entrypass",
+			},
+			{
+				Name:                 "Hy2Exit",
+				Protocol:             ast.ProtoHysteria2,
+				Address:              "exit.example.com",
+				Port:                 8443,
+				Username:             "testuser",
+				Password:             "testpass",
+				SNI:                  "cdn.example.com",
+				PinnedPeerCertSha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+				ObfsType:             "salamander",
+				ObfsPassword:         "obfs-secret-test",
+				PortHopping:          "8443-20443",
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("failed to compile Hysteria2 cascade xray config: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(cfg), &parsed); err != nil {
+		t.Fatalf("invalid compiled JSON: %v\n%s", err, cfg)
+	}
+
+	// 1. Verify dokodemo-door UDP bridge inbound targets original exit server
+	inbounds := parsed["inbounds"].([]interface{})
+	var bridgePort int
+	for _, inb := range inbounds {
+		m := inb.(map[string]interface{})
+		if m["tag"] == "hy2-udp-bridge-2" {
+			if m["protocol"] != "dokodemo-door" || m["listen"] != "127.0.0.1" {
+				t.Fatalf("unexpected bridge inbound: %+v", m)
+			}
+			bridgePort = int(m["port"].(float64))
+			settings := m["settings"].(map[string]interface{})
+			if settings["address"] != "exit.example.com" || int(settings["port"].(float64)) != 8443 || settings["network"] != "udp" {
+				t.Fatalf("unexpected bridge settings: %+v", settings)
+			}
+		}
+	}
+	if bridgePort == 0 {
+		t.Fatalf("expected hy2-udp-bridge-2 inbound in config:\n%s", cfg)
+	}
+
+	// 2. Verify Hysteria2 outbound connects to 127.0.0.1:bridgePort, has no dialerProxy, keeps SNI/auth/salamander, omits udphop
+	outbounds := parsed["outbounds"].([]interface{})
+	hy2Ob := outbounds[0].(map[string]interface{})
+	if hy2Ob["tag"] != "chain-2-Hy2Exit" || hy2Ob["protocol"] != "hysteria" {
+		t.Fatalf("expected chain-2-Hy2Exit as primary outbound, got %+v", hy2Ob)
+	}
+	hy2Settings := hy2Ob["settings"].(map[string]interface{})
+	if hy2Settings["address"] != "127.0.0.1" || int(hy2Settings["port"].(float64)) != bridgePort {
+		t.Errorf("expected hysteria outbound to point to 127.0.0.1:%d, got %+v", bridgePort, hy2Settings)
+	}
+	ss := hy2Ob["streamSettings"].(map[string]interface{})
+	if _, hasSockopt := ss["sockopt"]; hasSockopt {
+		t.Errorf("hysteria outbound must not set sockopt.dialerProxy when bridged: %+v", ss["sockopt"])
+	}
+	hy2Stream := ss["hysteriaSettings"].(map[string]interface{})
+	if hy2Stream["auth"] != "testuser:testpass" {
+		t.Errorf("expected auth testuser:testpass, got %v", hy2Stream["auth"])
+	}
+	tlsSettings := ss["tlsSettings"].(map[string]interface{})
+	if tlsSettings["serverName"] != "cdn.example.com" {
+		t.Errorf("expected preserved SNI cdn.example.com, got %v", tlsSettings["serverName"])
+	}
+	fm := ss["finalmask"].(map[string]interface{})
+	udpList := fm["udp"].([]interface{})
+	if len(udpList) != 1 || udpList[0].(map[string]interface{})["type"] != "salamander" {
+		t.Errorf("expected only salamander (no udphop) on bridged loopback outbound, got %+v", udpList)
+	}
+
+	// 3. Verify bridge routing rule is first and routes to chain-1-entry-gateway
+	rules := parsed["routing"].(map[string]interface{})["rules"].([]interface{})
+	firstRule := rules[0].(map[string]interface{})
+	if firstRule["outboundTag"] != "chain-1-entry-gateway" {
+		t.Errorf("expected first routing rule to forward bridge to chain-1-entry-gateway, got %+v", firstRule)
+	}
+}
+
 
 func TestXrayCompiler_RawConfig_PreserveInboundsAndPureRouting(t *testing.T) {
 	c := NewCompiler()
@@ -1278,5 +1392,63 @@ func TestXrayCompiler_BitTorrentSplitAndCombinedProtocol(t *testing.T) {
 	}
 	if !foundQUICCombined {
 		t.Errorf("expected non-bittorrent rule (quic+domain) to remain single combined rule, rules=%v", rules)
+	}
+}
+
+func TestXrayCompiler_DisabledRulesSkipped(t *testing.T) {
+	c := NewCompiler()
+	disabledFalse := false
+	disabledZero := false
+	enabledTrue := true
+
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreXray,
+		Routing: &ast.RoutingSpec{
+			Rules: []ast.RoutingRule{
+				{
+					Action:      ast.ActionBlock,
+					Protocols:   []string{"udp"},
+					OutboundTag: "blocked",
+					Enable:      &disabledFalse,
+				},
+				{
+					Action:      ast.ActionBlock,
+					Domains:     []string{"disabled-site.com"},
+					OutboundTag: "blocked",
+					Enabled:     &disabledZero,
+				},
+				{
+					Action:      ast.ActionDirect,
+					Domains:     []string{"enabled-site.com"},
+					OutboundTag: "direct",
+					Enable:      &enabledTrue,
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("compile failed: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(cfg), &parsed); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	rules := parsed["routing"].(map[string]interface{})["rules"].([]interface{})
+
+	for _, r := range rules {
+		rm := r.(map[string]interface{})
+		if net, ok := rm["network"].(string); ok && net == "udp" {
+			t.Errorf("disabled UDP block rule was compiled into Xray config: %v", rm)
+		}
+		if doms, ok := rm["domain"].([]interface{}); ok {
+			for _, d := range doms {
+				if d == "disabled-site.com" {
+					t.Errorf("disabled domain rule was compiled into Xray config: %v", rm)
+				}
+			}
+		}
 	}
 }

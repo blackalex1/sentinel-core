@@ -65,10 +65,15 @@ func BuildServerConfigFromSpec(spec *ast.ConfigSpec) (string, error) {
 			return "", fmt.Errorf("at least one server inbound required for hysteria2")
 		}
 		sc := hysteria.NewServerCompiler()
-		// If routing rules exist, forward traffic to local Xray SOCKS5 port (20808)
+		// If routing rules exist and are enabled, forward traffic to local Xray SOCKS5 port (20808)
 		forwardPort := 0
-		if spec.Routing != nil && len(spec.Routing.Rules) > 0 {
-			forwardPort = 20808
+		if spec.Routing != nil {
+			for _, r := range spec.Routing.Rules {
+				if r.IsEnabled() {
+					forwardPort = 20808
+					break
+				}
+			}
 		}
 		return sc.CompileServerWithDNS(spec.ServerInbounds[0], forwardPort, spec.DNS, spec.LogLevel)
 	}

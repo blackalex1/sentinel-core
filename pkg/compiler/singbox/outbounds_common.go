@@ -130,6 +130,18 @@ func buildSingBoxTransport(node *ast.ServerProfile) map[string]interface{} {
 		}
 		return httpUpgradeMap
 
+	case ast.TransportH2, ast.TransportHTTP:
+		httpMap := map[string]interface{}{
+			"type": "http",
+		}
+		if node.Path != "" {
+			httpMap["path"] = node.Path
+		}
+		if node.Host != "" {
+			httpMap["host"] = []string{node.Host}
+		}
+		return httpMap
+
 	default:
 		return nil
 	}
@@ -288,5 +300,28 @@ func applyRawTLSAndTransport(out, sMap, tsMap map[string]interface{}, defaultSer
 			}
 		}
 		out["transport"] = httpUpgradeMap
+	} else if network == "h2" || network == "http" {
+		httpMap := map[string]interface{}{
+			"type": "http",
+		}
+		if httpSettings, ok := tsMap["httpSettings"].(map[string]interface{}); ok {
+			if path, ok := httpSettings["path"].(string); ok && path != "" {
+				httpMap["path"] = path
+			}
+			if host, ok := httpSettings["host"].([]interface{}); ok {
+				var hosts []string
+				for _, h := range host {
+					if hs, ok := h.(string); ok && hs != "" {
+						hosts = append(hosts, hs)
+					}
+				}
+				if len(hosts) > 0 {
+					httpMap["host"] = hosts
+				}
+			} else if hs, ok := httpSettings["host"].(string); ok && hs != "" {
+				httpMap["host"] = []string{hs}
+			}
+		}
+		out["transport"] = httpMap
 	}
 }

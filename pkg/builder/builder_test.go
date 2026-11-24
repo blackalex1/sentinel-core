@@ -311,6 +311,96 @@ func TestBuildServerConfig_Xray(t *testing.T) {
 	}
 }
 
+func TestBuildServerConfig_DisabledRulesSkipped(t *testing.T) {
+	disabledFalse := false
+	enabledTrue := true
+
+	inbounds := []ast.ServerInboundSpec{
+		{
+			Port:     443,
+			Protocol: "vless",
+			Tag:      "vless-in",
+			Clients: []ast.ServerInboundClient{
+				{ID: "uuid-1", Email: "u1@test.com"},
+			},
+		},
+	}
+	routing := &ast.RoutingSpec{
+		DefaultAction: ast.ActionProxy,
+		Rules: []ast.RoutingRule{
+			{
+				Action:      ast.ActionBlock,
+				OutboundTag: "blocked",
+				Protocols:   []string{"udp"},
+				Enable:      &disabledFalse,
+			},
+			{
+				Action:      ast.ActionBlock,
+				OutboundTag: "blocked",
+				Domains:     []string{"disabled-domain.com"},
+				Enabled:     &disabledFalse,
+			},
+			{
+				Action:      ast.ActionDirect,
+				OutboundTag: "direct",
+				Domains:     []string{"enabled-domain.com"},
+				Enable:      &enabledTrue,
+			},
+		},
+	}
+
+	// 1. Verify Xray server config
+	cfgXray, err := BuildServerConfig(ast.CoreXray, inbounds, routing, "", "xray.log", "info")
+	if err != nil {
+		t.Fatalf("failed to build Xray server config: %v", err)
+	}
+	if strings.Contains(cfgXray, "disabled-domain.com") {
+		t.Errorf("Xray server config contains disabled domain rule: %s", cfgXray)
+	}
+	if strings.Contains(cfgXray, `"network": "udp"`) || strings.Contains(cfgXray, `"network":"udp"`) {
+		t.Errorf("Xray server config contains disabled UDP block rule: %s", cfgXray)
+	}
+	if !strings.Contains(cfgXray, "enabled-domain.com") {
+		t.Errorf("Xray server config missing enabled domain rule: %s", cfgXray)
+	}
+
+	// 2. Verify Sing-box server config
+	cfgSingbox, err := BuildServerConfig(ast.CoreSingBox, inbounds, routing, "127.0.0.1:9090", "sb.log", "info")
+	if err != nil {
+		t.Fatalf("failed to build SingBox server config: %v", err)
+	}
+	if strings.Contains(cfgSingbox, "disabled-domain.com") {
+		t.Errorf("SingBox server config contains disabled domain rule: %s", cfgSingbox)
+	}
+	if !strings.Contains(cfgSingbox, "enabled-domain.com") {
+		t.Errorf("SingBox server config missing enabled domain rule: %s", cfgSingbox)
+	}
+
+	// 3. Verify Hysteria2 forwardPort is 0 when all rules are disabled
+	routingAllDisabled := &ast.RoutingSpec{
+		Rules: []ast.RoutingRule{
+			{Action: ast.ActionDirect, Domains: []string{"test.com"}, Enable: &disabledFalse},
+		},
+	}
+	hyInbounds := []ast.ServerInboundSpec{
+		{
+			Port:     443,
+			Protocol: "hysteria2",
+			Tag:      "hy2-in",
+			Clients: []ast.ServerInboundClient{
+				{Password: "secretpass", Email: "hy2user"},
+			},
+		},
+	}
+	cfgHy2NoRouting, err := BuildServerConfig(ast.CoreHysteria2, hyInbounds, routingAllDisabled, "", "", "info")
+	if err != nil {
+		t.Fatalf("failed to build Hysteria2 server config: %v", err)
+	}
+	if strings.Contains(cfgHy2NoRouting, "xray-routing") || strings.Contains(cfgHy2NoRouting, "20808") {
+		t.Errorf("Hysteria2 server config should not forward to 20808 when all rules are disabled: %s", cfgHy2NoRouting)
+	}
+}
+
 func TestBuildServerConfig_Hysteria2(t *testing.T) {
 	// 1. Empty inbounds -> Error
 	_, err := BuildServerConfig(ast.CoreHysteria2, nil, nil, "")

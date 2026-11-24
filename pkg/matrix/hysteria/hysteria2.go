@@ -14,11 +14,21 @@ func GetHysteria2Capability(lang string) types.ProtocolCapability {
 		DisplayName:         "Hysteria 2",
 		Description:         i18n.T(loc, "PROTO_HYSTERIA2_DESC"),
 		DefaultPort:         443,
+		DefaultTransport:    "quic",
+		DefaultSecurity:     "tls",
 		SupportedEngines:    []string{"hysteria2", "sing-box"},
 		SupportedTransports: []string{"quic"},
 		SupportedSecurity:   []string{"tls"},
-		Features:            []string{"port_hopping", "salamander_obfs", "bandwidth_up_down", "webhook_auth"},
-		Tabs:                []string{"basic", "stream", "sniffing", "advanced"},
-		TabDefinitions:      fields.BuildHysteria2TabDefinitions(lang),
+		EngineTransports: map[string][]string{
+			"hysteria2": {"quic"},
+			"sing-box":  {"quic"},
+		},
+		EngineSecurity: map[string][]string{
+			"hysteria2": {"tls"},
+			"sing-box":  {"tls"},
+		},
+		Features:       []string{"port_hopping", "salamander_obfs", "bandwidth_up_down", "webhook_auth"},
+		Tabs:           []string{"basic", "stream", "sniffing", "advanced"},
+		TabDefinitions: fields.BuildHysteria2TabDefinitions(lang),
 	}
 }

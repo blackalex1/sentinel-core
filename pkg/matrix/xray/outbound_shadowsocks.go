@@ -16,7 +16,16 @@ func GetOutboundShadowsocksCapability(lang string) types.ProtocolCapability {
 		Description:      i18n.T(loc, "UI_OUTBOUND_SS_DESC"),
 		DefaultPort:      8388,
 		SupportedEngines: []string{"xray-core", "sing-box"},
-		Tabs:             []string{"basic", "fallbacks"},
+		SupportedCiphers: []string{
+			"2022-blake3-aes-128-gcm",
+			"2022-blake3-aes-256-gcm",
+			"2022-blake3-chacha20-poly1305",
+			"aes-256-gcm",
+			"aes-128-gcm",
+			"chacha20-ietf-poly1305",
+			"xchacha20-ietf-poly1305",
+		},
+		Tabs: []string{"basic", "fallbacks"},
 		TabDefinitions: []types.TabDefinition{
 			{
 				ID:    "basic",
@@ -71,6 +80,7 @@ func GetOutboundShadowsocksCapability(lang string) types.ProtocolCapability {
 									{Value: "aes-256-gcm", Label: "aes-256-gcm"},
 									{Value: "aes-128-gcm", Label: "aes-128-gcm"},
 									{Value: "chacha20-ietf-poly1305", Label: "chacha20-ietf-poly1305"},
+									{Value: "xchacha20-ietf-poly1305", Label: "xchacha20-ietf-poly1305", SupportedEngines: []string{"xray-core"}},
 								},
 								GridColumn: "col-6",
 							},

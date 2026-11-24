@@ -10,15 +10,31 @@ import (
 // GetOutboundVMessCapability returns the capability definition for VMess outbound
 func GetOutboundVMessCapability(lang string) types.ProtocolCapability {
 	loc := i18n.Locale(lang)
+	engineTransports := map[string][]string{
+		"xray-core": {"ws", "tcp", "grpc", "httpupgrade"},
+		"sing-box":  {"ws", "tcp", "grpc", "httpupgrade", "h2"},
+	}
+	engineSecurity := map[string][]string{
+		"xray-core": {"tls", "none"},
+		"sing-box":  {"tls", "none"},
+	}
 	return types.ProtocolCapability{
 		Protocol:            ast.ProtoVMess,
 		DisplayName:         "VMess",
 		Description:         i18n.T(loc, "UI_OUTBOUND_VMESS_DESC"),
 		DefaultPort:         443,
+		DefaultTransport:    "ws",
+		DefaultSecurity:     "tls",
 		SupportedEngines:    []string{"xray-core", "sing-box"},
-		SupportedTransports: []string{"tcp", "ws", "grpc", "httpupgrade"},
+		SupportedTransports: []string{"tcp", "ws", "grpc", "httpupgrade", "h2"},
 		SupportedSecurity:   []string{"tls", "none"},
-		Tabs:                []string{"basic", "transport", "security", "fallbacks"},
+		EngineTransports:    engineTransports,
+		EngineSecurity:      engineSecurity,
+		EngineFingerprints: map[string][]string{
+			"xray-core": fields.OutboundFingerprintValues(),
+			"sing-box":  fields.OutboundFingerprintValues(),
+		},
+		Tabs: []string{"basic", "transport", "security", "fallbacks"},
 		TabDefinitions: []types.TabDefinition{
 			{
 				ID:    "basic",
@@ -94,13 +110,19 @@ func GetOutboundVMessCapability(lang string) types.ProtocolCapability {
 								Type:        "select",
 								Label:       i18n.T(loc, "UI_FIELD_NETWORK"),
 								Default:     "ws",
-								Options: []types.SelectOption{
-									{Value: "ws", Label: "WebSocket (WS)"},
-									{Value: "tcp", Label: "TCP"},
-									{Value: "grpc", Label: "gRPC"},
-									{Value: "httpupgrade", Label: "HTTPUpgrade"},
-								},
-								GridColumn: "col-12",
+								Options:     fields.OutboundNetworkOptionsFor([]string{"ws", "tcp", "grpc", "httpupgrade", "h2"}, engineTransports),
+								GridColumn:  "col-12",
+							},
+							{
+								ID:               "ob-header-type",
+								TargetField:      "headerType",
+								Type:             "select",
+								Label:            i18n.T(loc, "UI_FIELD_HEADER_TYPE"),
+								Default:          "",
+								Options:          fields.OutboundTCPHeaderTypeOptions(lang),
+								SupportedEngines: []string{"xray-core"},
+								ShowIf:           map[string]interface{}{"network": "tcp"},
+								GridColumn:       "col-12",
 							},
 							{
 								ID:          "ob-path",
@@ -108,6 +130,7 @@ func GetOutboundVMessCapability(lang string) types.ProtocolCapability {
 								Type:        "text",
 								Label:       i18n.T(loc, "UI_FIELD_PATH"),
 								Placeholder: "/vmess-ws",
+								ShowIf:      map[string]interface{}{"network": []string{"ws", "httpupgrade", "h2"}},
 								GridColumn:  "col-6",
 							},
 							{
@@ -116,7 +139,27 @@ func GetOutboundVMessCapability(lang string) types.ProtocolCapability {
 								Type:        "text",
 								Label:       i18n.T(loc, "UI_FIELD_WS_HOST"),
 								Placeholder: "domain.com",
+								ShowIf:      map[string]interface{}{"network": []string{"ws", "httpupgrade", "h2"}},
 								GridColumn:  "col-6",
+							},
+							{
+								ID:          "ob-service-name",
+								TargetField: "serviceName",
+								Type:        "text",
+								Label:       i18n.T(loc, "UI_FIELD_GRPC_SERVICE_NAME"),
+								Placeholder: "vmess-grpc",
+								ShowIf:      map[string]interface{}{"network": "grpc"},
+								GridColumn:  "col-8",
+							},
+							{
+								ID:               "ob-grpc-multi-mode",
+								TargetField:      "multiMode",
+								Type:             "checkbox",
+								Label:            i18n.T(loc, "UI_FIELD_GRPC_MULTI_MODE"),
+								Default:          false,
+								SupportedEngines: []string{"xray-core"},
+								ShowIf:           map[string]interface{}{"network": "grpc"},
+								GridColumn:       "col-4",
 							},
 						},
 					},
@@ -136,11 +179,8 @@ func GetOutboundVMessCapability(lang string) types.ProtocolCapability {
 								Type:        "select",
 								Label:       i18n.T(loc, "UI_FIELD_SECURITY"),
 								Default:     "tls",
-								Options: []types.SelectOption{
-									{Value: "tls", Label: "TLS"},
-									{Value: "none", Label: "None"},
-								},
-								GridColumn: "col-12",
+								Options:     fields.OutboundSecurityOptions([]string{"tls", "none"}, engineSecurity, lang),
+								GridColumn:  "col-12",
 							},
 							{
 								ID:          "ob-sni",
@@ -148,6 +188,17 @@ func GetOutboundVMessCapability(lang string) types.ProtocolCapability {
 								Type:        "text",
 								Label:       i18n.T(loc, "UI_FIELD_SNI"),
 								Placeholder: "vmess.example.com",
+								ShowIf:      map[string]interface{}{"security": "tls"},
+								GridColumn:  "col-6",
+							},
+							{
+								ID:          "ob-fp",
+								TargetField: "fingerprint",
+								Type:        "select",
+								Label:       i18n.T(loc, "UI_FIELD_FINGERPRINT"),
+								Default:     "chrome",
+								Options:     fields.OutboundFingerprintOptions(),
+								ShowIf:      map[string]interface{}{"security": "tls"},
 								GridColumn:  "col-6",
 							},
 							{
@@ -155,7 +206,19 @@ func GetOutboundVMessCapability(lang string) types.ProtocolCapability {
 								TargetField: "alpn",
 								Type:        "text",
 								Label:       i18n.T(loc, "UI_FIELD_ALPN"),
+								Default:     "",
+								Options:     fields.OutboundALPNOptions(lang),
 								Placeholder: "h2,http/1.1",
+								ShowIf:      map[string]interface{}{"security": "tls"},
+								GridColumn:  "col-6",
+							},
+							{
+								ID:          "ob-insecure",
+								TargetField: "allowInsecure",
+								Type:        "checkbox",
+								Label:       i18n.T(loc, "UI_FIELD_ALLOW_INSECURE"),
+								Default:     false,
+								ShowIf:      map[string]interface{}{"security": "tls"},
 								GridColumn:  "col-6",
 							},
 						},

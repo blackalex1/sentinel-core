@@ -82,6 +82,9 @@ type ServerProfile struct {
 	Path        string            `json:"path,omitempty"`
 	Host        string            `json:"host,omitempty"`
 	ServiceName string            `json:"serviceName,omitempty"`
+	HeaderType  string            `json:"headerType,omitempty"`
+	XHTTPMode   string            `json:"xhttpMode,omitempty"`
+	MultiMode   bool              `json:"multiMode,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"`
 
 	// Shadowsocks / ShadowTLS parameters

@@ -1476,3 +1476,61 @@ func TestSingboxCompiler_BitTorrentSplitAndCombinedProtocol(t *testing.T) {
 		t.Errorf("expected non-bittorrent rule (quic+domain) to remain single combined rule, rules=%v", rules)
 	}
 }
+
+func TestSingboxCompiler_DisabledRulesSkipped(t *testing.T) {
+	c := NewCompiler()
+	disabledFalse := false
+	disabledZero := false
+	enabledTrue := true
+
+	spec := &ast.ConfigSpec{
+		TargetCore: ast.CoreSingBox,
+		Routing: &ast.RoutingSpec{
+			Rules: []ast.RoutingRule{
+				{
+					Action:      ast.ActionBlock,
+					Protocols:   []string{"udp"},
+					OutboundTag: "block",
+					Enable:      &disabledFalse,
+				},
+				{
+					Action:      ast.ActionBlock,
+					Domains:     []string{"disabled-site.com"},
+					OutboundTag: "block",
+					Enabled:     &disabledZero,
+				},
+				{
+					Action:      ast.ActionDirect,
+					Domains:     []string{"enabled-site.com"},
+					OutboundTag: "direct",
+					Enable:      &enabledTrue,
+				},
+			},
+		},
+	}
+
+	cfg, _, err := c.Compile(spec)
+	if err != nil {
+		t.Fatalf("compile failed: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(cfg), &parsed); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	rules := parsed["route"].(map[string]interface{})["rules"].([]interface{})
+
+	for _, r := range rules {
+		rm := r.(map[string]interface{})
+		if net, ok := rm["network"].(string); ok && net == "udp" {
+			t.Errorf("disabled UDP block rule was compiled into Sing-box config: %v", rm)
+		}
+		if doms, ok := rm["domain"].([]interface{}); ok {
+			for _, d := range doms {
+				if d == "disabled-site.com" {
+					t.Errorf("disabled domain rule was compiled into Sing-box config: %v", rm)
+				}
+			}
+		}
+	}
+}

@@ -43,7 +43,15 @@ func BuildClientConfig(spec *ast.ConfigSpec) (*BuildResult, error) {
 
 	// Check if native Hysteria2 is requested but routing table or TUN is required
 	if targetCore == ast.CoreHysteria2 {
-		hasRouting := spec.Routing != nil && len(spec.Routing.Rules) > 0
+		hasRouting := false
+		if spec.Routing != nil {
+			for _, r := range spec.Routing.Rules {
+				if r.IsEnabled() {
+					hasRouting = true
+					break
+				}
+			}
+		}
 		hasTun := spec.ClientInbound != nil && (spec.ClientInbound.Mode == ast.InboundModeDesktopTun || spec.ClientInbound.Mode == ast.InboundModeMobileVpn)
 		hasServerInbounds := len(spec.ServerInbounds) > 0
 		hasChain := len(spec.ChainNodes) >= 2

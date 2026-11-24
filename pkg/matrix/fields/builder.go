@@ -178,9 +178,10 @@ func BuildVLESSTabDefinitions(lang string, isXray bool) []types.TabDefinition {
 	if isXray {
 		// Protocol Tab (Xray VLESS Encryption & Fallbacks)
 		tabs = append(tabs, types.TabDefinition{
-			ID:    "protocol",
-			Title: i18n.T(loc, "UI_TAB_PROTOCOL"),
-			Icon:  "fa-arrows-split-up-and-left",
+			ID:               "protocol",
+			Title:            i18n.T(loc, "UI_TAB_PROTOCOL"),
+			Icon:             "fa-arrows-split-up-and-left",
+			SupportedEngines: []string{"xray-core"},
 			Groups: []types.FieldGroup{
 				{
 					ID:    "vless_encryption_group",
@@ -269,9 +270,9 @@ func BuildVLESSTabDefinitions(lang string, isXray bool) []types.TabDefinition {
 							{Value: "ws", Label: "WebSocket (WS)"},
 							{Value: "grpc", Label: "gRPC"},
 							{Value: "httpupgrade", Label: "HTTPUpgrade"},
-							{Value: "xhttp", Label: "xHTTP (SplitHTTP)"},
-							{Value: "h2", Label: "HTTP/2 (H2)"},
-							{Value: "mkcp", Label: "mKCP"},
+							{Value: "xhttp", Label: "xHTTP (SplitHTTP)", SupportedEngines: []string{"xray-core"}},
+							{Value: "h2", Label: "HTTP/2 (H2)", SupportedEngines: []string{"sing-box"}},
+							{Value: "mkcp", Label: "mKCP", SupportedEngines: []string{"xray-core"}},
 						},
 						GridColumn: "col-12",
 					},
@@ -301,19 +302,21 @@ func BuildVLESSTabDefinitions(lang string, isXray bool) []types.TabDefinition {
 						GridColumn:  "col-6",
 					},
 					{
-						ID:          "grpc_multi_mode",
-						TargetField: "streamSettings.grpcSettings.multiMode",
-						Type:        "checkbox",
-						Label:       "gRPC Multi Mode",
-						ShowIf:      map[string]interface{}{"streamSettings.network": "grpc"},
-						GridColumn:  "col-6",
+						ID:               "grpc_multi_mode",
+						TargetField:      "streamSettings.grpcSettings.multiMode",
+						Type:             "checkbox",
+						Label:            "gRPC Multi Mode",
+						SupportedEngines: []string{"xray-core"},
+						ShowIf:           map[string]interface{}{"streamSettings.network": "grpc"},
+						GridColumn:       "col-6",
 					},
 					{
-						ID:          "xhttp_mode",
-						TargetField: "streamSettings.xhttpSettings.mode",
-						Type:        "select",
-						Label:       "xHTTP Mode",
-						Default:     "auto",
+						ID:               "xhttp_mode",
+						TargetField:      "streamSettings.xhttpSettings.mode",
+						Type:             "select",
+						Label:            "xHTTP Mode",
+						Default:          "auto",
+						SupportedEngines: []string{"xray-core"},
 						Options: []types.SelectOption{
 							{Value: "auto", Label: "auto"},
 							{Value: "packet-up", Label: "packet-up"},
@@ -324,13 +327,14 @@ func BuildVLESSTabDefinitions(lang string, isXray bool) []types.TabDefinition {
 						GridColumn: "col-6",
 					},
 					{
-						ID:          "xhttp_path",
-						TargetField: "streamSettings.xhttpSettings.path",
-						Type:        "text",
-						Label:       "xHTTP Path",
-						Placeholder: "/",
-						ShowIf:      map[string]interface{}{"streamSettings.network": "xhttp"},
-						GridColumn:  "col-6",
+						ID:               "xhttp_path",
+						TargetField:      "streamSettings.xhttpSettings.path",
+						Type:             "text",
+						Label:            "xHTTP Path",
+						Placeholder:      "/",
+						SupportedEngines: []string{"xray-core"},
+						ShowIf:           map[string]interface{}{"streamSettings.network": "xhttp"},
+						GridColumn:       "col-6",
 					},
 				},
 			},
@@ -405,12 +409,13 @@ func BuildVLESSTabDefinitions(lang string, isXray bool) []types.TabDefinition {
 						GridColumn:  "col-6",
 					},
 					{
-						ID:          "spiderX",
-						TargetField: "streamSettings.realitySettings.spiderX",
-						Type:        "text",
-						Label:       "SpiderX",
-						Placeholder: "/",
-						GridColumn:  "col-6",
+						ID:               "spiderX",
+						TargetField:      "streamSettings.realitySettings.spiderX",
+						Type:             "text",
+						Label:            "SpiderX",
+						Placeholder:      "/",
+						SupportedEngines: []string{"xray-core"},
+						GridColumn:       "col-6",
 					},
 				},
 			},
@@ -427,6 +432,8 @@ func BuildVLESSTabDefinitions(lang string, isXray bool) []types.TabDefinition {
 // BuildHysteria2TabDefinitions returns all tabs for Hysteria 2
 func BuildHysteria2TabDefinitions(lang string) []types.TabDefinition {
 	loc := i18n.Locale(lang)
+		sniffingTab := BuildSniffingTab(lang)
+	sniffingTab.SupportedEngines = []string{"sing-box"}
 	return []types.TabDefinition{
 		BuildBasicTab(lang, ast.ProtoHysteria2, 443),
 		{
@@ -555,7 +562,7 @@ func BuildHysteria2TabDefinitions(lang string) []types.TabDefinition {
 				},
 			},
 		},
-		BuildSniffingTab(lang),
+		sniffingTab,
 		BuildAdvancedTab(lang),
 	}
 }
