@@ -29,7 +29,7 @@ func (e *UnifiedSecurityEngine) EnsureActivePcapSession(reason string, policy Se
 	f, err := os.OpenFile(e.pcapActiveFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err == nil {
 		_ = WritePcapGlobalHeader(f, PCAPLinkTypeRawIP)
-		f.Close()
+		_ = f.Close()
 	}
 
 	return e.pcapActiveFile

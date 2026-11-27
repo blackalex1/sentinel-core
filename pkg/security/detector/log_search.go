@@ -21,7 +21,7 @@ var (
 	hyAuthTextRegex   = regexp.MustCompile(`auth\s*=\s*([^\s,}]+)`)
 	hyConnTextRegex   = regexp.MustCompile(`connection:\s*([^\s(]+)`)
 	hyEmailRegex      = regexp.MustCompile(`[\w\.-]+@[\w\.-]+\.\w+`)
-	hyDestHostRegex   = regexp.MustCompile(`->\s*(\[[a-fA-F0-9:]+\]|[^:\s]+):\d+`)
+	hyDestHostRegex   = regexp.MustCompile(`->\s*(\[[a-fA-F0-9:]+\]|[^:\s]+):(\d+)`)
 	hyClientConnRegex = regexp.MustCompile(`client connected:?(?:\s*auth=[^,]+,)?\s*(\[[a-fA-F0-9:]+\]|[^:\s,]+:\d+|\S+)`)
 	hyConnIPRegex     = regexp.MustCompile(`connection:\s*[^\s(]+\s*\(([^)]+)\)`)
 
@@ -43,7 +43,6 @@ var (
 	sbInboundTagFromPrefix = regexp.MustCompile(`inbound/[a-zA-Z0-9_\.\-]+\[([a-zA-Z0-9_\.\-]+)\]`)
 	sbInboundConnTag    = regexp.MustCompile(`\[([^\]]+)\]\s+inbound connection`)
 	xrayDestMatchRegex  = regexp.MustCompile(`(?:accepted|connection)\s+(?:tcp|udp):(\[[^\]]+\]|[^:]+):`)
-	ipv4CheckRegex      = regexp.MustCompile(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$`)
 
 	// sing-box two-line format: connID links "inbound connection from IP" and "[user] inbound connection to DST".
 	// sbConnIDLineRegex extracts the connID from any timed log line: [338227781 79ms].
@@ -130,37 +129,37 @@ func checkAge(logTime *time.Time, maxAgeSec int) bool {
 }
 
 
+func parseHysteriaTimeString(raw string) *time.Time {
+	tStr := strings.TrimSuffix(raw, "Z")
+	if idx := strings.Index(tStr, "."); idx > 0 {
+		tStr = tStr[:idx]
+	}
+	if idx := strings.Index(tStr, "+"); idx > 0 {
+		tStr = tStr[:idx]
+	}
+	if t, err := time.Parse("2006-01-02T15:04:05", tStr); err == nil {
+		return &t
+	}
+	return nil
+}
+
 // ParseHysteriaTimestamp extracts a time.Time from a Hysteria 2 log line.
 func ParseHysteriaTimestamp(line string) *time.Time {
 	clean := strings.TrimSpace(line)
 	// 1. JSON substring with "time" field
 	if m := hyTimeJSONRegex.FindStringSubmatch(clean); len(m) >= 2 {
-		tStr := strings.TrimSuffix(m[1], "Z")
-		if idx := strings.Index(tStr, "."); idx > 0 {
-			tStr = tStr[:idx]
-		}
-		if idx := strings.Index(tStr, "+"); idx > 0 {
-			tStr = tStr[:idx]
-		}
-		if t, err := time.Parse("2006-01-02T15:04:05", tStr); err == nil {
-			return &t
+		if t := parseHysteriaTimeString(m[1]); t != nil {
+			return t
 		}
 	}
 
 	if strings.HasPrefix(clean, "{") {
-		var obj map[string]any
-		if err := json.Unmarshal([]byte(clean), &obj); err == nil {
-			if tVal, ok := obj["time"].(string); ok && tVal != "" {
-				tStr := strings.TrimSuffix(tVal, "Z")
-				if idx := strings.Index(tStr, "."); idx > 0 {
-					tStr = tStr[:idx]
-				}
-				if idx := strings.Index(tStr, "+"); idx > 0 {
-					tStr = tStr[:idx]
-				}
-				if t, err := time.Parse("2006-01-02T15:04:05", tStr); err == nil {
-					return &t
-				}
+		var obj struct {
+			Time string `json:"time"`
+		}
+		if err := json.Unmarshal([]byte(clean), &obj); err == nil && obj.Time != "" {
+			if t := parseHysteriaTimeString(obj.Time); t != nil {
+				return t
 			}
 		}
 	}
@@ -207,23 +206,28 @@ func FindEmailInHysteriaLog(lines []string, dstIP string, dstPort int, maxAgeSec
 		return ""
 	}
 
-	extractDestHost := func(line string) string {
+	extractDestEndpoint := func(line string) (string, int) {
 		if idx := strings.Index(line, "{"); idx != -1 {
-			var obj map[string]any
+			var obj struct {
+				ReqAddr string `json:"reqAddr"`
+				Req     string `json:"req"`
+			}
 			if err := json.Unmarshal([]byte(line[idx:]), &obj); err == nil {
-				reqVal, _ := obj["reqAddr"].(string)
-				if reqVal == "" {
-					reqVal, _ = obj["req"].(string)
-				}
+				reqVal := firstNonEmpty(obj.ReqAddr, obj.Req)
 				if reqVal != "" {
-					return parseCleanIP(reqVal)
+					if host, portStr, err := net.SplitHostPort(reqVal); err == nil {
+						port, _ := strconv.Atoi(portStr)
+						return strings.Trim(host, "[]"), port
+					}
+					return parseCleanIP(reqVal), 0
 				}
 			}
 		}
-		if m := hyDestHostRegex.FindStringSubmatch(line); len(m) >= 2 {
-			return strings.Trim(m[1], "[]")
+		if m := hyDestHostRegex.FindStringSubmatch(line); len(m) >= 3 {
+			port, _ := strconv.Atoi(m[2])
+			return strings.Trim(m[1], "[]"), port
 		}
-		return ""
+		return "", 0
 	}
 
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -233,12 +237,16 @@ func FindEmailInHysteriaLog(lines []string, dstIP string, dstPort int, maxAgeSec
 			continue
 		}
 
-		if !strings.Contains(line, dstPortStr) {
+		destHost, destPort := extractDestEndpoint(line)
+		if destPort > 0 {
+			if destPort != dstPort {
+				continue
+			}
+		} else if !strings.Contains(line, dstPortStr) {
 			continue
 		}
 
 		if dstIP != "" {
-			destHost := extractDestHost(line)
 			cleanDstIP := strings.Trim(dstIP, "[]")
 			if destHost != "" {
 				if strings.Trim(destHost, "[]") != cleanDstIP {
@@ -267,16 +275,15 @@ func FindClientIPForEmailInHysteriaLog(lines []string, email string, maxAgeSec i
 		}
 
 		if idx := strings.Index(line, "{"); idx != -1 {
-			var obj map[string]any
+			var obj struct {
+				ID   string `json:"id"`
+				Auth string `json:"auth"`
+				Addr string `json:"addr"`
+			}
 			if err := json.Unmarshal([]byte(line[idx:]), &obj); err == nil {
-				idVal, _ := obj["id"].(string)
-				if idVal == "" {
-					idVal, _ = obj["auth"].(string)
-				}
-				if idVal == email {
-					if addr, ok := obj["addr"].(string); ok && addr != "" {
-						return parseCleanIP(addr)
-					}
+				idVal := firstNonEmpty(obj.ID, obj.Auth)
+				if idVal == email && obj.Addr != "" {
+					return parseCleanIP(obj.Addr)
 				}
 			}
 		}

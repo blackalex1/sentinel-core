@@ -15,14 +15,17 @@ func isWritableMemory(ptr unsafe.Pointer) bool {
 	if err := syscall.Pipe(p[:]); err != nil {
 		return false
 	}
-	defer syscall.Close(p[0])
-	defer syscall.Close(p[1])
+	defer func() {
+		_ = syscall.Close(p[0])
+		_ = syscall.Close(p[1])
+	}()
 
 	if _, err := syscall.Write(p[1], []byte{0}); err != nil {
 		return false
 	}
 
 	// nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block
+	// SAFETY: ptr is non-nil (checked at entry) and points to at least 1 byte of the target string; syscall.Read probes kernel writability safely via EFAULT.
 	b := unsafe.Slice((*byte)(ptr), 1)
 	_, err := syscall.Read(p[0], b)
 	return err == nil

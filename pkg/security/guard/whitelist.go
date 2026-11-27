@@ -84,11 +84,7 @@ func (w *ProcessWhitelist) IsProcessProtected(procName string, pid int) bool {
 
 	// Check without .exe extension
 	trimmedBase := strings.TrimSuffix(base, ".exe")
-	if w.protectedNames[trimmedBase] {
-		return true
-	}
-
-	return false
+	return w.protectedNames[trimmedBase]
 }
 
 // IsIPProtected checks if an IP is in the self-protection whitelist.

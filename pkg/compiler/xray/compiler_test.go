@@ -969,9 +969,32 @@ func TestXrayCompiler_AllInboundProtocols(t *testing.T) {
 	}
 
 	// 8. Check Outbound VLESS without TLS: flow must NOT be in vless-fallback
-	if strings.Contains(cfg, `"flow": "xtls-rprx-vision"`) {
-		// Verify vision is not in vless-fallback (security=none)
-		// by verifying it only exists where security=reality
+	var parsedCfg map[string]interface{}
+	if err := json.Unmarshal([]byte(cfg), &parsedCfg); err != nil {
+		t.Fatalf("failed to unmarshal compiled config: %v", err)
+	}
+	if outbounds, ok := parsedCfg["outbounds"].([]interface{}); ok {
+		for _, obRaw := range outbounds {
+			ob, ok := obRaw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if ob["tag"] == "vless-fallback" {
+				if settings, ok := ob["settings"].(map[string]interface{}); ok {
+					if vnext, ok := settings["vnext"].([]interface{}); ok && len(vnext) > 0 {
+						if first, ok := vnext[0].(map[string]interface{}); ok {
+							if users, ok := first["users"].([]interface{}); ok && len(users) > 0 {
+								if u, ok := users[0].(map[string]interface{}); ok {
+									if _, hasFlow := u["flow"]; hasFlow {
+										t.Errorf("expected no flow in vless-fallback without TLS, got %v", u["flow"])
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// 9. Check Outbound Hysteria2: protocol is native hysteria, network is hysteria

@@ -48,7 +48,7 @@ func WritePcapGlobalHeader(f *os.File, linkType uint32) error {
 }
 
 // WritePacketToPcap appends a raw network packet to a standard PCAP file.
-func WritePacketToPcap(filePath string, packetBytes []byte, timestampMs int64) error {
+func WritePacketToPcap(filePath string, packetBytes []byte, timestampMs int64) (err error) {
 	pcapWriteMu.Lock()
 	defer pcapWriteMu.Unlock()
 
@@ -66,7 +66,11 @@ func WritePacketToPcap(filePath string, packetBytes []byte, timestampMs int64) e
 	if err != nil {
 		return fmt.Errorf("failed to open pcap file %s: %w", filePath, err)
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	if err := WritePcapGlobalHeader(f, PCAPLinkTypeRawIP); err != nil {
 		return fmt.Errorf("failed to write global pcap header: %w", err)
@@ -138,7 +142,7 @@ func SynthesizeRawIPv4Packet(
 	totalLen := 20 + transportHeaderLen + len(payload)
 	packet := make([]byte, totalLen)
 
-	// --- 1. IPv4 Header (20 bytes) ---
+	// IPv4 header (20 bytes)
 	packet[0] = 0x45 // Version 4, IHL 5 (20 bytes)
 	packet[1] = 0x00 // DSCP/ECN
 	binary.BigEndian.PutUint16(packet[2:4], uint16(totalLen))
@@ -155,7 +159,7 @@ func SynthesizeRawIPv4Packet(
 	chk := calculateIPChecksum(packet[0:20])
 	binary.BigEndian.PutUint16(packet[10:12], chk)
 
-	// --- 2. Transport Header ---
+	// Transport header
 	transportOffset := 20
 	if isTCP {
 		binary.BigEndian.PutUint16(packet[transportOffset:transportOffset+2], uint16(srcPort))

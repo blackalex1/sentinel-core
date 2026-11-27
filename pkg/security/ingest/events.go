@@ -2,7 +2,6 @@ package ingest
 
 import (
 	"encoding/json"
-	"strings"
 	"sync"
 	"time"
 )
@@ -178,8 +177,4 @@ func (d *EventDispatcher) Clear() {
 func (e *SecurityEvent) JSONString() string {
 	b, _ := json.Marshal(e)
 	return string(b)
-}
-
-func normalizeProto(p string) string {
-	return strings.ToUpper(strings.TrimSpace(p))
 }

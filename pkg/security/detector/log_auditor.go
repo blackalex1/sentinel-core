@@ -4,12 +4,10 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"sync"
 )
 
 // LogAuditor inspects real-time proxy core logs (Sing-box, Xray, Hysteria 2) to detect attack signatures.
 type LogAuditor struct {
-	mu             sync.RWMutex
 	tracker        *ClientRiskTracker
 	registry       *ClientRegistry
 	sensitivePorts map[int]bool

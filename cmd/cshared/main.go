@@ -12,7 +12,7 @@ import (
 	"github.com/blackalex1/sentinel-core/pkg/adapter"
 )
 
-var Version = "0.0.23"
+var Version = "0.0.28"
 
 func safeGoString(s *C.char) string {
 	if s == nil {

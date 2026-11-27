@@ -105,171 +105,175 @@ func IngestFromJSON(jsonStr string, vault *crypto.Vault) (*ast.ServerProfile, er
 	return IngestDBNode(&raw, vault)
 }
 
+func paramString(m map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if s, ok := m[k].(string); ok && s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func paramBool(m map[string]interface{}, keys ...string) bool {
+	for _, k := range keys {
+		v, ok := m[k]
+		if !ok || v == nil {
+			continue
+		}
+		if b, ok := v.(bool); ok {
+			return b
+		}
+		if s, ok := v.(string); ok {
+			return s == "true" || s == "1"
+		}
+	}
+	return false
+}
+
+func paramInt(m map[string]interface{}, keys ...string) int {
+	for _, k := range keys {
+		v, ok := m[k]
+		if !ok || v == nil {
+			continue
+		}
+		switch val := v.(type) {
+		case int:
+			return val
+		case float64:
+			return int(val)
+		case string:
+			if parsed, err := strconv.Atoi(val); err == nil {
+				return parsed
+			}
+		}
+	}
+	return 0
+}
+
+func paramStringSlice(m map[string]interface{}, keys ...string) []string {
+	for _, k := range keys {
+		v, ok := m[k]
+		if !ok || v == nil {
+			continue
+		}
+		switch val := v.(type) {
+		case []string:
+			return val
+		case []interface{}:
+			var res []string
+			for _, item := range val {
+				if s, ok := item.(string); ok {
+					res = append(res, s)
+				}
+			}
+			return res
+		case string:
+			if val != "" {
+				return strings.Split(val, ",")
+			}
+		}
+	}
+	return nil
+}
+
 func mapParametersToProfile(p *ast.ServerProfile, m map[string]interface{}) {
-	getString := func(keys ...string) string {
-		for _, k := range keys {
-			if v, ok := m[k]; ok && v != nil {
-				if s, ok := v.(string); ok && s != "" {
-					return s
-				}
-			}
-		}
-		return ""
-	}
-
-	getBool := func(keys ...string) bool {
-		for _, k := range keys {
-			if v, ok := m[k]; ok && v != nil {
-				if b, ok := v.(bool); ok {
-					return b
-				}
-				if s, ok := v.(string); ok {
-					return s == "true" || s == "1"
-				}
-			}
-		}
-		return false
-	}
-
-	getInt := func(keys ...string) int {
-		for _, k := range keys {
-			if v, ok := m[k]; ok && v != nil {
-				if i, ok := v.(int); ok {
-					return i
-				}
-				if f, ok := v.(float64); ok {
-					return int(f)
-				}
-				if s, ok := v.(string); ok {
-					if parsed, err := strconv.Atoi(s); err == nil {
-						return parsed
-					}
-				}
-			}
-		}
-		return 0
-	}
-
-	getStringSlice := func(keys ...string) []string {
-		for _, k := range keys {
-			if v, ok := m[k]; ok && v != nil {
-				if slice, ok := v.([]string); ok {
-					return slice
-				}
-				if slice, ok := v.([]interface{}); ok {
-					var res []string
-					for _, item := range slice {
-						if s, ok := item.(string); ok {
-							res = append(res, s)
-						}
-					}
-					return res
-				}
-				if s, ok := v.(string); ok && s != "" {
-					return strings.Split(s, ",")
-				}
-			}
-		}
-		return nil
-	}
-
 	// Credentials
-	if v := getString("uuid", "UUID"); v != "" {
+	if v := paramString(m, "uuid", "UUID"); v != "" {
 		p.UUID = v
 	}
-	if v := getString("password", "pass", "pwd", "auth"); v != "" {
+	if v := paramString(m, "password", "pass", "pwd", "auth"); v != "" {
 		p.Password = v
 	}
-	if v := getString("username", "user"); v != "" {
+	if v := paramString(m, "username", "user"); v != "" {
 		p.Username = v
 	}
 
 	// TLS & Reality
-	if v := getString("sni", "server_name", "serverName", "host"); v != "" {
+	if v := paramString(m, "sni", "server_name", "serverName", "host"); v != "" {
 		p.SNI = v
 	}
-	if v := getString("fingerprint", "fp"); v != "" {
+	if v := paramString(m, "fingerprint", "fp"); v != "" {
 		p.Fingerprint = v
 	}
-	if v := getString("public_key", "publicKey", "pbk"); v != "" {
+	if v := paramString(m, "public_key", "publicKey", "pbk"); v != "" {
 		p.PublicKey = v
 	}
-	if v := getString("short_id", "shortId", "sid"); v != "" {
+	if v := paramString(m, "short_id", "shortId", "sid"); v != "" {
 		p.ShortID = v
 	}
-	if v := getString("spider_x", "spiderX", "spx"); v != "" {
+	if v := paramString(m, "spider_x", "spiderX", "spx"); v != "" {
 		p.SpiderX = v
 	}
-	if alpn := getStringSlice("alpn", "ALPN"); len(alpn) > 0 {
+	if alpn := paramStringSlice(m, "alpn", "ALPN"); len(alpn) > 0 {
 		p.ALPN = alpn
 	}
-	p.Insecure = getBool("insecure", "allowInsecure", "allow_insecure")
-	p.PostQuantum = getBool("post_quantum", "postQuantum", "pq", "kyber")
+	p.Insecure = paramBool(m, "insecure", "allowInsecure", "allow_insecure")
+	p.PostQuantum = paramBool(m, "post_quantum", "postQuantum", "pq", "kyber")
 
 	// Flow & Mux
-	if v := getString("flow", "Flow"); v != "" {
+	if v := paramString(m, "flow", "Flow"); v != "" {
 		p.Flow = v
 	}
-	p.Mux = getBool("mux", "multiplex")
+	p.Mux = paramBool(m, "mux", "multiplex")
 
 	// Transport
-	if v := getString("path", "Path"); v != "" {
+	if v := paramString(m, "path", "Path"); v != "" {
 		p.Path = v
 	}
-	if v := getString("service_name", "serviceName", "grpc_service"); v != "" {
+	if v := paramString(m, "service_name", "serviceName", "grpc_service"); v != "" {
 		p.ServiceName = v
 	}
 
 	// Shadowsocks / ShadowTLS
-	if v := getString("cipher", "method"); v != "" {
+	if v := paramString(m, "cipher", "method"); v != "" {
 		p.Cipher = v
 	}
-	p.ShadowTLSVersion = getInt("shadow_tls_version", "shadowTlsVersion")
-	if v := getString("shadow_tls_password", "shadowTlsPassword"); v != "" {
+	p.ShadowTLSVersion = paramInt(m, "shadow_tls_version", "shadowTlsVersion")
+	if v := paramString(m, "shadow_tls_password", "shadowTlsPassword"); v != "" {
 		p.ShadowTLSPassword = v
 	}
-	if v := getString("shadow_tls_sni", "shadowTlsSni"); v != "" {
+	if v := paramString(m, "shadow_tls_sni", "shadowTlsSni"); v != "" {
 		p.ShadowTLSSNI = v
 	}
 
 	// Hysteria 2
-	if v := getString("bandwidth_up", "bandwidthUp", "up_mbps"); v != "" {
+	if v := paramString(m, "bandwidth_up", "bandwidthUp", "up_mbps"); v != "" {
 		p.BandwidthUp = v
 	}
-	if v := getString("bandwidth_down", "bandwidthDown", "down_mbps"); v != "" {
+	if v := paramString(m, "bandwidth_down", "bandwidthDown", "down_mbps"); v != "" {
 		p.BandwidthDown = v
 	}
-	if v := getString("obfs_type", "obfsType"); v != "" {
+	if v := paramString(m, "obfs_type", "obfsType"); v != "" {
 		p.ObfsType = v
 	}
-	if v := getString("obfs_password", "obfsPassword", "obfs"); v != "" {
+	if v := paramString(m, "obfs_password", "obfsPassword", "obfs"); v != "" {
 		p.ObfsPassword = v
 	}
-	if v := getString("port_hopping", "portHopping", "mport", "ports"); v != "" {
+	if v := paramString(m, "port_hopping", "portHopping", "mport", "ports"); v != "" {
 		p.PortHopping = v
 	}
 
 	// TUIC
-	if v := getString("congestion_control", "congestionControl"); v != "" {
+	if v := paramString(m, "congestion_control", "congestionControl"); v != "" {
 		p.CongestionControl = v
 	}
-	if v := getString("udp_relay_mode", "udpRelayMode"); v != "" {
+	if v := paramString(m, "udp_relay_mode", "udpRelayMode"); v != "" {
 		p.UDPRelayMode = v
 	}
-	p.ZeroRTTHandshake = getBool("zero_rtt_handshake", "zeroRttHandshake")
+	p.ZeroRTTHandshake = paramBool(m, "zero_rtt_handshake", "zeroRttHandshake")
 
 	// WireGuard
-	if v := getString("private_key", "privateKey"); v != "" {
+	if v := paramString(m, "private_key", "privateKey"); v != "" {
 		p.PrivateKey = v
 	}
-	if v := getString("peer_public_key", "peerPublicKey"); v != "" {
+	if v := paramString(m, "peer_public_key", "peerPublicKey"); v != "" {
 		p.PeerPublicKey = v
 	}
-	if v := getString("preshared_key", "preSharedKey"); v != "" {
+	if v := paramString(m, "preshared_key", "preSharedKey"); v != "" {
 		p.PreSharedKey = v
 	}
-	p.MTU = getInt("mtu", "MTU")
-	if localAddr := getStringSlice("local_address", "localAddress", "ip"); len(localAddr) > 0 {
+	p.MTU = paramInt(m, "mtu", "MTU")
+	if localAddr := paramStringSlice(m, "local_address", "localAddress", "ip"); len(localAddr) > 0 {
 		p.LocalAddress = localAddr
 	}
 }

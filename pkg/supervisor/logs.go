@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -224,7 +225,7 @@ func TailFile(coreName string, filePath string, stopCh <-chan struct{}) {
 	if err != nil {
 		return
 	}
-	defer file.Close()
+	defer closeQuietly(file)
 
 	// Seek to end of file to tail live additions
 	_, _ = file.Seek(0, io.SeekEnd)
@@ -271,7 +272,7 @@ func ReadCoreLogs(logPath string, maxLines int) ([]string, error) {
 		}
 		return nil, err
 	}
-	defer file.Close()
+	defer closeQuietly(file)
 
 	// Read lines efficiently with circular buffer or scanning
 	var lines []string
@@ -287,7 +288,7 @@ func ReadCoreLogs(logPath string, maxLines int) ([]string, error) {
 		}
 	}
 
-	if err := scanner.Err(); err != nil && err != io.EOF {
+	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
 		// return whatever lines were captured
 		if len(lines) > 0 {
 			if len(lines) > maxLines {

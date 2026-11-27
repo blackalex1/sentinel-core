@@ -2,7 +2,7 @@ package crypto
 
 import (
 	"encoding/base64"
-	"strings"
+	"errors"
 	"testing"
 )
 
@@ -155,8 +155,8 @@ func TestCipher_ErrorsAndEdgeCases(t *testing.T) {
 	// Missing header prefix
 	key := make([]byte, 32)
 	_, err = DecryptAEAD("invalid_header_payload", key)
-	if err == nil || !strings.Contains(err.Error(), "missing") {
-		t.Errorf("expected missing header error, got: %v", err)
+	if !errors.Is(err, ErrInvalidPayloadHeader) {
+		t.Errorf("expected ErrInvalidPayloadHeader, got: %v", err)
 	}
 
 	// Invalid base64
@@ -168,8 +168,8 @@ func TestCipher_ErrorsAndEdgeCases(t *testing.T) {
 	// Ciphertext too short (< 12 bytes nonce)
 	shortB64 := base64.RawURLEncoding.EncodeToString([]byte("short"))
 	_, err = DecryptAEAD(EncryptedPayloadHeader+shortB64, key)
-	if err == nil || !strings.Contains(err.Error(), "too short") {
-		t.Errorf("expected too short error, got: %v", err)
+	if !errors.Is(err, ErrCiphertextTooShort) {
+		t.Errorf("expected ErrCiphertextTooShort, got: %v", err)
 	}
 }
 

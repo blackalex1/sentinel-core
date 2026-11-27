@@ -3,6 +3,7 @@ package supervisor
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -69,10 +70,8 @@ func (c *Controller) Configure(clashAddr string, hysteriaPorts []int, logPaths m
 	if len(hysteriaPorts) > 0 {
 		c.hysteriaPorts = hysteriaPorts
 	}
-	if logPaths != nil {
-		for k, v := range logPaths {
-			c.logPaths[k] = v
-		}
+	for k, v := range logPaths {
+		c.logPaths[k] = v
 	}
 }
 
@@ -391,7 +390,7 @@ func (c *Controller) GetRealtimeTraffic(clashAddr string) RealtimeTrafficStats {
 	url := fmt.Sprintf("http://%s/connections", clashAddr)
 	resp, err := localHTTPClient.Get(url)
 	if err == nil {
-		defer resp.Body.Close()
+		defer closeQuietly(resp.Body)
 		if resp.StatusCode == 200 {
 		var data struct {
 			DownloadTotal int64 `json:"downloadTotal"`
@@ -427,4 +426,22 @@ func (c *Controller) GetRealtimeTraffic(clashAddr string) RealtimeTrafficStats {
 	}
 
 	return stats
+}
+
+func closeQuietly(c io.Closer) {
+	if c == nil {
+		return
+	}
+	if err := c.Close(); err != nil {
+		log.Printf("[sentinel-core] close error: %v", err)
+	}
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

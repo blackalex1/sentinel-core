@@ -39,28 +39,21 @@ func (p *HysteriaParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 	// 1. Structured JSON format (Hysteria 2 standard logger)
 	if strings.Contains(cleanLine, "{") && strings.Contains(cleanLine, "}") {
 		if idx := strings.Index(cleanLine, "{"); idx != -1 {
-			var obj map[string]any
+			var obj struct {
+				ID       string `json:"id"`
+				Auth     string `json:"auth"`
+				User     string `json:"user"`
+				ReqAddr  string `json:"reqAddr"`
+				Dst      string `json:"dst"`
+				Addr     string `json:"addr"`
+				ClientIP string `json:"client_ip"`
+				Client   string `json:"client"`
+				Msg      string `json:"msg"`
+			}
 			if err := json.Unmarshal([]byte(cleanLine[idx:]), &obj); err == nil {
-				id, _ := obj["id"].(string)
-				if id == "" {
-					id, _ = obj["auth"].(string)
-				}
-				if id == "" {
-					id, _ = obj["user"].(string)
-				}
-
-				reqAddr, _ := obj["reqAddr"].(string)
-				if reqAddr == "" {
-					reqAddr, _ = obj["dst"].(string)
-				}
-				if reqAddr == "" {
-					reqAddr, _ = obj["addr"].(string)
-				}
-
-				clientAddr, _ := obj["client_ip"].(string)
-				if clientAddr == "" {
-					clientAddr, _ = obj["client"].(string)
-				}
+				id := firstNonEmpty(obj.ID, obj.Auth, obj.User)
+				reqAddr := firstNonEmpty(obj.ReqAddr, obj.Dst, obj.Addr)
+				clientAddr := firstNonEmpty(obj.ClientIP, obj.Client)
 
 				clientIP := strings.Trim(clientAddr, "[]")
 				if host, _, err := net.SplitHostPort(clientAddr); err == nil {
@@ -78,8 +71,7 @@ func (p *HysteriaParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 					}
 				}
 
-				msg, _ := obj["msg"].(string)
-				lowerMsg := strings.ToLower(msg)
+				lowerMsg := strings.ToLower(obj.Msg)
 
 				if strings.Contains(lowerMsg, "auth fail") {
 					return &ParsedLogEvent{
@@ -147,4 +139,13 @@ func (p *HysteriaParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 	}
 
 	return nil, false
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

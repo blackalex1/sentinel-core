@@ -6,6 +6,10 @@ import (
 
 // buildTUICOutbound compiles an ast.ServerProfile into a Sing-box TUIC outbound object.
 func buildTUICOutbound(tag string, node *ast.ServerProfile) (map[string]interface{}, error) {
+	return buildTUICOutboundMap(tag, node), nil
+}
+
+func buildTUICOutboundMap(tag string, node *ast.ServerProfile) map[string]interface{} {
 	out := map[string]interface{}{
 		"type":        "tuic",
 		"tag":         tag,
@@ -40,7 +44,7 @@ func buildTUICOutbound(tag string, node *ast.ServerProfile) (map[string]interfac
 		out["tls"] = tlsMap
 	}
 
-	return out, nil
+	return out
 }
 
 func compileRawTUICOutbound(tag string, sMap, tsMap map[string]interface{}) map[string]interface{} {
@@ -106,6 +110,5 @@ func compileRawTUICOutbound(tag string, sMap, tsMap map[string]interface{}) map[
 			}
 		}
 	}
-	out, _ := buildTUICOutbound(tag, node)
-	return out
+	return buildTUICOutboundMap(tag, node)
 }

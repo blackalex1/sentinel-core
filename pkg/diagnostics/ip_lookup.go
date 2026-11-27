@@ -265,7 +265,7 @@ func GetPublicIP(socksPort int, authUser, authPass string, timeout time.Duration
 				resChan <- fetchResult{nil, err}
 				return
 			}
-			defer resp.Body.Close()
+			defer closeQuietly(resp.Body)
 
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 				resChan <- fetchResult{nil, fmt.Errorf("http status %d", resp.StatusCode)}
@@ -279,8 +279,12 @@ func GetPublicIP(socksPort int, authUser, authPass string, timeout time.Duration
 			}
 
 			info, err := endpoint.Parser(body)
-			if err != nil || info == nil || info.IP == "" {
-				resChan <- fetchResult{nil, fmt.Errorf("parse error: %v", err)}
+			if err != nil {
+				resChan <- fetchResult{nil, fmt.Errorf("parse error: %w", err)}
+				return
+			}
+			if info == nil || info.IP == "" {
+				resChan <- fetchResult{nil, fmt.Errorf("parse error: empty IP in response")}
 				return
 			}
 
@@ -306,4 +310,10 @@ func GetPublicIP(socksPort int, authUser, authPass string, timeout time.Duration
 		lastErr = fmt.Errorf("failed to resolve public IP from all endpoints")
 	}
 	return nil, lastErr
+}
+
+func closeQuietly(c io.Closer) {
+	if c != nil {
+		_ = c.Close()
+	}
 }

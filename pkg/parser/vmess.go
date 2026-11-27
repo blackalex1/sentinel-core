@@ -9,6 +9,29 @@ import (
 	"github.com/blackalex1/sentinel-core/pkg/ast"
 )
 
+type flexInt int
+
+func (f *flexInt) UnmarshalJSON(data []byte) error {
+	s := strings.TrimSpace(string(data))
+	if s == "" || s == "null" {
+		return nil
+	}
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		unquoted, err := strconv.Unquote(s)
+		if err != nil {
+			return nil
+		}
+		p, _ := strconv.Atoi(strings.TrimSpace(unquoted))
+		*f = flexInt(p)
+		return nil
+	}
+	var n float64
+	if err := json.Unmarshal(data, &n); err == nil {
+		*f = flexInt(int(n))
+	}
+	return nil
+}
+
 func parseVMess(raw string) (*ast.ServerProfile, error) {
 	cleanURI, fragment := extractFragmentAndClean(raw)
 	b64 := strings.TrimPrefix(cleanURI, "vmess://")
@@ -18,35 +41,26 @@ func parseVMess(raw string) (*ast.ServerProfile, error) {
 	}
 
 	var v struct {
-		V    interface{} `json:"v"`
-		PS   string      `json:"ps"`
-		Add  string      `json:"add"`
-		Port interface{} `json:"port"`
-		ID   string      `json:"id"`
-		Net  string      `json:"net"`
-		Type string      `json:"type"`
-		Host string      `json:"host"`
-		Path string      `json:"path"`
-		TLS  string      `json:"tls"`
-		SNI  string      `json:"sni"`
-		ALPN string      `json:"alpn"`
-		FP   string      `json:"fp"`
-		Scy  string      `json:"scy"`
+		PS   string  `json:"ps"`
+		Add  string  `json:"add"`
+		Port flexInt `json:"port"`
+		ID   string  `json:"id"`
+		Net  string  `json:"net"`
+		Type string  `json:"type"`
+		Host string  `json:"host"`
+		Path string  `json:"path"`
+		TLS  string  `json:"tls"`
+		SNI  string  `json:"sni"`
+		ALPN string  `json:"alpn"`
+		FP   string  `json:"fp"`
+		Scy  string  `json:"scy"`
 	}
 
 	if err := json.Unmarshal([]byte(decoded), &v); err != nil {
 		return nil, fmt.Errorf("failed to parse vmess json: %w", err)
 	}
 
-	port := 0
-	switch p := v.Port.(type) {
-	case float64:
-		port = int(p)
-	case string:
-		port, _ = strconv.Atoi(p)
-	case int:
-		port = p
-	}
+	port := int(v.Port)
 
 	var alpn []string
 	if v.ALPN != "" {

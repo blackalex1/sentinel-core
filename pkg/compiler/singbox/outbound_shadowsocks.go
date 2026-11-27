@@ -62,51 +62,14 @@ func compileRawShadowsocksOutbound(tag string, sMap, tsMap map[string]interface{
 			method = m
 		}
 
+		var firstSrv map[string]interface{}
 		if serversRaw, ok := sMap["servers"].([]interface{}); ok && len(serversRaw) > 0 {
-			if firstSrv, ok := serversRaw[0].(map[string]interface{}); ok {
-				if server == "" {
-					if addr, ok := firstSrv["address"].(string); ok {
-						server = addr
-					}
-				}
-				if portRaw == nil {
-					if p, ok := firstSrv["port"]; ok {
-						portRaw = p
-					}
-				}
-				if password == "" {
-					if pwd, ok := firstSrv["password"].(string); ok {
-						password = pwd
-					}
-				}
-				if method == "2022-blake3-aes-128-gcm" {
-					if m, ok := firstSrv["method"].(string); ok && m != "" {
-						method = m
-					}
-				}
-			}
+			firstSrv, _ = serversRaw[0].(map[string]interface{})
 		} else if serversRaw, ok := sMap["servers"].([]map[string]interface{}); ok && len(serversRaw) > 0 {
-			firstSrv := serversRaw[0]
-			if server == "" {
-				if addr, ok := firstSrv["address"].(string); ok {
-					server = addr
-				}
-			}
-			if portRaw == nil {
-				if p, ok := firstSrv["port"]; ok {
-					portRaw = p
-				}
-			}
-			if password == "" {
-				if pwd, ok := firstSrv["password"].(string); ok {
-					password = pwd
-				}
-			}
-			if method == "2022-blake3-aes-128-gcm" {
-				if m, ok := firstSrv["method"].(string); ok && m != "" {
-					method = m
-				}
-			}
+			firstSrv = serversRaw[0]
+		}
+		if firstSrv != nil {
+			applyShadowsocksServerFallback(firstSrv, &server, &portRaw, &password, &method)
 		}
 	}
 
@@ -135,4 +98,27 @@ func compileRawShadowsocksOutbound(tag string, sMap, tsMap map[string]interface{
 	}
 
 	return ssOb
+}
+
+func applyShadowsocksServerFallback(firstSrv map[string]interface{}, server *string, portRaw *interface{}, password, method *string) {
+	if *server == "" {
+		if addr, ok := firstSrv["address"].(string); ok {
+			*server = addr
+		}
+	}
+	if *portRaw == nil {
+		if p, ok := firstSrv["port"]; ok {
+			*portRaw = p
+		}
+	}
+	if *password == "" {
+		if pwd, ok := firstSrv["password"].(string); ok {
+			*password = pwd
+		}
+	}
+	if *method == "2022-blake3-aes-128-gcm" {
+		if m, ok := firstSrv["method"].(string); ok && m != "" {
+			*method = m
+		}
+	}
 }

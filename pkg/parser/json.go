@@ -163,111 +163,8 @@ func convertOutboundToProfile(ob *XrayOutbound, defaultName string) (*ast.Server
 		profile.Name = ob.Tag
 	}
 
-	// Parse settings
-	if ob.Settings != nil {
-		switch proto {
-		case ast.ProtoVLESS, ast.ProtoVMess:
-			if vnext, ok := ob.Settings["vnext"].([]interface{}); ok && len(vnext) > 0 {
-				if firstV, ok := vnext[0].(map[string]interface{}); ok {
-					profile.Address, _ = firstV["address"].(string)
-					profile.Port = getIntVal(firstV["port"])
-					if users, ok := firstV["users"].([]interface{}); ok && len(users) > 0 {
-						if firstU, ok := users[0].(map[string]interface{}); ok {
-							profile.UUID, _ = firstU["id"].(string)
-							profile.Flow, _ = firstU["flow"].(string)
-							profile.Encryption, _ = firstU["encryption"].(string)
-						}
-					}
-				}
-			}
-		case ast.ProtoTrojan, ast.ProtoShadowsocks:
-			if servers, ok := ob.Settings["servers"].([]interface{}); ok && len(servers) > 0 {
-				if firstS, ok := servers[0].(map[string]interface{}); ok {
-					profile.Address, _ = firstS["address"].(string)
-					profile.Port = getIntVal(firstS["port"])
-					profile.Password, _ = firstS["password"].(string)
-					if method, ok := firstS["method"].(string); ok {
-						profile.Cipher = method
-					}
-					if cipher, ok := firstS["cipher"].(string); ok {
-						profile.Cipher = cipher
-					}
-				}
-			}
-		case ast.ProtoSocks, ast.ProtoHTTP:
-			if servers, ok := ob.Settings["servers"].([]interface{}); ok && len(servers) > 0 {
-				if firstS, ok := servers[0].(map[string]interface{}); ok {
-					profile.Address, _ = firstS["address"].(string)
-					profile.Port = getIntVal(firstS["port"])
-					if users, ok := firstS["users"].([]interface{}); ok && len(users) > 0 {
-						if firstU, ok := users[0].(map[string]interface{}); ok {
-							profile.Username, _ = firstU["user"].(string)
-							profile.Password, _ = firstU["pass"].(string)
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Parse streamSettings
-	if ob.StreamSettings != nil {
-		ss := ob.StreamSettings
-		profile.Transport = ss.Network
-		profile.Security = ss.Security
-
-		if ss.RealitySettings != nil {
-			profile.Security = ast.SecurityReality
-			profile.SNI, _ = ss.RealitySettings["serverName"].(string)
-			profile.PublicKey, _ = ss.RealitySettings["publicKey"].(string)
-			profile.ShortID, _ = ss.RealitySettings["shortId"].(string)
-			profile.SpiderX, _ = ss.RealitySettings["spiderX"].(string)
-			profile.Fingerprint, _ = ss.RealitySettings["fingerprint"].(string)
-		}
-
-		if ss.TLSSettings != nil {
-			if profile.Security == "" || profile.Security == ast.SecurityNone {
-				profile.Security = ast.SecurityTLS
-			}
-			if s, ok := ss.TLSSettings["serverName"].(string); ok && s != "" {
-				profile.SNI = s
-			}
-			if fp, ok := ss.TLSSettings["fingerprint"].(string); ok {
-				profile.Fingerprint = fp
-			}
-			if pin, ok := ss.TLSSettings["pinnedPeerCertSha256"].(string); ok {
-				profile.PinnedPeerCertSha256 = pin
-			}
-			if insec, ok := ss.TLSSettings["allowInsecure"].(bool); ok {
-				profile.Insecure = insec
-			}
-			if alpnList, ok := ss.TLSSettings["alpn"].([]interface{}); ok {
-				for _, item := range alpnList {
-					if str, ok := item.(string); ok && str != "" {
-						profile.ALPN = append(profile.ALPN, str)
-					}
-				}
-			}
-		}
-
-		if ss.GRPCSettings != nil {
-			profile.Transport = ast.TransportGRPC
-			profile.ServiceName, _ = ss.GRPCSettings["serviceName"].(string)
-			if auth, ok := ss.GRPCSettings["authority"].(string); ok && auth != "" {
-				profile.Host = auth
-			}
-		}
-
-		if ss.WSSettings != nil {
-			profile.Transport = ast.TransportWS
-			profile.Path, _ = ss.WSSettings["path"].(string)
-			if headers, ok := ss.WSSettings["headers"].(map[string]interface{}); ok {
-				if host, ok := headers["Host"].(string); ok && host != "" {
-					profile.Host = host
-				}
-			}
-		}
-	}
+	applyXrayOutboundSettings(profile, proto, ob.Settings)
+	applyXrayStreamSettings(profile, ob.StreamSettings)
 
 	if profile.Address == "" || profile.Port <= 0 {
 		return nil, fmt.Errorf("invalid server address '%s' or port %d in outbound %s", profile.Address, profile.Port, ob.Tag)
@@ -275,6 +172,127 @@ func convertOutboundToProfile(ob *XrayOutbound, defaultName string) (*ast.Server
 
 	profile.Normalize()
 	return profile, nil
+}
+
+func applyXrayOutboundSettings(profile *ast.ServerProfile, proto string, settings map[string]interface{}) {
+	if settings == nil {
+		return
+	}
+	switch proto {
+	case ast.ProtoVLESS, ast.ProtoVMess:
+		vnext, ok := settings["vnext"].([]interface{})
+		if !ok || len(vnext) == 0 {
+			return
+		}
+		firstV, ok := vnext[0].(map[string]interface{})
+		if !ok {
+			return
+		}
+		profile.Address, _ = firstV["address"].(string)
+		profile.Port = getIntVal(firstV["port"])
+		if users, ok := firstV["users"].([]interface{}); ok && len(users) > 0 {
+			if firstU, ok := users[0].(map[string]interface{}); ok {
+				profile.UUID, _ = firstU["id"].(string)
+				profile.Flow, _ = firstU["flow"].(string)
+				profile.Encryption, _ = firstU["encryption"].(string)
+			}
+		}
+	case ast.ProtoTrojan, ast.ProtoShadowsocks:
+		servers, ok := settings["servers"].([]interface{})
+		if !ok || len(servers) == 0 {
+			return
+		}
+		firstS, ok := servers[0].(map[string]interface{})
+		if !ok {
+			return
+		}
+		profile.Address, _ = firstS["address"].(string)
+		profile.Port = getIntVal(firstS["port"])
+		profile.Password, _ = firstS["password"].(string)
+		if method, ok := firstS["method"].(string); ok {
+			profile.Cipher = method
+		}
+		if cipher, ok := firstS["cipher"].(string); ok {
+			profile.Cipher = cipher
+		}
+	case ast.ProtoSocks, ast.ProtoHTTP:
+		servers, ok := settings["servers"].([]interface{})
+		if !ok || len(servers) == 0 {
+			return
+		}
+		firstS, ok := servers[0].(map[string]interface{})
+		if !ok {
+			return
+		}
+		profile.Address, _ = firstS["address"].(string)
+		profile.Port = getIntVal(firstS["port"])
+		if users, ok := firstS["users"].([]interface{}); ok && len(users) > 0 {
+			if firstU, ok := users[0].(map[string]interface{}); ok {
+				profile.Username, _ = firstU["user"].(string)
+				profile.Password, _ = firstU["pass"].(string)
+			}
+		}
+	}
+}
+
+func applyXrayStreamSettings(profile *ast.ServerProfile, ss *XrayStreamSettings) {
+	if ss == nil {
+		return
+	}
+	profile.Transport = ss.Network
+	profile.Security = ss.Security
+
+	if ss.RealitySettings != nil {
+		profile.Security = ast.SecurityReality
+		profile.SNI, _ = ss.RealitySettings["serverName"].(string)
+		profile.PublicKey, _ = ss.RealitySettings["publicKey"].(string)
+		profile.ShortID, _ = ss.RealitySettings["shortId"].(string)
+		profile.SpiderX, _ = ss.RealitySettings["spiderX"].(string)
+		profile.Fingerprint, _ = ss.RealitySettings["fingerprint"].(string)
+	}
+
+	if ss.TLSSettings != nil {
+		if profile.Security == "" || profile.Security == ast.SecurityNone {
+			profile.Security = ast.SecurityTLS
+		}
+		if s, ok := ss.TLSSettings["serverName"].(string); ok && s != "" {
+			profile.SNI = s
+		}
+		if fp, ok := ss.TLSSettings["fingerprint"].(string); ok {
+			profile.Fingerprint = fp
+		}
+		if pin, ok := ss.TLSSettings["pinnedPeerCertSha256"].(string); ok {
+			profile.PinnedPeerCertSha256 = pin
+		}
+		if insec, ok := ss.TLSSettings["allowInsecure"].(bool); ok {
+			profile.Insecure = insec
+		}
+		if alpnList, ok := ss.TLSSettings["alpn"].([]interface{}); ok {
+			for _, item := range alpnList {
+				if str, ok := item.(string); ok && str != "" {
+					profile.ALPN = append(profile.ALPN, str)
+				}
+			}
+		}
+	}
+
+	if ss.GRPCSettings != nil {
+		profile.Transport = ast.TransportGRPC
+		profile.ServiceName, _ = ss.GRPCSettings["serviceName"].(string)
+		if auth, ok := ss.GRPCSettings["authority"].(string); ok && auth != "" {
+			profile.Host = auth
+		}
+	}
+
+	if ss.WSSettings != nil {
+		profile.Transport = ast.TransportWS
+		profile.Path, _ = ss.WSSettings["path"].(string)
+		if headers, ok := ss.WSSettings["headers"].(map[string]interface{}); ok {
+			if host, ok := headers["Host"].(string); ok && host != "" {
+				profile.Host = host
+			}
+		}
+	}
 }
 
 func getIntVal(v interface{}) int {

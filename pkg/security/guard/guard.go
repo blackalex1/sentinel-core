@@ -1,12 +1,7 @@
 package guard
 
-import (
-	"sync"
-)
-
 // Guard acts as the centralized IPS & Connection Protection Controller.
 type Guard struct {
-	mu           sync.RWMutex
 	enabled      bool
 	whitelist    *ProcessWhitelist
 	portMonitor  *SensitivePortMonitor

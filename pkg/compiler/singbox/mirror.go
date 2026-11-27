@@ -203,7 +203,11 @@ func ProbeOutboundsViaClashAPI(clashAddr string, outbounds []string, mirrorProbe
 			if err != nil || resp == nil {
 				return
 			}
-			defer resp.Body.Close()
+			defer func() {
+				if closeErr := resp.Body.Close(); closeErr != nil {
+					log.Printf("[sentinel-core] failed to close mirror probe body: %v", closeErr)
+				}
+			}()
 
 			if resp.StatusCode == http.StatusOK {
 				var data struct {

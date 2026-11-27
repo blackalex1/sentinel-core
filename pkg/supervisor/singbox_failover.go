@@ -411,7 +411,7 @@ func (fc *SingBoxFailoverController) fetchProxies(baseURL string) (map[string]cl
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer closeQuietly(resp.Body)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("clash /proxies returned status %d", resp.StatusCode)
@@ -436,7 +436,7 @@ func (fc *SingBoxFailoverController) probeDelay(baseURL, nodeName, probeURL stri
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer closeQuietly(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return false
@@ -466,7 +466,7 @@ func (fc *SingBoxFailoverController) selectProxy(baseURL, groupTag, nodeName str
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeQuietly(resp.Body)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("clash PUT %s returned status %d", endpoint, resp.StatusCode)
@@ -479,7 +479,7 @@ func (fc *SingBoxFailoverController) closeFailedGroupConnections(baseURL, groupT
 	if err != nil {
 		return
 	}
-	defer resp.Body.Close()
+	defer closeQuietly(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return

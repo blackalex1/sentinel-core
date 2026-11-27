@@ -104,122 +104,24 @@ func compileRawHysteria2Outbound(tag string, sMap, tsMap map[string]interface{})
 		"tag":  tag,
 	}
 
-	var server string
-	var portRaw interface{}
-	var password string
+	server, portRaw, password := extractRawHysteria2Base(hyOb, sMap, tsMap)
+	hyOb["server"] = server
+	if password != "" {
+		hyOb["password"] = password
+	}
+	applyRawHysteria2Ports(hyOb, portRaw)
+	hyOb["tls"] = buildRawHysteria2TLS(server, sMap, tsMap)
+	return hyOb
+}
 
+func extractRawHysteria2Base(hyOb, sMap, tsMap map[string]interface{}) (server string, portRaw interface{}, password string) {
 	if sMap != nil {
-		if s, ok := sMap["server"].(string); ok && s != "" {
-			server = s
-		} else if a, ok := sMap["address"].(string); ok && a != "" {
-			server = a
-		} else if h, ok := sMap["host"].(string); ok && h != "" {
-			server = h
-		}
+		server = firstMapStr(sMap, "server", "address", "host")
+		portRaw = firstMapVal(sMap, "port", "server_port", "port_hopping", "hop")
+		password = firstMapStr(sMap, "password", "auth", "auth_str", "uuid")
 
-		if p, ok := sMap["port"]; ok {
-			portRaw = p
-		} else if p, ok := sMap["server_port"]; ok {
-			portRaw = p
-		} else if p, ok := sMap["port_hopping"]; ok {
-			portRaw = p
-		} else if p, ok := sMap["hop"]; ok {
-			portRaw = p
-		}
-
-		if pwd, ok := sMap["password"].(string); ok && pwd != "" {
-			password = pwd
-		} else if auth, ok := sMap["auth"].(string); ok && auth != "" {
-			password = auth
-		} else if auth, ok := sMap["auth_str"].(string); ok && auth != "" {
-			password = auth
-		} else if u, ok := sMap["uuid"].(string); ok && u != "" {
-			password = u
-		}
-
-		if vnextRaw, ok := sMap["vnext"].([]interface{}); ok && len(vnextRaw) > 0 {
-			if firstVnext, ok := vnextRaw[0].(map[string]interface{}); ok {
-				if server == "" {
-					if addr, ok := firstVnext["address"].(string); ok {
-						server = addr
-					}
-				}
-				if portRaw == nil {
-					if p, ok := firstVnext["port"]; ok {
-						portRaw = p
-					}
-				}
-				if password == "" {
-					if usersRaw, ok := firstVnext["users"].([]interface{}); ok && len(usersRaw) > 0 {
-						if firstUser, ok := usersRaw[0].(map[string]interface{}); ok {
-							if pwd, ok := firstUser["password"].(string); ok {
-								password = pwd
-							} else if pwd, ok := firstUser["id"].(string); ok {
-								password = pwd
-							}
-						}
-					}
-				}
-			}
-		}
-
-		if serversRaw, ok := sMap["servers"].([]interface{}); ok && len(serversRaw) > 0 {
-			if firstSrv, ok := serversRaw[0].(map[string]interface{}); ok {
-				if server == "" {
-					if addr, ok := firstSrv["address"].(string); ok {
-						server = addr
-					} else if srv, ok := firstSrv["server"].(string); ok {
-						server = srv
-					}
-				}
-				if portRaw == nil {
-					if p, ok := firstSrv["port"]; ok {
-						portRaw = p
-					} else if p, ok := firstSrv["server_port"]; ok {
-						portRaw = p
-					}
-				}
-				if password == "" {
-					if pwd, ok := firstSrv["password"].(string); ok {
-						password = pwd
-					} else if pwd, ok := firstSrv["auth"].(string); ok {
-						password = pwd
-					}
-				}
-			}
-		}
-
-		// Strict flat obfs format for Sing-box schema: {"type": "...", "password": "..."}
-		var obfsType string
-		var obfsPassword string
-		if ot, ok := sMap["obfs_type"].(string); ok && ot != "" {
-			obfsType = ot
-		}
-		if op, ok := sMap["obfs_password"].(string); ok && op != "" {
-			obfsPassword = op
-		}
-		if obfsMapRaw, ok := sMap["obfs"].(map[string]interface{}); ok {
-			if ot, ok := obfsMapRaw["type"].(string); ok && ot != "" {
-				obfsType = ot
-			}
-			if op, ok := obfsMapRaw["password"].(string); ok && op != "" {
-				obfsPassword = op
-			}
-			if sal, ok := obfsMapRaw["salamander"].(map[string]interface{}); ok {
-				if op, ok := sal["password"].(string); ok && op != "" {
-					obfsPassword = op
-				}
-			}
-		}
-		if obfsType != "" {
-			obfsEntry := map[string]interface{}{
-				"type": obfsType,
-			}
-			if obfsPassword != "" {
-				obfsEntry["password"] = obfsPassword
-			}
-			hyOb["obfs"] = obfsEntry
-		}
+		extractFromVnextOrServers(sMap, &server, &portRaw, &password)
+		applyRawHysteria2Obfs(hyOb, sMap)
 
 		if up, ok := sMap["up_mbps"]; ok {
 			hyOb["up_mbps"] = up
@@ -237,61 +139,127 @@ func compileRawHysteria2Outbound(tag string, sMap, tsMap map[string]interface{})
 				}
 			}
 			if password == "" {
-				if pwd, ok := hySettings["auth"].(string); ok {
-					password = pwd
-				} else if pwd, ok := hySettings["password"].(string); ok {
-					password = pwd
+				password = firstMapStr(hySettings, "auth", "password")
+			}
+		}
+	}
+	return server, portRaw, password
+}
+
+func firstMapStr(m map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if s, ok := m[k].(string); ok && s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func firstMapVal(m map[string]interface{}, keys ...string) interface{} {
+	for _, k := range keys {
+		if v, ok := m[k]; ok {
+			return v
+		}
+	}
+	return nil
+}
+
+func extractFromVnextOrServers(sMap map[string]interface{}, server *string, portRaw *interface{}, password *string) {
+	if vnextRaw, ok := sMap["vnext"].([]interface{}); ok && len(vnextRaw) > 0 {
+		if firstVnext, ok := vnextRaw[0].(map[string]interface{}); ok {
+			if *server == "" {
+				*server, _ = firstVnext["address"].(string)
+			}
+			if *portRaw == nil {
+				*portRaw = firstVnext["port"]
+			}
+			if *password == "" {
+				if usersRaw, ok := firstVnext["users"].([]interface{}); ok && len(usersRaw) > 0 {
+					if firstUser, ok := usersRaw[0].(map[string]interface{}); ok {
+						*password = firstMapStr(firstUser, "password", "id")
+					}
 				}
 			}
 		}
 	}
-
-	hyOb["server"] = server
-	if password != "" {
-		hyOb["password"] = password
-	}
-
-	// Port or Port Hopping / Server Ports
-	if portRaw != nil {
-		switch v := portRaw.(type) {
-		case float64:
-			hyOb["server_port"] = int(v)
-		case int:
-			hyOb["server_port"] = v
-		case string:
-			vTrim := strings.TrimSpace(v)
-			if strings.Contains(vTrim, "-") || strings.Contains(vTrim, ",") || strings.Contains(vTrim, ":") {
-				parts := strings.Split(vTrim, ",")
-				var ports []string
-				for _, p := range parts {
-					pClean := strings.TrimSpace(p)
-					if pClean != "" {
-						ports = append(ports, strings.ReplaceAll(pClean, "-", ":"))
-					}
-				}
-				if len(ports) > 0 {
-					hyOb["server_ports"] = ports
-					hyOb["hop_interval"] = "300s"
-				}
-			} else {
-				var pInt int
-				for _, c := range vTrim {
-					if c >= '0' && c <= '9' {
-						pInt = pInt*10 + int(c-'0')
-					}
-				}
-				if pInt > 0 {
-					hyOb["server_port"] = pInt
-				}
+	if serversRaw, ok := sMap["servers"].([]interface{}); ok && len(serversRaw) > 0 {
+		if firstSrv, ok := serversRaw[0].(map[string]interface{}); ok {
+			if *server == "" {
+				*server = firstMapStr(firstSrv, "address", "server")
+			}
+			if *portRaw == nil {
+				*portRaw = firstMapVal(firstSrv, "port", "server_port")
+			}
+			if *password == "" {
+				*password = firstMapStr(firstSrv, "password", "auth")
 			}
 		}
 	}
+}
 
-	// TLS Settings
-	tlsMap := map[string]interface{}{
-		"enabled": true,
+func applyRawHysteria2Obfs(hyOb, sMap map[string]interface{}) {
+	obfsType, _ := sMap["obfs_type"].(string)
+	obfsPassword, _ := sMap["obfs_password"].(string)
+	if obfsMapRaw, ok := sMap["obfs"].(map[string]interface{}); ok {
+		if ot, ok := obfsMapRaw["type"].(string); ok && ot != "" {
+			obfsType = ot
+		}
+		if op, ok := obfsMapRaw["password"].(string); ok && op != "" {
+			obfsPassword = op
+		}
+		if sal, ok := obfsMapRaw["salamander"].(map[string]interface{}); ok {
+			if op, ok := sal["password"].(string); ok && op != "" {
+				obfsPassword = op
+			}
+		}
 	}
+	if obfsType != "" {
+		obfsEntry := map[string]interface{}{"type": obfsType}
+		if obfsPassword != "" {
+			obfsEntry["password"] = obfsPassword
+		}
+		hyOb["obfs"] = obfsEntry
+	}
+}
 
+func applyRawHysteria2Ports(hyOb map[string]interface{}, portRaw interface{}) {
+	if portRaw == nil {
+		return
+	}
+	switch v := portRaw.(type) {
+	case float64:
+		hyOb["server_port"] = int(v)
+	case int:
+		hyOb["server_port"] = v
+	case string:
+		vTrim := strings.TrimSpace(v)
+		if strings.Contains(vTrim, "-") || strings.Contains(vTrim, ",") || strings.Contains(vTrim, ":") {
+			var ports []string
+			for _, p := range strings.Split(vTrim, ",") {
+				if pClean := strings.TrimSpace(p); pClean != "" {
+					ports = append(ports, strings.ReplaceAll(pClean, "-", ":"))
+				}
+			}
+			if len(ports) > 0 {
+				hyOb["server_ports"] = ports
+				hyOb["hop_interval"] = "300s"
+			}
+			return
+		}
+		var pInt int
+		for _, c := range vTrim {
+			if c >= '0' && c <= '9' {
+				pInt = pInt*10 + int(c-'0')
+			}
+		}
+		if pInt > 0 {
+			hyOb["server_port"] = pInt
+		}
+	}
+}
+
+func buildRawHysteria2TLS(server string, sMap, tsMap map[string]interface{}) map[string]interface{} {
+	tlsMap := map[string]interface{}{"enabled": true}
 	if tsMap != nil {
 		if tlsSettings, ok := tsMap["tlsSettings"].(map[string]interface{}); ok {
 			if sn, ok := tlsSettings["serverName"].(string); ok && sn != "" {
@@ -300,31 +268,16 @@ func compileRawHysteria2Outbound(tag string, sMap, tsMap map[string]interface{})
 			if allowInsecure, ok := tlsSettings["allowInsecure"].(bool); ok && allowInsecure {
 				tlsMap["insecure"] = true
 			}
-			if alpnRaw, ok := tlsSettings["alpn"]; ok {
-				if alpnList, ok := alpnRaw.([]interface{}); ok {
-					var alpnStr []string
-					for _, item := range alpnList {
-						if s, ok := item.(string); ok {
-							alpnStr = append(alpnStr, s)
-						}
-					}
-					if len(alpnStr) > 0 {
-						tlsMap["alpn"] = alpnStr
-					}
-				} else if alpnSlice, ok := alpnRaw.([]string); ok {
-					tlsMap["alpn"] = alpnSlice
-				}
+			if alpn := extractStringList(tlsSettings["alpn"]); len(alpn) > 0 {
+				tlsMap["alpn"] = alpn
 			}
 		}
 		if sName, ok := tsMap["serverName"].(string); ok && sName != "" {
 			tlsMap["server_name"] = sName
 		}
 	}
-
 	if sMap != nil {
-		if sn, ok := sMap["sni"].(string); ok && sn != "" {
-			tlsMap["server_name"] = sn
-		} else if sn, ok := sMap["server_name"].(string); ok && sn != "" {
+		if sn := firstMapStr(sMap, "sni", "server_name"); sn != "" {
 			tlsMap["server_name"] = sn
 		}
 		if insecure, ok := sMap["insecure"].(bool); ok && insecure {
@@ -333,11 +286,8 @@ func compileRawHysteria2Outbound(tag string, sMap, tsMap map[string]interface{})
 			tlsMap["insecure"] = true
 		}
 	}
-
 	if _, ok := tlsMap["server_name"]; !ok && server != "" {
 		tlsMap["server_name"] = server
 	}
-
-	hyOb["tls"] = tlsMap
-	return hyOb
+	return tlsMap
 }

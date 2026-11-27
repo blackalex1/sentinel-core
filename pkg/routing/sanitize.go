@@ -67,9 +67,7 @@ func SanitizeIP(raw string) string {
 	if strings.HasPrefix(s, "geoip:") {
 		return s
 	}
-	if strings.HasPrefix(s, "ip:") {
-		s = strings.TrimPrefix(s, "ip:")
-	}
+	s = strings.TrimPrefix(s, "ip:")
 
 	// Strip port if IP:port
 	if strings.Contains(s, ":") && !strings.Contains(s, "/") {

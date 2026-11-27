@@ -11,7 +11,7 @@ func buildInboundSniffing(sb *ast.ServerInboundSpec) map[string]interface{} {
 		"destOverride": []string{"http", "tls", "quic"},
 		"routeOnly":    false,
 	}
-	if sb.Sniffing != nil && len(sb.Sniffing) > 0 {
+	if len(sb.Sniffing) > 0 {
 		sniffing = sb.Sniffing
 	}
 	return sniffing
@@ -26,7 +26,7 @@ func buildInboundStreamSettings(sb *ast.ServerInboundSpec) map[string]interface{
 	streamSettings := map[string]interface{}{
 		"network": network,
 	}
-	if sb.StreamSettings != nil && len(sb.StreamSettings) > 0 {
+	if len(sb.StreamSettings) > 0 {
 		for k, v := range sb.StreamSettings {
 			streamSettings[k] = v
 		}

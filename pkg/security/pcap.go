@@ -47,7 +47,7 @@ func WritePcapGlobalHeader(f *os.File, linkType uint32) error {
 }
 
 // WritePacketToPcap appends a raw network packet to a standard PCAP file.
-func WritePacketToPcap(filePath string, packetBytes []byte, timestampMs int64) error {
+func WritePacketToPcap(filePath string, packetBytes []byte, timestampMs int64) (err error) {
 	pcapMu.Lock()
 	defer pcapMu.Unlock()
 
@@ -64,7 +64,11 @@ func WritePacketToPcap(filePath string, packetBytes []byte, timestampMs int64) e
 	if err != nil {
 		return fmt.Errorf("failed to open pcap file %s: %w", filePath, err)
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	if err := WritePcapGlobalHeader(f, PCAPLinkTypeRawIP); err != nil {
 		return fmt.Errorf("failed to write global pcap header: %w", err)

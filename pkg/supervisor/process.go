@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -174,6 +175,13 @@ func resolveCoreBinaryPath(coreName, binPath string) (string, error) {
 	return "", os.ErrNotExist
 }
 
+var (
+	// ErrBinaryNotFound indicates the requested core executable could not be found.
+	ErrBinaryNotFound = errors.New("binary not found")
+	// ErrConfigNotFound indicates the requested core config file could not be found.
+	ErrConfigNotFound = errors.New("config file not found")
+)
+
 // StartCore starts a proxy engine process
 func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error {
 	pm.mu.Lock()
@@ -183,7 +191,7 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 
 	resolvedBin, err := resolveCoreBinaryPath(coreName, binPath)
 	if err != nil {
-		return fmt.Errorf("binary not found: %s", binPath)
+		return fmt.Errorf("%w: %s", ErrBinaryNotFound, binPath)
 	}
 	binPath = resolvedBin
 
@@ -193,7 +201,7 @@ func (pm *ProcessManager) StartCore(coreName, binPath, configPath string) error 
 	// Verify config exists
 	if configPath != "" {
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			return fmt.Errorf("config file not found: %s", configPath)
+			return fmt.Errorf("%w: %s", ErrConfigNotFound, configPath)
 		}
 	}
 

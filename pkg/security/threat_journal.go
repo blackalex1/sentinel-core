@@ -66,7 +66,7 @@ func (j *ThreatJournal) LogIncident(
 	target string,
 	reason string,
 	actionTaken string,
-) error {
+) (err error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
@@ -96,7 +96,11 @@ func (j *ThreatJournal) LogIncident(
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	_, err = f.Write(data)
 	return err

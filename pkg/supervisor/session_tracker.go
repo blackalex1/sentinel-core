@@ -310,22 +310,17 @@ func (st *SessionTracker) processHysteriaLine(line string, now int64, nowStr str
 
 	// 1. JSON format (Hysteria 2 structured logs)
 	if idx := strings.Index(line, "{"); idx != -1 {
-		var obj map[string]any
+		var obj struct {
+			ID       string `json:"id"`
+			Auth     string `json:"auth"`
+			User     string `json:"user"`
+			Addr     string `json:"addr"`
+			ClientIP string `json:"client_ip"`
+			Client   string `json:"client"`
+		}
 		if err := json.Unmarshal([]byte(line[idx:]), &obj); err == nil {
-			email, _ := obj["id"].(string)
-			if email == "" {
-				email, _ = obj["auth"].(string)
-			}
-			if email == "" {
-				email, _ = obj["user"].(string)
-			}
-			addr, _ := obj["addr"].(string)
-			if addr == "" {
-				addr, _ = obj["client_ip"].(string)
-			}
-			if addr == "" {
-				addr, _ = obj["client"].(string)
-			}
+			email := firstNonEmpty(obj.ID, obj.Auth, obj.User)
+			addr := firstNonEmpty(obj.Addr, obj.ClientIP, obj.Client)
 
 			if email != "" && addr != "" {
 				srcIP := parseCleanIP(addr)
@@ -711,10 +706,13 @@ func (st *SessionTracker) inactivityCleanerLoop() {
 		nowStr := time.Now().Format("2006-01-02 15:04:05")
 
 		// Query live active traffic across all engines to keep active sessions alive
-		activeTraffic, _ := GetController().GetUnifiedTraffic()
+		activeTraffic, err := GetController().GetUnifiedTraffic()
+		if err != nil {
+			log.Printf("[sentinel-core] failed to query unified traffic: %v", err)
+		}
 
 		st.mu.Lock()
-		if activeTraffic != nil {
+		if err == nil && activeTraffic != nil {
 			for _, sess := range st.sessions {
 				normEmail := strings.ToLower(sess.Email)
 				for em, ct := range activeTraffic {

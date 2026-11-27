@@ -46,29 +46,61 @@ func findCoreBin(name string) string {
 }
 
 func generateTempTLSKeyPair() (certPath, keyPath string, cleanup func(), err error) {
-	priv, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return "", "", nil, err
+	}
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject:      pkix.Name{CommonName: "mock.sentinel.internal"},
 		NotBefore:    time.Now().Add(-1 * time.Hour),
 		NotAfter:     time.Now().Add(24 * time.Hour),
 	}
-	certDER, _ := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		return "", "", nil, err
+	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	privDER, _ := x509.MarshalECPrivateKey(priv)
+	privDER, err := x509.MarshalECPrivateKey(priv)
+	if err != nil {
+		return "", "", nil, err
+	}
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: privDER})
 
-	certFile, _ := os.CreateTemp("", "mock-tls-cert-*.pem")
-	certFile.Write(certPEM)
-	certFile.Close()
+	certFile, err := os.CreateTemp("", "mock-tls-cert-*.pem")
+	if err != nil {
+		return "", "", nil, err
+	}
+	if _, err := certFile.Write(certPEM); err != nil {
+		_ = certFile.Close()
+		_ = os.Remove(certFile.Name())
+		return "", "", nil, err
+	}
+	if err := certFile.Close(); err != nil {
+		_ = os.Remove(certFile.Name())
+		return "", "", nil, err
+	}
 
-	keyFile, _ := os.CreateTemp("", "mock-tls-key-*.pem")
-	keyFile.Write(keyPEM)
-	keyFile.Close()
+	keyFile, err := os.CreateTemp("", "mock-tls-key-*.pem")
+	if err != nil {
+		_ = os.Remove(certFile.Name())
+		return "", "", nil, err
+	}
+	if _, err := keyFile.Write(keyPEM); err != nil {
+		_ = keyFile.Close()
+		_ = os.Remove(certFile.Name())
+		_ = os.Remove(keyFile.Name())
+		return "", "", nil, err
+	}
+	if err := keyFile.Close(); err != nil {
+		_ = os.Remove(certFile.Name())
+		_ = os.Remove(keyFile.Name())
+		return "", "", nil, err
+	}
 
 	cleanup = func() {
-		os.Remove(certFile.Name())
-		os.Remove(keyFile.Name())
+		_ = os.Remove(certFile.Name())
+		_ = os.Remove(keyFile.Name())
 	}
 	return certFile.Name(), keyFile.Name(), cleanup, nil
 }

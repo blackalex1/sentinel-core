@@ -15,27 +15,27 @@ func BuildWireGuardConf(node *ast.ServerProfile) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("[Interface]\n")
 	if node.PrivateKey != "" {
-		sb.WriteString(fmt.Sprintf("PrivateKey = %s\n", node.PrivateKey))
+		fmt.Fprintf(&sb, "PrivateKey = %s\n", node.PrivateKey)
 	}
 	if len(node.LocalAddress) > 0 {
-		sb.WriteString(fmt.Sprintf("Address = %s\n", strings.Join(node.LocalAddress, ", ")))
+		fmt.Fprintf(&sb, "Address = %s\n", strings.Join(node.LocalAddress, ", "))
 	}
 	if node.MTU > 0 {
-		sb.WriteString(fmt.Sprintf("MTU = %d\n", node.MTU))
+		fmt.Fprintf(&sb, "MTU = %d\n", node.MTU)
 	}
 
 	sb.WriteString("\n[Peer]\n")
 	if node.PeerPublicKey != "" {
-		sb.WriteString(fmt.Sprintf("PublicKey = %s\n", node.PeerPublicKey))
+		fmt.Fprintf(&sb, "PublicKey = %s\n", node.PeerPublicKey)
 	}
 	if node.PreSharedKey != "" {
-		sb.WriteString(fmt.Sprintf("PresharedKey = %s\n", node.PreSharedKey))
+		fmt.Fprintf(&sb, "PresharedKey = %s\n", node.PreSharedKey)
 	}
 	endpoint := fmt.Sprintf("%s:%d", node.Address, node.Port)
 	if strings.Contains(node.Address, ":") && !strings.HasPrefix(node.Address, "[") {
 		endpoint = fmt.Sprintf("[%s]:%d", strings.Trim(node.Address, "[]"), node.Port)
 	}
-	sb.WriteString(fmt.Sprintf("Endpoint = %s\n", endpoint))
+	fmt.Fprintf(&sb, "Endpoint = %s\n", endpoint)
 	sb.WriteString("AllowedIPs = 0.0.0.0/0, ::/0\n")
 	sb.WriteString("PersistentKeepalive = 25\n")
 

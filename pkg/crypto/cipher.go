@@ -5,9 +5,17 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
+)
+
+var (
+	// ErrInvalidPayloadHeader indicates the ciphertext is missing the expected sentinel header prefix.
+	ErrInvalidPayloadHeader = errors.New("invalid payload header")
+	// ErrCiphertextTooShort indicates the decoded ciphertext is shorter than the AEAD nonce.
+	ErrCiphertextTooShort = errors.New("ciphertext is too short")
 )
 
 // CipherAlgorithm defines supported AEAD algorithms
@@ -57,7 +65,7 @@ func DecryptAEAD(encryptedStr string, key []byte) ([]byte, error) {
 	}
 
 	if !strings.HasPrefix(encryptedStr, EncryptedPayloadHeader) {
-		return nil, fmt.Errorf("invalid payload header: missing '%s'", EncryptedPayloadHeader)
+		return nil, fmt.Errorf("%w: missing '%s'", ErrInvalidPayloadHeader, EncryptedPayloadHeader)
 	}
 
 	rawB64 := strings.TrimPrefix(encryptedStr, EncryptedPayloadHeader)
@@ -78,7 +86,7 @@ func DecryptAEAD(encryptedStr string, key []byte) ([]byte, error) {
 
 	nonceSize := gcm.NonceSize()
 	if len(rawBytes) < nonceSize {
-		return nil, fmt.Errorf("ciphertext is too short: corrupted payload")
+		return nil, fmt.Errorf("%w: corrupted payload", ErrCiphertextTooShort)
 	}
 
 	nonce, ciphertext := rawBytes[:nonceSize], rawBytes[nonceSize:]

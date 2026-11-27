@@ -138,7 +138,7 @@ func PingThroughProxy(socksPort int, authUser, authPass, targetURL string, timeo
 	if err != nil {
 		return ProxyPingResult{Success: false, Error: cleanNetError(err)}
 	}
-	defer resp.Body.Close()
+	defer closeQuietly(resp.Body)
 
 	latency := float64(time.Since(start).Microseconds()) / 1000.0
 	if resp.StatusCode >= 200 && resp.StatusCode < 400 {

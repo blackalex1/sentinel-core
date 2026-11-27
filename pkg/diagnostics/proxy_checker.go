@@ -32,7 +32,7 @@ func CheckSocks5Direct(proxyHostPort, targetHost string, targetPort int, useTLS 
 	if err != nil {
 		return false, 0, err
 	}
-	defer conn.Close()
+	defer closeQuietly(conn)
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 
 	// 1. SOCKS5 greeting (no auth)
@@ -87,7 +87,7 @@ func CheckSocks5Direct(proxyHostPort, targetHost string, targetPort int, useTLS 
 		if err := tlsConn.Handshake(); err != nil {
 			return false, 0, err
 		}
-		defer tlsConn.Close()
+		defer closeQuietly(tlsConn)
 		httpReq := fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n", targetHost)
 		if _, err := tlsConn.Write([]byte(httpReq)); err != nil {
 			return false, 0, err
@@ -130,7 +130,7 @@ func CheckVLESSRealityProbe(profile *ast.ServerProfile, timeout time.Duration) (
 	if err != nil {
 		return false, 0, err
 	}
-	defer conn.Close()
+	defer closeQuietly(conn)
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 
 	if profile.Security == "none" || profile.Security == "" {
@@ -170,7 +170,7 @@ func CheckVLESSRealityProbe(profile *ast.ServerProfile, timeout time.Duration) (
 			return false, 0, err
 		}
 	}
-	defer tlsConn.Close()
+	defer closeQuietly(tlsConn)
 
 	latency := float64(time.Since(start).Microseconds()) / 1000.0
 	return true, latency, nil

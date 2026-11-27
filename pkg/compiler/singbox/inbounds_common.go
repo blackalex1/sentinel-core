@@ -1,7 +1,8 @@
 package singbox
 
 import (
-	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	"github.com/blackalex1/sentinel-core/pkg/ast"
@@ -47,10 +48,16 @@ func buildInboundTLS(sb *ast.ServerInboundSpec) map[string]interface{} {
 
 		destHost := serverName
 		destPort := 443
-		if strings.Contains(dest, ":") {
-			parts := strings.Split(dest, ":")
-			destHost = parts[0]
-			fmt.Sscanf(parts[1], "%d", &destPort)
+		if host, portStr, err := net.SplitHostPort(dest); err == nil {
+			destHost = host
+			if p, err := strconv.Atoi(portStr); err == nil && p > 0 {
+				destPort = p
+			}
+		} else if host, portStr, ok := strings.Cut(dest, ":"); ok {
+			destHost = host
+			if p, err := strconv.Atoi(portStr); err == nil && p > 0 {
+				destPort = p
+			}
 		}
 
 		return map[string]interface{}{

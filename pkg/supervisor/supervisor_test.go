@@ -3,6 +3,7 @@ package supervisor
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -320,8 +321,9 @@ func TestKickHysteriaClient_Errors(t *testing.T) {
 	defer hyServer.Close()
 
 	err = KickHysteriaClient(hyPort, "user@test.com")
-	if err == nil || !strings.Contains(err.Error(), "500") {
-		t.Errorf("expected 500 error, got: %v", err)
+	var kickErr *HysteriaKickError
+	if !errors.As(err, &kickErr) || kickErr.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected HysteriaKickError with 500, got: %v", err)
 	}
 
 	// Non-existent server
@@ -687,8 +689,8 @@ func TestProcessManager_BasicAndEdgeCases(t *testing.T) {
 
 	// Binary not found
 	err := pm.StartCore("xray", "non_existent_binary_xyz.exe", "")
-	if err == nil || !strings.Contains(err.Error(), "binary not found") {
-		t.Errorf("expected binary not found error, got: %v", err)
+	if !errors.Is(err, ErrBinaryNotFound) {
+		t.Errorf("expected ErrBinaryNotFound, got: %v", err)
 	}
 
 	// Config not found
@@ -698,8 +700,8 @@ func TestProcessManager_BasicAndEdgeCases(t *testing.T) {
 	}
 
 	err = pm.StartCore("sing-box", selfExe, "non_existent_config_xyz.json")
-	if err == nil || !strings.Contains(err.Error(), "config file not found") {
-		t.Errorf("expected config file not found error, got: %v", err)
+	if !errors.Is(err, ErrConfigNotFound) {
+		t.Errorf("expected ErrConfigNotFound, got: %v", err)
 	}
 
 	// Stop non-running core

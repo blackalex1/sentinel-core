@@ -2,7 +2,6 @@ package detector
 
 import (
 	"encoding/json"
-	"net"
 	"regexp"
 	"strconv"
 	"strings"
@@ -13,7 +12,6 @@ import (
 
 var (
 	singboxConnRegex      = regexp.MustCompile(`(?:inbound|outbound).*?connection to\s+(\[[a-fA-F0-9:]+\]|[^:\s]+):(\d+)`)
-	singboxInboundRegex   = regexp.MustCompile(`inbound connection to (\[[a-fA-F0-9:]+\]|[^:\s]+):(\d+).*?(?:from process ([^\s,]+)|by process ([^\s,]+)|from user ([^\s,]+)|from (\[[a-fA-F0-9:]+\]|[^:\s]+)(?::\d+)?)`)
 	singboxRejectRegex    = regexp.MustCompile(`(?:rule|router).*?(?:match|rejected).*?(?:for|to)\s+(\[[a-fA-F0-9:]+\]|[^:\s]+):(\d+)`)
 	singboxProcessRegex   = regexp.MustCompile(`(?i)(?:found process path:\s*|process path:\s*)([^\r\n,\]\)]+)|(?i)(?:from process|by process|process[:=\s]+|user[:=\s]+)\s*([^\s,\]\)]+)`)
 	singboxConnIDRegex    = regexp.MustCompile(`\[(\d+)\s+\d+m?s\]`)
@@ -24,18 +22,6 @@ var (
 	// sing-box emits this before the "[user] inbound connection to DST:PORT" line for the same connID.
 	singboxFromClientRegex = regexp.MustCompile(`\[(\d+)\s+[\d.]+(?:ms|µs|us|s|ns|m)\]\s+\S+:\s+inbound connection from\s+(\[[a-fA-F0-9:]+\]|[^:\s]+):\d+`)
 )
-
-func isHotspotOrLANClient(ipStr string) bool {
-	ipStr = strings.Trim(ipStr, "[]")
-	if ipStr == "" || ipStr == "127.0.0.1" || ipStr == "::1" || ipStr == "localhost" {
-		return false
-	}
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return false
-	}
-	return ip.IsPrivate() || strings.HasPrefix(ipStr, "192.168.") || strings.HasPrefix(ipStr, "172.") || strings.HasPrefix(ipStr, "10.") || ip.IsLinkLocalUnicast()
-}
 
 
 // SingboxParser handles log parsing and connection translation for Sing-box.
@@ -107,10 +93,11 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 
 			// Check if we had a pending inbound connection waiting for this process name
 			if v, ok := p.pendingEvents.LoadAndDelete(connID); ok {
-				ev := v.(*ParsedLogEvent)
-				ev.ClientRawID = procName
-				ev.ExecutablePath = fullPath
-				return ev, true
+				if ev, ok := v.(*ParsedLogEvent); ok && ev != nil {
+					ev.ClientRawID = procName
+					ev.ExecutablePath = fullPath
+					return ev, true
+				}
 			}
 		}
 	}
@@ -120,14 +107,18 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 		proc := extractProcessOrUser(cleanLine)
 		if (proc == "" || strings.HasPrefix(proc, "172.") || strings.HasPrefix(proc, "192.")) && connID != "" {
 			if v, ok := p.connProcCache.Load(connID); ok {
-				proc = v.(string)
+				if s, ok := v.(string); ok {
+					proc = s
+				}
 			}
 		}
 		// Look up real client IP from the preceding "from" line for this connID.
 		var clientIP string
 		if connID != "" {
 			if v, ok := p.connClientIPCache.Load(connID); ok {
-				clientIP = v.(string)
+				if s, ok := v.(string); ok {
+					clientIP = s
+				}
 			}
 		}
 
@@ -152,14 +143,20 @@ func (p *SingboxParser) ParseLogLine(line string) (*ParsedLogEvent, bool) {
 		var clientIP string
 		if connID != "" {
 			if v, ok := p.connProcCache.Load(connID); ok {
-				identifiedID = v.(string)
+				if s, ok := v.(string); ok {
+					identifiedID = s
+				}
 			}
 			if v, ok := p.connPathCache.Load(connID); ok {
-				identifiedPath = v.(string)
+				if s, ok := v.(string); ok {
+					identifiedPath = s
+				}
 			}
 			// Retrieve real source IP from "from" line cache.
 			if v, ok := p.connClientIPCache.Load(connID); ok {
-				clientIP = v.(string)
+				if s, ok := v.(string); ok {
+					clientIP = s
+				}
 			}
 		}
 		if identifiedID == "" {

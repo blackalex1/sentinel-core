@@ -48,7 +48,7 @@ func FetchHysteriaTraffic(adminPort int) (map[string]ClientTraffic, error) {
 	trafficURL := fmt.Sprintf("http://127.0.0.1:%d/traffic", adminPort)
 	resp, err := localHTTPClient.Get(trafficURL)
 	if err == nil {
-		defer resp.Body.Close()
+		defer closeQuietly(resp.Body)
 		if resp.StatusCode == http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			var rawTraffic map[string]struct {
@@ -81,7 +81,7 @@ func FetchHysteriaTraffic(adminPort int) (map[string]ClientTraffic, error) {
 	rawOnline := make(map[string]int)
 	respOnline, err := localHTTPClient.Get(onlineURL)
 	if err == nil {
-		defer respOnline.Body.Close()
+		defer closeQuietly(respOnline.Body)
 		if respOnline.StatusCode == http.StatusOK {
 			body, _ := io.ReadAll(respOnline.Body)
 			_ = json.Unmarshal(body, &rawOnline)
@@ -119,6 +119,15 @@ func FetchHysteriaTraffic(adminPort int) (map[string]ClientTraffic, error) {
 	return result, nil
 }
 
+// HysteriaKickError indicates a non-200 HTTP response from Hysteria 2 /kick.
+type HysteriaKickError struct {
+	StatusCode int
+}
+
+func (e *HysteriaKickError) Error() string {
+	return fmt.Sprintf("hysteria kick failed with status: %d", e.StatusCode)
+}
+
 // KickHysteriaClient sends a kick request to Hysteria 2 Admin API (/kick).
 func KickHysteriaClient(adminPort int, email string) error {
 	if adminPort <= 0 {
@@ -139,10 +148,10 @@ func KickHysteriaClient(adminPort int, email string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeQuietly(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("hysteria kick failed with status: %d", resp.StatusCode)
+		return &HysteriaKickError{StatusCode: resp.StatusCode}
 	}
 
 	return nil

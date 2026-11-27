@@ -71,187 +71,170 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		return "", nil, fmt.Errorf("config spec cannot be nil")
 	}
 
-	var allWarnings []matrix.NegotiationWarning
-
-	// 0. If RawJSONConfig is provided (e.g. native subscription config with full outbounds, routing rules, and balancers)
 	rawJSON := spec.RawJSONConfig
 	if rawJSON == "" && spec.ServerNode != nil {
 		rawJSON = spec.ServerNode.RawJSONConfig
 	}
-
 	if rawJSON != "" {
-		var rawConfig map[string]interface{}
-		if err := json.Unmarshal([]byte(rawJSON), &rawConfig); err == nil && len(rawConfig) > 0 {
-			// Inject our built inbounds (mobile VPN tun-in and local socks-in)
-			builtInbounds := BuildXrayInbounds(spec)
-			var finalInbounds []interface{}
-			for _, bi := range builtInbounds {
-				finalInbounds = append(finalInbounds, bi)
-			}
-			// Preserve any existing non-tun / non-socks inbounds from rawConfig (e.g. loopback inbounds for balancers)
-			if existingInbounds, ok := rawConfig["inbounds"].([]interface{}); ok {
-				for _, ei := range existingInbounds {
-					if eiMap, ok := ei.(map[string]interface{}); ok {
-						tag, _ := eiMap["tag"].(string)
-						if tag != "tun-in" && tag != "socks-in" {
-							finalInbounds = append(finalInbounds, ei)
-						}
-					}
-				}
-			}
-			rawConfig["inbounds"] = finalInbounds
-
-			// Ensure balancers in subscription raw configs have fallbackTag to prevent fatal empty tag drops
-			if routing, ok := rawConfig["routing"].(map[string]interface{}); ok {
-				if balancers, ok := routing["balancers"].([]interface{}); ok {
-					for _, b := range balancers {
-						if bMap, ok := b.(map[string]interface{}); ok {
-							fallback, _ := bMap["fallbackTag"].(string)
-							if fallback == "" {
-								var candidateTag string
-								if selList, ok := bMap["selector"].([]interface{}); ok && len(selList) > 0 {
-									if s, ok := selList[0].(string); ok && s != "" {
-										candidateTag = s
-									}
-								} else if selList, ok := bMap["selectors"].([]interface{}); ok && len(selList) > 0 {
-									if s, ok := selList[0].(string); ok && s != "" {
-										candidateTag = s
-									}
-								}
-								if candidateTag != "" {
-									bMap["fallbackTag"] = candidateTag
-								}
-							}
-						}
-					}
-				}
-			}
-
-			// Ensure log config if specified
-			if spec.LogLevel != "" {
-				rawConfig["log"] = map[string]interface{}{
-					"loglevel": spec.LogLevel,
-				}
-			}
-
-			formatted, err := json.MarshalIndent(rawConfig, "", "  ")
-			if err != nil {
-				return "", nil, fmt.Errorf("failed to format raw xray json config: %w", err)
-			}
-			return string(formatted), allWarnings, nil
+		if formatted, handled, err := compileRawXrayConfig(rawJSON, spec); handled {
+			return formatted, nil, err
 		}
 	}
 
-	// 1. Negotiate active server node features
-	var primaryOutbound map[string]interface{}
-	var chainOutbounds []map[string]interface{}
-	var bridgeInbounds []map[string]interface{}
-	var bridgeRoutingRules []map[string]interface{}
 	usedLocalPorts := collectUsedLocalPorts(spec)
+	primaryOutbound, chainOutbounds, bridgeInbounds, bridgeRoutingRules, allWarnings, err := c.compilePrimaryOrChainOutbounds(spec, usedLocalPorts)
+	if err != nil {
+		return "", nil, err
+	}
 
+	inbounds := BuildXrayInbounds(spec)
+	if len(bridgeInbounds) > 0 {
+		inbounds = append(inbounds, bridgeInbounds...)
+	}
+
+	outbounds := buildInitialXrayOutbounds(primaryOutbound, chainOutbounds)
+	observatory, balancers, backupOutboundMap := appendRoutingOutbounds(spec, &outbounds)
+
+	if len(spec.ServerInbounds) > 0 {
+		inbounds = append(inbounds, map[string]interface{}{
+			"tag":      "api",
+			"port":     10085,
+			"listen":   "127.0.0.1",
+			"protocol": "dokodemo-door",
+			"settings": map[string]interface{}{"address": "127.0.0.1"},
+		})
+	}
+	outbounds = appendDefaultXrayOutbounds(outbounds, len(spec.ServerInbounds) > 0)
+
+	routing := finalizeXrayRouting(spec, bridgeRoutingRules, balancers, backupOutboundMap)
+	configObj := map[string]interface{}{
+		"log":       buildXrayLogConfig(spec),
+		"dns":       buildXrayDNSConfig(spec),
+		"inbounds":  inbounds,
+		"outbounds": outbounds,
+		"routing":   routing,
+	}
+	if len(spec.ServerInbounds) > 0 {
+		applyXrayServerStatsPolicy(configObj)
+	}
+	if observatory != nil {
+		configObj["observatory"] = observatory
+	}
+
+	jsonBytes, err := json.MarshalIndent(configObj, "", "  ")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to marshal xray config to JSON: %w", err)
+	}
+	return string(jsonBytes), allWarnings, nil
+}
+
+func compileRawXrayConfig(rawJSON string, spec *ast.ConfigSpec) (string, bool, error) {
+	var rawConfig map[string]interface{}
+	if err := json.Unmarshal([]byte(rawJSON), &rawConfig); err != nil || len(rawConfig) == 0 {
+		return "", false, nil
+	}
+
+	builtInbounds := BuildXrayInbounds(spec)
+	var finalInbounds []interface{}
+	for _, bi := range builtInbounds {
+		finalInbounds = append(finalInbounds, bi)
+	}
+	if existingInbounds, ok := rawConfig["inbounds"].([]interface{}); ok {
+		for _, ei := range existingInbounds {
+			if eiMap, ok := ei.(map[string]interface{}); ok {
+				tag, _ := eiMap["tag"].(string)
+				if tag != "tun-in" && tag != "socks-in" {
+					finalInbounds = append(finalInbounds, ei)
+				}
+			}
+		}
+	}
+	rawConfig["inbounds"] = finalInbounds
+	ensureRawXrayBalancerFallbacks(rawConfig)
+
+	if spec.LogLevel != "" {
+		rawConfig["log"] = map[string]interface{}{"loglevel": spec.LogLevel}
+	}
+
+	formatted, err := json.MarshalIndent(rawConfig, "", "  ")
+	if err != nil {
+		return "", true, fmt.Errorf("failed to format raw xray json config: %w", err)
+	}
+	return string(formatted), true, nil
+}
+
+func ensureRawXrayBalancerFallbacks(rawConfig map[string]interface{}) {
+	routing, ok := rawConfig["routing"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	balancers, ok := routing["balancers"].([]interface{})
+	if !ok {
+		return
+	}
+	for _, b := range balancers {
+		bMap, ok := b.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if fallback, _ := bMap["fallbackTag"].(string); fallback != "" {
+			continue
+		}
+		if selList, ok := bMap["selector"].([]interface{}); ok && len(selList) > 0 {
+			if s, ok := selList[0].(string); ok && s != "" {
+				bMap["fallbackTag"] = s
+			}
+		} else if selList, ok := bMap["selectors"].([]interface{}); ok && len(selList) > 0 {
+			if s, ok := selList[0].(string); ok && s != "" {
+				bMap["fallbackTag"] = s
+			}
+		}
+	}
+}
+
+func (c *Compiler) compilePrimaryOrChainOutbounds(spec *ast.ConfigSpec, usedLocalPorts map[int]bool) (
+	primaryOutbound map[string]interface{},
+	chainOutbounds []map[string]interface{},
+	bridgeInbounds []map[string]interface{},
+	bridgeRoutingRules []map[string]interface{},
+	allWarnings []matrix.NegotiationWarning,
+	err error,
+) {
 	if len(spec.ChainNodes) >= 2 {
 		for i, node := range spec.ChainNodes {
-			adaptedNode, warnings, err := c.negotiator.Negotiate(
-				node,
-				ast.CoreXray,
-				spec.CoreVersion,
-				spec.StrictMode,
-			)
+			adaptedNode, warnings, err := c.negotiator.Negotiate(node, ast.CoreXray, spec.CoreVersion, spec.StrictMode)
 			if err != nil {
-				return "", nil, fmt.Errorf("feature negotiation failed for chain hop %d: %w", i+1, err)
+				return nil, nil, nil, nil, nil, fmt.Errorf("feature negotiation failed for chain hop %d: %w", i+1, err)
 			}
 			allWarnings = append(allWarnings, warnings...)
 
-			tag := fmt.Sprintf("chain-hop-%d", i+1)
-			if node.Name != "" {
-				tag = fmt.Sprintf("chain-%d-%s", i+1, node.Name)
-			}
-
-			// If previous hop in the chain already uses xtls-rprx-vision, nested vision over another vision transport is invalid.
-			// However, if previous hop is a standard stream (e.g. SOCKS5 loopback entry gateway), flow: xtls-rprx-vision is preserved.
+			tag := chainHopTag(i+1, node.Name)
 			if i > 0 && spec.ChainNodes[i-1].Flow == "xtls-rprx-vision" && adaptedNode.Flow == "xtls-rprx-vision" {
 				adaptedNode.Flow = ""
 			}
 
-			// Xray's Hysteria2 QUIC transport with finalmask.udp hangs when paired with sockopt.dialerProxy.
-			// Route Hysteria2 cascade hops through a local dokodemo-door UDP bridge targeting the previous hop outbound.
-			useUdpBridge := i > 0 && strings.EqualFold(adaptedNode.Protocol, ast.ProtoHysteria2)
 			var outboundObj map[string]interface{}
-			if useUdpBridge {
-				prevTag := fmt.Sprintf("chain-hop-%d", i)
-				if spec.ChainNodes[i-1].Name != "" {
-					prevTag = fmt.Sprintf("chain-%d-%s", i, spec.ChainNodes[i-1].Name)
-				}
-				nodeCopy := *adaptedNode
-				if !isLoopbackHost(nodeCopy.Address) {
-					origAddr := nodeCopy.Address
-					origPort := resolveHysteriaTargetPort(nodeCopy.Port, nodeCopy.PortHopping)
-					if nodeCopy.SNI == "" {
-						nodeCopy.SNI = origAddr
-					}
-					bridgePort := allocateFreeLocalUDPPort(usedLocalPorts)
-					bridgeTag := fmt.Sprintf("hy2-udp-bridge-%d", i+1)
-					nodeCopy.Address = "127.0.0.1"
-					nodeCopy.Port = bridgePort
-					nodeCopy.PortHopping = ""
-
-					bridgeInbounds = append(bridgeInbounds, map[string]interface{}{
-						"tag":      bridgeTag,
-						"port":     bridgePort,
-						"listen":   "127.0.0.1",
-						"protocol": "dokodemo-door",
-						"settings": map[string]interface{}{
-							"address": origAddr,
-							"port":    origPort,
-							"network": "udp",
-						},
-					})
-					bridgeRoutingRules = append(bridgeRoutingRules, map[string]interface{}{
-						"type":        "field",
-						"inboundTag":  []string{bridgeTag},
-						"outboundTag": prevTag,
-					})
-				}
-				outboundObj, err = buildXrayOutboundWithCoreVersion(tag, &nodeCopy, spec.CoreVersion)
-				if err != nil {
-					return "", nil, fmt.Errorf("failed to build chain hop %d outbound: %w", i+1, err)
-				}
+			if i > 0 && strings.EqualFold(adaptedNode.Protocol, ast.ProtoHysteria2) {
+				prevTag := chainHopTag(i, spec.ChainNodes[i-1].Name)
+				outboundObj, err = buildChainHysteria2Bridge(tag, prevTag, i+1, adaptedNode, spec.CoreVersion, usedLocalPorts, &bridgeInbounds, &bridgeRoutingRules)
 			} else {
 				outboundObj, err = buildXrayOutboundWithCoreVersion(tag, adaptedNode, spec.CoreVersion)
-				if err != nil {
-					return "", nil, fmt.Errorf("failed to build chain hop %d outbound: %w", i+1, err)
-				}
-
-				if i > 0 {
-					prevTag := fmt.Sprintf("chain-hop-%d", i)
-					if spec.ChainNodes[i-1].Name != "" {
-						prevTag = fmt.Sprintf("chain-%d-%s", i, spec.ChainNodes[i-1].Name)
-					}
-					streamSettings, ok := outboundObj["streamSettings"].(map[string]interface{})
-					if !ok || streamSettings == nil {
-						streamSettings = make(map[string]interface{})
-						outboundObj["streamSettings"] = streamSettings
-					}
-					sockopt, ok := streamSettings["sockopt"].(map[string]interface{})
-					if !ok || sockopt == nil {
-						sockopt = make(map[string]interface{})
-						streamSettings["sockopt"] = sockopt
-					}
-					sockopt["dialerProxy"] = prevTag
+				if err == nil && i > 0 {
+					attachDialerProxy(outboundObj, chainHopTag(i, spec.ChainNodes[i-1].Name))
 				}
 			}
-
+			if err != nil {
+				return nil, nil, nil, nil, nil, fmt.Errorf("failed to build chain hop %d outbound: %w", i+1, err)
+			}
 			chainOutbounds = append(chainOutbounds, outboundObj)
 		}
-	} else if spec.ServerNode != nil {
-		adaptedNode, warnings, err := c.negotiator.Negotiate(
-			spec.ServerNode,
-			ast.CoreXray,
-			spec.CoreVersion,
-			spec.StrictMode,
-		)
+		return nil, chainOutbounds, bridgeInbounds, bridgeRoutingRules, allWarnings, nil
+	}
+
+	if spec.ServerNode != nil {
+		adaptedNode, warnings, err := c.negotiator.Negotiate(spec.ServerNode, ast.CoreXray, spec.CoreVersion, spec.StrictMode)
 		if err != nil {
-			return "", nil, fmt.Errorf("feature negotiation failed for xray: %w", err)
+			return nil, nil, nil, nil, nil, fmt.Errorf("feature negotiation failed for xray: %w", err)
 		}
 		allWarnings = append(allWarnings, warnings...)
 
@@ -259,239 +242,261 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		if adaptedNode.Name != "" {
 			primaryTag = adaptedNode.Name
 		}
-		outboundObj, err := buildXrayOutboundWithCoreVersion(primaryTag, adaptedNode, spec.CoreVersion)
+		primaryOutbound, err = buildXrayOutboundWithCoreVersion(primaryTag, adaptedNode, spec.CoreVersion)
 		if err != nil {
-			return "", nil, fmt.Errorf("failed to build xray primary outbound: %w", err)
-		}
-		primaryOutbound = outboundObj
-	}
-
-	// 2. Build Inbounds
-	inbounds := BuildXrayInbounds(spec)
-	if len(bridgeInbounds) > 0 {
-		inbounds = append(inbounds, bridgeInbounds...)
-	}
-
-	// 3. Build Outbounds
-	outbounds := make([]map[string]interface{}, 0)
-	if len(chainOutbounds) > 0 {
-		// Put exit node (last hop) first so it becomes the default outbound for unmatched traffic
-		exitNodeObj := chainOutbounds[len(chainOutbounds)-1]
-		outbounds = append(outbounds, exitNodeObj)
-		for i := 0; i < len(chainOutbounds)-1; i++ {
-			outbounds = append(outbounds, chainOutbounds[i])
-		}
-	} else if primaryOutbound != nil {
-		outbounds = append(outbounds, primaryOutbound)
-	}
-
-	var observatory map[string]interface{}
-	var balancers []map[string]interface{}
-	backupOutboundMap := make(map[string]string)
-
-	if spec.Routing != nil && len(spec.Routing.Outbounds) > 0 {
-		var observatorySubjects []string
-		probeURL := "https://www.gstatic.com/generate_204"
-		probeInterval := "10s"
-
-		for _, ob := range spec.Routing.Outbounds {
-			tag, _ := ob["tag"].(string)
-			if tag == "" {
-				continue
-			}
-			proto, _ := ob["protocol"].(string)
-			if proto == "" {
-				proto = "freedom"
-			}
-
-			var settingsMap map[string]interface{}
-			if s, ok := ob["settings"].(map[string]interface{}); ok {
-				settingsMap = s
-			} else if sStr, ok := ob["settings"].(string); ok && sStr != "" {
-				_ = json.Unmarshal([]byte(sStr), &settingsMap)
-			}
-
-			if settingsMap == nil {
-				settingsMap = make(map[string]interface{})
-			}
-
-			if proto == "hysteria2" || proto == "hysteria" {
-				proto = "hysteria"
-				if v, ok := settingsMap["version"]; !ok || v == nil || v == 0 || v == float64(0) {
-					settingsMap["version"] = 2
-				}
-			} else if proto == "socks" {
-				if _, ok := settingsMap["servers"]; !ok {
-					addr, _ := settingsMap["address"].(string)
-					if addr == "" {
-						addr = "127.0.0.1"
-					}
-					port := 10808
-					if p, ok := settingsMap["port"].(float64); ok && p > 0 {
-						port = int(p)
-					} else if p, ok := settingsMap["port"].(int); ok && p > 0 {
-						port = p
-					}
-					settingsMap = map[string]interface{}{
-						"servers": []map[string]interface{}{
-							{
-								"address": addr,
-								"port":    port,
-							},
-						},
-					}
-				}
-			}
-
-			var streamSettingsMap map[string]interface{}
-			if ss, ok := ob["streamSettings"].(map[string]interface{}); ok {
-				streamSettingsMap = ss
-			} else if ssStr, ok := ob["stream_settings"].(string); ok && ssStr != "" {
-				_ = json.Unmarshal([]byte(ssStr), &streamSettingsMap)
-			}
-
-			if proto == "vless" {
-				secVal := ""
-				if streamSettingsMap != nil {
-					if s, ok := streamSettingsMap["security"].(string); ok {
-						secVal = s
-					}
-				}
-				if vnextList, ok := settingsMap["vnext"].([]interface{}); ok {
-					for _, vn := range vnextList {
-						if vnMap, ok := vn.(map[string]interface{}); ok {
-							if users, ok := vnMap["users"].([]interface{}); !ok || len(users) == 0 {
-								vnMap["users"] = []map[string]interface{}{
-									{
-										"id":         "00000000-0000-0000-0000-000000000000",
-										"encryption": "none",
-									},
-								}
-							} else {
-								for _, u := range users {
-									if uMap, ok := u.(map[string]interface{}); ok {
-										if enc, ok := uMap["encryption"].(string); !ok || enc == "" {
-											uMap["encryption"] = "none"
-										}
-										// Flow xtls-rprx-vision requires TLS or Reality transport
-										if secVal != "tls" && secVal != "reality" {
-											delete(uMap, "flow")
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			} else if proto == "vmess" {
-				if vnextList, ok := settingsMap["vnext"].([]interface{}); ok {
-					for _, vn := range vnextList {
-						if vnMap, ok := vn.(map[string]interface{}); ok {
-							if users, ok := vnMap["users"].([]interface{}); !ok || len(users) == 0 {
-								vnMap["users"] = []map[string]interface{}{
-									{
-										"id":       "00000000-0000-0000-0000-000000000000",
-										"security": "auto",
-									},
-								}
-							} else {
-								for _, u := range users {
-									if uMap, ok := u.(map[string]interface{}); ok {
-										if sec, ok := uMap["security"].(string); !ok || sec == "" {
-											uMap["security"] = "auto"
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-
-
-			xrayOb := map[string]interface{}{
-				"protocol": proto,
-				"tag":      tag,
-			}
-			if len(settingsMap) > 0 {
-				xrayOb["settings"] = settingsMap
-			}
-			if streamSettingsMap != nil {
-				xrayOb["streamSettings"] = streamSettingsMap
-			}
-			outbounds = append(outbounds, xrayOb)
-
-			if settingsMap != nil {
-				backups, pURL, pInt, strat := ExtractXrayFallbackSettings(settingsMap, tag)
-				if len(backups) > 0 {
-					balancerTag := fmt.Sprintf("balancer-%s", tag)
-					backupOutboundMap[tag] = balancerTag
-
-					probeURL = pURL
-					probeInterval = pInt
-
-					observatorySubjects = append(observatorySubjects, tag)
-					observatorySubjects = append(observatorySubjects, backups...)
-
-					balancerObj := BuildXrayBalancer(tag, balancerTag, backups, strat)
-					balancers = append(balancers, balancerObj)
-				}
-			}
-		}
-
-		if len(observatorySubjects) > 0 {
-			observatory = BuildXrayObservatory(observatorySubjects, probeURL, probeInterval)
+			return nil, nil, nil, nil, nil, fmt.Errorf("failed to build xray primary outbound: %w", err)
 		}
 	}
+	return primaryOutbound, nil, nil, nil, allWarnings, nil
+}
 
-	// For Server mode, configure stats gRPC API (127.0.0.1:10085)
-	if len(spec.ServerInbounds) > 0 {
-		inbounds = append(inbounds, map[string]interface{}{
-			"tag":      "api",
-			"port":     10085,
+func chainHopTag(hopNum int, name string) string {
+	if name != "" {
+		return fmt.Sprintf("chain-%d-%s", hopNum, name)
+	}
+	return fmt.Sprintf("chain-hop-%d", hopNum)
+}
+
+func buildChainHysteria2Bridge(
+	tag, prevTag string,
+	hopNum int,
+	adaptedNode *ast.ServerProfile,
+	coreVersion string,
+	usedLocalPorts map[int]bool,
+	bridgeInbounds, bridgeRoutingRules *[]map[string]interface{},
+) (map[string]interface{}, error) {
+	nodeCopy := *adaptedNode
+	if !isLoopbackHost(nodeCopy.Address) {
+		origAddr := nodeCopy.Address
+		origPort := resolveHysteriaTargetPort(nodeCopy.Port, nodeCopy.PortHopping)
+		if nodeCopy.SNI == "" {
+			nodeCopy.SNI = origAddr
+		}
+		bridgePort := allocateFreeLocalUDPPort(usedLocalPorts)
+		bridgeTag := fmt.Sprintf("hy2-udp-bridge-%d", hopNum)
+		nodeCopy.Address = "127.0.0.1"
+		nodeCopy.Port = bridgePort
+		nodeCopy.PortHopping = ""
+
+		*bridgeInbounds = append(*bridgeInbounds, map[string]interface{}{
+			"tag":      bridgeTag,
+			"port":     bridgePort,
 			"listen":   "127.0.0.1",
 			"protocol": "dokodemo-door",
 			"settings": map[string]interface{}{
-				"address": "127.0.0.1",
+				"address": origAddr,
+				"port":    origPort,
+				"network": "udp",
 			},
 		})
+		*bridgeRoutingRules = append(*bridgeRoutingRules, map[string]interface{}{
+			"type":        "field",
+			"inboundTag":  []string{bridgeTag},
+			"outboundTag": prevTag,
+		})
+	}
+	return buildXrayOutboundWithCoreVersion(tag, &nodeCopy, coreVersion)
+}
+
+func attachDialerProxy(outboundObj map[string]interface{}, prevTag string) {
+	streamSettings, ok := outboundObj["streamSettings"].(map[string]interface{})
+	if !ok || streamSettings == nil {
+		streamSettings = make(map[string]interface{})
+		outboundObj["streamSettings"] = streamSettings
+	}
+	sockopt, ok := streamSettings["sockopt"].(map[string]interface{})
+	if !ok || sockopt == nil {
+		sockopt = make(map[string]interface{})
+		streamSettings["sockopt"] = sockopt
+	}
+	sockopt["dialerProxy"] = prevTag
+}
+
+func buildInitialXrayOutbounds(primaryOutbound map[string]interface{}, chainOutbounds []map[string]interface{}) []map[string]interface{} {
+	outbounds := make([]map[string]interface{}, 0)
+	if len(chainOutbounds) > 0 {
+		// Put exit node (last hop) first so it becomes the default outbound for unmatched traffic
+		outbounds = append(outbounds, chainOutbounds[len(chainOutbounds)-1])
+		outbounds = append(outbounds, chainOutbounds[:len(chainOutbounds)-1]...)
+	} else if primaryOutbound != nil {
+		outbounds = append(outbounds, primaryOutbound)
+	}
+	return outbounds
+}
+
+func appendRoutingOutbounds(spec *ast.ConfigSpec, outbounds *[]map[string]interface{}) (map[string]interface{}, []map[string]interface{}, map[string]string) {
+	backupOutboundMap := make(map[string]string)
+	if spec.Routing == nil || len(spec.Routing.Outbounds) == 0 {
+		return nil, nil, backupOutboundMap
 	}
 
-	hasDirect := false
-	hasBlock := false
-	hasBlocked := false
-	hasAPI := false
-	hasDNS := false
-	for _, ob := range outbounds {
-		if t, _ := ob["tag"].(string); t == "direct" {
-			hasDirect = true
-		} else if t == "block" {
-			hasBlock = true
-		} else if t == "blocked" {
-			hasBlocked = true
-		} else if t == "api" {
-			hasAPI = true
-		} else if t == "dns-out" {
-			hasDNS = true
+	var observatorySubjects []string
+	var balancers []map[string]interface{}
+	probeURL := "https://www.gstatic.com/generate_204"
+	probeInterval := "10s"
+
+	for _, ob := range spec.Routing.Outbounds {
+		tag, _ := ob["tag"].(string)
+		if tag == "" {
+			continue
+		}
+		proto, _ := ob["protocol"].(string)
+		if proto == "" {
+			proto = "freedom"
+		}
+
+		settingsMap := parseXrayMapField(ob["settings"])
+		if settingsMap == nil {
+			settingsMap = make(map[string]interface{})
+		}
+		proto, settingsMap = normalizeXrayOutboundSettings(proto, settingsMap)
+
+		streamSettingsMap := parseXrayMapField(ob["streamSettings"])
+		if streamSettingsMap == nil {
+			streamSettingsMap = parseXrayMapField(ob["stream_settings"])
+		}
+
+		normalizeXrayVlessOrVmessUsers(proto, settingsMap, streamSettingsMap)
+
+		xrayOb := map[string]interface{}{"protocol": proto, "tag": tag}
+		if len(settingsMap) > 0 {
+			xrayOb["settings"] = settingsMap
+		}
+		if streamSettingsMap != nil {
+			xrayOb["streamSettings"] = streamSettingsMap
+		}
+		*outbounds = append(*outbounds, xrayOb)
+
+		if backups, pURL, pInt, strat := ExtractXrayFallbackSettings(settingsMap, tag); len(backups) > 0 {
+			balancerTag := fmt.Sprintf("balancer-%s", tag)
+			backupOutboundMap[tag] = balancerTag
+			probeURL = pURL
+			probeInterval = pInt
+			observatorySubjects = append(observatorySubjects, tag)
+			observatorySubjects = append(observatorySubjects, backups...)
+			balancers = append(balancers, BuildXrayBalancer(tag, balancerTag, backups, strat))
 		}
 	}
-	if !hasDNS {
+
+	var observatory map[string]interface{}
+	if len(observatorySubjects) > 0 {
+		observatory = BuildXrayObservatory(observatorySubjects, probeURL, probeInterval)
+	}
+	return observatory, balancers, backupOutboundMap
+}
+
+func parseXrayMapField(raw interface{}) map[string]interface{} {
+	switch v := raw.(type) {
+	case map[string]interface{}:
+		return v
+	case string:
+		if v != "" {
+			var m map[string]interface{}
+			_ = json.Unmarshal([]byte(v), &m)
+			return m
+		}
+	}
+	return nil
+}
+
+func normalizeXrayOutboundSettings(proto string, settingsMap map[string]interface{}) (string, map[string]interface{}) {
+	if proto == "hysteria2" || proto == "hysteria" {
+		if v, ok := settingsMap["version"]; !ok || v == nil || v == 0 || v == float64(0) {
+			settingsMap["version"] = 2
+		}
+		return "hysteria", settingsMap
+	}
+	if proto == "socks" {
+		if _, ok := settingsMap["servers"]; !ok {
+			addr, _ := settingsMap["address"].(string)
+			if addr == "" {
+				addr = "127.0.0.1"
+			}
+			port := 10808
+			if p, ok := settingsMap["port"].(float64); ok && p > 0 {
+				port = int(p)
+			} else if p, ok := settingsMap["port"].(int); ok && p > 0 {
+				port = p
+			}
+			settingsMap = map[string]interface{}{
+				"servers": []map[string]interface{}{{"address": addr, "port": port}},
+			}
+		}
+	}
+	return proto, settingsMap
+}
+
+func normalizeXrayVlessOrVmessUsers(proto string, settingsMap, streamSettingsMap map[string]interface{}) {
+	if proto != "vless" && proto != "vmess" {
+		return
+	}
+	secVal := ""
+	if streamSettingsMap != nil {
+		secVal, _ = streamSettingsMap["security"].(string)
+	}
+	vnextList, ok := settingsMap["vnext"].([]interface{})
+	if !ok {
+		return
+	}
+	for _, vn := range vnextList {
+		vnMap, ok := vn.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		users, ok := vnMap["users"].([]interface{})
+		if !ok || len(users) == 0 {
+			if proto == "vless" {
+				vnMap["users"] = []map[string]interface{}{{"id": "00000000-0000-0000-0000-000000000000", "encryption": "none"}}
+			} else {
+				vnMap["users"] = []map[string]interface{}{{"id": "00000000-0000-0000-0000-000000000000", "security": "auto"}}
+			}
+			continue
+		}
+		for _, u := range users {
+			uMap, ok := u.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if proto == "vless" {
+				if enc, ok := uMap["encryption"].(string); !ok || enc == "" {
+					uMap["encryption"] = "none"
+				}
+				if secVal != "tls" && secVal != "reality" {
+					delete(uMap, "flow")
+				}
+			} else if sec, ok := uMap["security"].(string); !ok || sec == "" {
+				uMap["security"] = "auto"
+			}
+		}
+	}
+}
+
+func appendDefaultXrayOutbounds(outbounds []map[string]interface{}, hasServerInbounds bool) []map[string]interface{} {
+	present := make(map[string]bool, len(outbounds))
+	for _, ob := range outbounds {
+		if t, _ := ob["tag"].(string); t != "" {
+			present[t] = true
+		}
+	}
+	if !present["dns-out"] {
 		outbounds = append(outbounds, map[string]interface{}{"protocol": "dns", "tag": "dns-out"})
 	}
-	if !hasDirect {
+	if !present["direct"] {
 		outbounds = append(outbounds, map[string]interface{}{"protocol": "freedom", "tag": "direct"})
 	}
-	if !hasBlock {
+	if !present["block"] {
 		outbounds = append(outbounds, map[string]interface{}{"protocol": "blackhole", "tag": "block"})
 	}
-	if !hasBlocked {
+	if !present["blocked"] {
 		outbounds = append(outbounds, map[string]interface{}{"protocol": "blackhole", "tag": "blocked"})
 	}
-	if len(spec.ServerInbounds) > 0 && !hasAPI {
+	if hasServerInbounds && !present["api"] {
 		outbounds = append(outbounds, map[string]interface{}{"protocol": "blackhole", "tag": "api"})
 	}
+	return outbounds
+}
 
-	// 4. Build Routing
+func finalizeXrayRouting(spec *ast.ConfigSpec, bridgeRoutingRules, balancers []map[string]interface{}, backupOutboundMap map[string]string) map[string]interface{} {
 	routing := BuildXrayRouting(spec)
 	if len(bridgeRoutingRules) > 0 {
 		if existingRules, ok := routing["rules"].([]map[string]interface{}); ok {
@@ -503,7 +508,7 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 	if len(spec.ServerInbounds) > 0 {
 		apiRule := map[string]interface{}{
 			"type":        "field",
-			"inboundTag": []string{"api"},
+			"inboundTag":  []string{"api"},
 			"outboundTag": "api",
 		}
 		if existingRules, ok := routing["rules"].([]map[string]interface{}); ok {
@@ -512,7 +517,6 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 			routing["rules"] = []map[string]interface{}{apiRule}
 		}
 	}
-
 	if len(balancers) > 0 {
 		routing["balancers"] = balancers
 		if rules, ok := routing["rules"].([]map[string]interface{}); ok {
@@ -526,9 +530,10 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 			}
 		}
 	}
+	return routing
+}
 
-	// 5. Build DNS (Split-DNS with encrypted DoH)
-	var dnsServers []interface{}
+func buildXrayDNSConfig(spec *ast.ConfigSpec) map[string]interface{} {
 	directDNS := "https://8.8.8.8/dns-query"
 	if spec.DNS != nil && spec.DNS.DirectServer != "" {
 		directDNS = spec.DNS.DirectServer
@@ -540,10 +545,12 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		remoteDNS = spec.DNS.Servers[0]
 	}
 
-	dnsServers = append(dnsServers, map[string]interface{}{
-		"address": directDNS,
-		"domains": []string{"domain:ru", "domain:su", "domain:xn--p1ai"},
-	})
+	dnsServers := []interface{}{
+		map[string]interface{}{
+			"address": directDNS,
+			"domains": []string{"domain:ru", "domain:su", "domain:xn--p1ai"},
+		},
+	}
 	if remoteDNS != directDNS {
 		dnsServers = append(dnsServers, remoteDNS)
 	}
@@ -557,21 +564,16 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 	dnsServers = append(dnsServers, "localhost")
 
 	qStrategy := "UseIPv4"
-	if spec.DNS != nil && spec.DNS.Strategy != "" {
-		switch spec.DNS.Strategy {
-		case "ipv6_only", "prefer_ipv6":
-			qStrategy = "UseIPv6"
-		default:
-			qStrategy = "UseIPv4"
-		}
+	if spec.DNS != nil && (spec.DNS.Strategy == "ipv6_only" || spec.DNS.Strategy == "prefer_ipv6") {
+		qStrategy = "UseIPv6"
 	}
-
-	dnsConfig := map[string]interface{}{
+	return map[string]interface{}{
 		"servers":       dnsServers,
 		"queryStrategy": qStrategy,
 	}
+}
 
-	// 6. Log
+func buildXrayLogConfig(spec *ast.ConfigSpec) map[string]interface{} {
 	logLevel := strings.ToLower(strings.TrimSpace(spec.LogLevel))
 	if logLevel == "warn" {
 		logLevel = "warning"
@@ -580,11 +582,7 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		logLevel = "warning"
 	}
 
-	logMap := map[string]interface{}{
-		"loglevel": logLevel,
-	}
-
-	// Access Log handling
+	logMap := map[string]interface{}{"loglevel": logLevel}
 	if spec.AccessLog != "" {
 		if spec.AccessLog == "console" || spec.AccessLog == "stdout" {
 			logMap["access"] = ""
@@ -593,14 +591,10 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 		}
 	} else if spec.LogPath != "" {
 		logMap["access"] = spec.LogPath
-	} else {
-		// When no log path is set, suppress connection-level access logs unless debug/info is explicitly requested
-		if logLevel == "warning" || logLevel == "error" || logLevel == "none" {
-			logMap["access"] = "none"
-		}
+	} else if logLevel == "warning" || logLevel == "error" || logLevel == "none" {
+		logMap["access"] = "none"
 	}
 
-	// Error Log handling
 	if spec.ErrorLog != "" {
 		if spec.ErrorLog == "console" || spec.ErrorLog == "stderr" {
 			logMap["error"] = ""
@@ -610,44 +604,27 @@ func (c *Compiler) Compile(spec *ast.ConfigSpec) (string, []matrix.NegotiationWa
 	} else if spec.LogPath != "" {
 		logMap["error"] = spec.LogPath
 	}
+	return logMap
+}
 
-	configObj := map[string]interface{}{
-		"log":       logMap,
-		"dns":       dnsConfig,
-		"inbounds":  inbounds,
-		"outbounds": outbounds,
-		"routing":   routing,
+func applyXrayServerStatsPolicy(configObj map[string]interface{}) {
+	configObj["api"] = map[string]interface{}{
+		"tag":      "api",
+		"services": []string{"HandlerService", "LoggerService", "StatsService"},
 	}
-
-	if len(spec.ServerInbounds) > 0 {
-		configObj["api"] = map[string]interface{}{
-			"tag":      "api",
-			"services": []string{"HandlerService", "LoggerService", "StatsService"},
-		}
-		configObj["stats"] = map[string]interface{}{}
-		configObj["policy"] = map[string]interface{}{
-			"system": map[string]interface{}{
-				"statsInboundUplink":    true,
-				"statsInboundDownlink":  true,
-				"statsOutboundUplink":   true,
-				"statsOutboundDownlink": true,
+	configObj["stats"] = map[string]interface{}{}
+	configObj["policy"] = map[string]interface{}{
+		"system": map[string]interface{}{
+			"statsInboundUplink":    true,
+			"statsInboundDownlink":  true,
+			"statsOutboundUplink":   true,
+			"statsOutboundDownlink": true,
+		},
+		"levels": map[string]interface{}{
+			"0": map[string]interface{}{
+				"statsUserUplink":   true,
+				"statsUserDownlink": true,
 			},
-			"levels": map[string]interface{}{
-				"0": map[string]interface{}{
-					"statsUserUplink":   true,
-					"statsUserDownlink": true,
-				},
-			},
-		}
+		},
 	}
-	if observatory != nil {
-		configObj["observatory"] = observatory
-	}
-
-	jsonBytes, err := json.MarshalIndent(configObj, "", "  ")
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to marshal xray config to JSON: %w", err)
-	}
-
-	return string(jsonBytes), allWarnings, nil
 }

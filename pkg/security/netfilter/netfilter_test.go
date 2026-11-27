@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-func testClassifyHelper(event IptablesEvent, policy ClassifierPolicy, lang string) ClassificationResult {
-	return ClassifyConnection(event, policy, lang)
+func testClassifyHelper(event IptablesEvent, policy ClassifierPolicy) ClassificationResult {
+	return ClassifyConnection(event, policy, "ru")
 }
 
 func TestParseIptablesLine(t *testing.T) {
@@ -64,7 +64,7 @@ func TestClassifyConnection(t *testing.T) {
 		Dst:       "192.168.1.120",
 		DPT:       22,
 	}
-	res1 := testClassifyHelper(ev1, policy, "ru")
+	res1 := testClassifyHelper(ev1, policy)
 	if res1.RiskLevel != LevelCritical {
 		t.Errorf("expected CRITICAL, got %s (%s)", res1.RiskLevel, res1.Label)
 	}
@@ -78,7 +78,7 @@ func TestClassifyConnection(t *testing.T) {
 		Dst:       "192.168.1.120",
 		DPT:       8006,
 	}
-	res2 := testClassifyHelper(ev2, policy, "ru")
+	res2 := testClassifyHelper(ev2, policy)
 	if res2.RiskLevel != LevelInfo {
 		t.Errorf("expected INFO, got %s (%s)", res2.RiskLevel, res2.Label)
 	}
@@ -92,7 +92,7 @@ func TestClassifyConnection(t *testing.T) {
 		Dst:       "198.51.100.42",
 		DPT:       22,
 	}
-	res3 := testClassifyHelper(ev3, policy, "ru")
+	res3 := testClassifyHelper(ev3, policy)
 	if res3.RiskLevel != LevelInfo {
 		t.Errorf("expected INFO for whitelisted LXC, got %s (%s)", res3.RiskLevel, res3.Label)
 	}
@@ -106,7 +106,7 @@ func TestClassifyConnection(t *testing.T) {
 		Dst:       "198.51.100.42",
 		DPT:       22,
 	}
-	res4 := testClassifyHelper(ev4, policy, "ru")
+	res4 := testClassifyHelper(ev4, policy)
 	if res4.RiskLevel != LevelWarning {
 		t.Errorf("expected WARNING for non-whitelisted LXC SSH, got %s (%s)", res4.RiskLevel, res4.Label)
 	}
@@ -121,7 +121,7 @@ func TestClassifyConnection(t *testing.T) {
 		DPT:            22,
 		IsLocalProcess: false,
 	}
-	res5 := testClassifyHelper(ev5, policy, "ru")
+	res5 := testClassifyHelper(ev5, policy)
 	if res5.RiskLevel != LevelCritical {
 		t.Errorf("expected CRITICAL for VPN client attack, got %s (%s)", res5.RiskLevel, res5.Label)
 	}

@@ -163,6 +163,11 @@ func parseBandwidth(s string) int {
 
 // applyRawTLSAndTransport extracts TLS/Reality and Transport settings from raw dictionaries.
 func applyRawTLSAndTransport(out, sMap, tsMap map[string]interface{}, defaultServerName string) {
+	applyRawTLS(out, tsMap, defaultServerName)
+	applyRawTransport(out, tsMap)
+}
+
+func applyRawTLS(out, tsMap map[string]interface{}, defaultServerName string) {
 	security, _ := tsMap["security"].(string)
 	if security == "" {
 		if _, ok := tsMap["realitySettings"]; ok {
@@ -171,126 +176,109 @@ func applyRawTLSAndTransport(out, sMap, tsMap map[string]interface{}, defaultSer
 			security = "tls"
 		}
 	}
-
-	if security == "tls" || security == "reality" {
-		tlsMap := map[string]interface{}{
-			"enabled": true,
-		}
-
-		tlsSettings, _ := tsMap["tlsSettings"].(map[string]interface{})
-		realitySettings, _ := tsMap["realitySettings"].(map[string]interface{})
-
-		serverName := defaultServerName
-		if tlsSettings != nil {
-			if sn, ok := tlsSettings["serverName"].(string); ok && sn != "" {
-				serverName = sn
-			}
-		}
-		if realitySettings != nil {
-			if sn, ok := realitySettings["serverName"].(string); ok && sn != "" {
-				serverName = sn
-			}
-		}
-		if serverName != "" {
-			tlsMap["server_name"] = serverName
-		}
-
-		if tlsSettings != nil {
-			if allowInsecure, ok := tlsSettings["allowInsecure"].(bool); ok && allowInsecure {
-				tlsMap["insecure"] = true
-			}
-			if alpnRaw, ok := tlsSettings["alpn"]; ok {
-				if alpnList, ok := alpnRaw.([]interface{}); ok {
-					var alpnStr []string
-					for _, item := range alpnList {
-						if s, ok := item.(string); ok {
-							alpnStr = append(alpnStr, s)
-						}
-					}
-					if len(alpnStr) > 0 {
-						tlsMap["alpn"] = alpnStr
-					}
-				} else if alpnSlice, ok := alpnRaw.([]string); ok {
-					tlsMap["alpn"] = alpnSlice
-				}
-			}
-		}
-
-		if realitySettings != nil || security == "reality" {
-			var pk, sid string
-			if realitySettings != nil {
-				if k, ok := realitySettings["publicKey"].(string); ok {
-					pk = k
-				}
-				if s, ok := realitySettings["shortId"].(string); ok {
-					sid = s
-				}
-			}
-			if pk != "" {
-				realityMap := map[string]interface{}{
-					"enabled":    true,
-					"public_key": pk,
-				}
-				if sid != "" {
-					realityMap["short_id"] = sid
-				}
-				tlsMap["reality"] = realityMap
-			}
-		}
-
-		var fp string
-		if realitySettings != nil {
-			if f, ok := realitySettings["fingerprint"].(string); ok {
-				fp = f
-			}
-		}
-		if fp == "" && tlsSettings != nil {
-			if f, ok := tlsSettings["fingerprint"].(string); ok {
-				fp = f
-			}
-		}
-		if fp != "" {
-			tlsMap["utls"] = map[string]interface{}{
-				"enabled":     true,
-				"fingerprint": fp,
-			}
-		}
-
-		out["tls"] = tlsMap
+	if security != "tls" && security != "reality" {
+		return
 	}
 
-	network, _ := tsMap["network"].(string)
-	if network == "ws" {
-		wsMap := map[string]interface{}{
-			"type": "ws",
+	tlsMap := map[string]interface{}{"enabled": true}
+	tlsSettings, _ := tsMap["tlsSettings"].(map[string]interface{})
+	realitySettings, _ := tsMap["realitySettings"].(map[string]interface{})
+
+	serverName := defaultServerName
+	if sn, ok := tlsSettings["serverName"].(string); ok && sn != "" {
+		serverName = sn
+	}
+	if sn, ok := realitySettings["serverName"].(string); ok && sn != "" {
+		serverName = sn
+	}
+	if serverName != "" {
+		tlsMap["server_name"] = serverName
+	}
+
+	if tlsSettings != nil {
+		if allowInsecure, ok := tlsSettings["allowInsecure"].(bool); ok && allowInsecure {
+			tlsMap["insecure"] = true
 		}
+		if alpn := extractStringList(tlsSettings["alpn"]); len(alpn) > 0 {
+			tlsMap["alpn"] = alpn
+		}
+	}
+
+	if realitySettings != nil || security == "reality" {
+		pk, _ := realitySettings["publicKey"].(string)
+		sid, _ := realitySettings["shortId"].(string)
+		if pk != "" {
+			realityMap := map[string]interface{}{
+				"enabled":    true,
+				"public_key": pk,
+			}
+			if sid != "" {
+				realityMap["short_id"] = sid
+			}
+			tlsMap["reality"] = realityMap
+		}
+	}
+
+	fp, _ := realitySettings["fingerprint"].(string)
+	if fp == "" {
+		fp, _ = tlsSettings["fingerprint"].(string)
+	}
+	if fp != "" {
+		tlsMap["utls"] = map[string]interface{}{
+			"enabled":     true,
+			"fingerprint": fp,
+		}
+	}
+
+	out["tls"] = tlsMap
+}
+
+func extractStringList(raw interface{}) []string {
+	switch v := raw.(type) {
+	case []string:
+		return v
+	case []interface{}:
+		var res []string
+		for _, item := range v {
+			if s, ok := item.(string); ok && s != "" {
+				res = append(res, s)
+			}
+		}
+		return res
+	case string:
+		if v != "" {
+			return []string{v}
+		}
+	}
+	return nil
+}
+
+func applyRawTransport(out, tsMap map[string]interface{}) {
+	network, _ := tsMap["network"].(string)
+	switch network {
+	case "ws":
+		wsMap := map[string]interface{}{"type": "ws"}
 		if wsSettings, ok := tsMap["wsSettings"].(map[string]interface{}); ok {
 			if path, ok := wsSettings["path"].(string); ok && path != "" {
 				wsMap["path"] = path
 			}
 			if headers, ok := wsSettings["headers"].(map[string]interface{}); ok {
 				if host, ok := headers["Host"].(string); ok && host != "" {
-					wsMap["headers"] = map[string]interface{}{
-						"Host": host,
-					}
+					wsMap["headers"] = map[string]interface{}{"Host": host}
 				}
 			}
 		}
 		out["transport"] = wsMap
-	} else if network == "grpc" {
-		grpcMap := map[string]interface{}{
-			"type": "grpc",
-		}
+	case "grpc":
+		grpcMap := map[string]interface{}{"type": "grpc"}
 		if grpcSettings, ok := tsMap["grpcSettings"].(map[string]interface{}); ok {
 			if serviceName, ok := grpcSettings["serviceName"].(string); ok && serviceName != "" {
 				grpcMap["service_name"] = serviceName
 			}
 		}
 		out["transport"] = grpcMap
-	} else if network == "httpupgrade" {
-		httpUpgradeMap := map[string]interface{}{
-			"type": "httpupgrade",
-		}
+	case "httpupgrade":
+		httpUpgradeMap := map[string]interface{}{"type": "httpupgrade"}
 		if huSettings, ok := tsMap["httpupgradeSettings"].(map[string]interface{}); ok {
 			if path, ok := huSettings["path"].(string); ok && path != "" {
 				httpUpgradeMap["path"] = path
@@ -300,26 +288,14 @@ func applyRawTLSAndTransport(out, sMap, tsMap map[string]interface{}, defaultSer
 			}
 		}
 		out["transport"] = httpUpgradeMap
-	} else if network == "h2" || network == "http" {
-		httpMap := map[string]interface{}{
-			"type": "http",
-		}
+	case "h2", "http":
+		httpMap := map[string]interface{}{"type": "http"}
 		if httpSettings, ok := tsMap["httpSettings"].(map[string]interface{}); ok {
 			if path, ok := httpSettings["path"].(string); ok && path != "" {
 				httpMap["path"] = path
 			}
-			if host, ok := httpSettings["host"].([]interface{}); ok {
-				var hosts []string
-				for _, h := range host {
-					if hs, ok := h.(string); ok && hs != "" {
-						hosts = append(hosts, hs)
-					}
-				}
-				if len(hosts) > 0 {
-					httpMap["host"] = hosts
-				}
-			} else if hs, ok := httpSettings["host"].(string); ok && hs != "" {
-				httpMap["host"] = []string{hs}
+			if hosts := extractStringList(httpSettings["host"]); len(hosts) > 0 {
+				httpMap["host"] = hosts
 			}
 		}
 		out["transport"] = httpMap

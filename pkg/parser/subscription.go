@@ -36,7 +36,6 @@ func ParseSubscription(rawContent string) ([]*ast.ServerProfile, error) {
 			}
 		}
 
-		// Parse the URI into ServerProfile
 		p, err := ParseURI(line)
 		if err == nil && p != nil {
 			profiles = append(profiles, p)

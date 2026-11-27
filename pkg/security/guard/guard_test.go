@@ -57,8 +57,10 @@ func TestRateLimiter(t *testing.T) {
 	client := "203.0.113.10"
 
 	// Initial burst of 3 should be allowed
-	if !rl.Allow(client) || !rl.Allow(client) || !rl.Allow(client) {
-		t.Fatalf("expected first 3 requests to be allowed under burst")
+	for i := 0; i < 3; i++ {
+		if !rl.Allow(client) {
+			t.Fatalf("expected burst request %d to be allowed", i+1)
+		}
 	}
 
 	// 4th immediate request should be denied

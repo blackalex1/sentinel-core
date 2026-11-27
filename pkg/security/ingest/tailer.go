@@ -158,7 +158,9 @@ func (t *LogTailer) runFile(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	// Seek to end of file to tail only new logs
 	_, _ = file.Seek(0, io.SeekEnd)

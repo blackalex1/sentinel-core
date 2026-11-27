@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// ErrInvalidClientID indicates a client identifier failed validation checks.
+var ErrInvalidClientID = errors.New("invalid clientID")
 
 // NodeSecuritySummary represents high-level security state reported by a remote node.
 type NodeSecuritySummary struct {
@@ -56,17 +60,17 @@ func NewRemoteNodeClient(host string, port int, user string, sshKey string) *Rem
 // and cannot be abused for command or flag injection.
 func ValidateRemoteClientID(clientID string) error {
 	if clientID == "" {
-		return fmt.Errorf("clientID cannot be empty")
+		return fmt.Errorf("%w: clientID cannot be empty", ErrInvalidClientID)
 	}
 	if len(clientID) > 256 {
-		return fmt.Errorf("clientID exceeds maximum length of 256")
+		return fmt.Errorf("%w: clientID exceeds maximum length of 256", ErrInvalidClientID)
 	}
 	if strings.HasPrefix(clientID, "-") {
-		return fmt.Errorf("clientID cannot start with hyphen: %q", clientID)
+		return fmt.Errorf("%w: clientID cannot start with hyphen: %q", ErrInvalidClientID, clientID)
 	}
 	for _, r := range clientID {
 		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' || r == '@' || r == ':') {
-			return fmt.Errorf("invalid character %q in clientID: %q", r, clientID)
+			return fmt.Errorf("%w: invalid character %q in clientID: %q", ErrInvalidClientID, r, clientID)
 		}
 	}
 	return nil

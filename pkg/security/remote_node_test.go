@@ -1,6 +1,7 @@
 package security
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -146,19 +147,13 @@ func TestRemoteNodeClient_QuarantineClient_Validation(t *testing.T) {
 
 	// Malicious client ID should fail immediately before SSH execution
 	err := client.QuarantineClient("client; rm -rf /", "suspicious activity")
-	if err == nil {
-		t.Errorf("expected error for malicious clientID, got nil")
-	}
-	if !strings.Contains(err.Error(), "invalid clientID") {
-		t.Errorf("unexpected error message: %v", err)
+	if !errors.Is(err, ErrInvalidClientID) {
+		t.Errorf("expected ErrInvalidClientID, got: %v", err)
 	}
 
 	err = client.UnquarantineClient("-flag")
-	if err == nil {
-		t.Errorf("expected error for hyphenated clientID, got nil")
-	}
-	if !strings.Contains(err.Error(), "invalid clientID") {
-		t.Errorf("unexpected error message: %v", err)
+	if !errors.Is(err, ErrInvalidClientID) {
+		t.Errorf("expected ErrInvalidClientID, got: %v", err)
 	}
 }
 

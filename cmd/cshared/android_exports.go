@@ -61,7 +61,12 @@ func SentinelAndroidSynthesizeAndWritePcap(
 
 	var payload []byte
 	if goPayloadHex != "" {
-		payload, _ = hexDecode(goPayloadHex)
+		var err error
+		payload, err = hexDecode(goPayloadHex)
+		if err != nil {
+			errResp, _ := json.Marshal(map[string]any{"success": false, "error": err.Error()})
+			return C.CString(string(errResp))
+		}
 	}
 
 	pkt := androidSec.SynthesizeRawIPv4Packet(

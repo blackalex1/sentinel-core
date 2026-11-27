@@ -32,12 +32,15 @@ func ZeroizeString(s *string) {
 
 	length := len(*s)
 	// nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block
+	// SAFETY: len(*s) > 0 is checked at entry, so bytePtr points to the valid backing array of *s for length bytes.
 	bytePtr := unsafe.StringData(*s)
 
 	// nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block
+	// SAFETY: bytePtr != nil and length > 0; isWritableMemory probes the address via a kernel pipe read without faulting on .rodata.
 	if bytePtr != nil && length > 0 && isWritableMemory(unsafe.Pointer(bytePtr)) {
 		for i := 0; i < length; i++ {
 			// nosemgrep: go.lang.security.audit.unsafe.use-of-unsafe-block
+			// SAFETY: i is bounded by [0, length), within the verified writable backing buffer of *s kept alive by runtime.KeepAlive(s).
 			*(*byte)(unsafe.Add(unsafe.Pointer(bytePtr), i)) = 0
 		}
 	}

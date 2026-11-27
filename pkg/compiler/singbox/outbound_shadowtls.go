@@ -8,6 +8,10 @@ import (
 
 // buildShadowTLSOutbound compiles an ast.ServerProfile into a Sing-box ShadowTLS outbound object.
 func buildShadowTLSOutbound(tag string, node *ast.ServerProfile) (map[string]interface{}, error) {
+	return buildShadowTLSOutboundMap(tag, node), nil
+}
+
+func buildShadowTLSOutboundMap(tag string, node *ast.ServerProfile) map[string]interface{} {
 	version := 3
 	if node.ShadowTLSVersion > 0 {
 		version = node.ShadowTLSVersion
@@ -34,7 +38,7 @@ func buildShadowTLSOutbound(tag string, node *ast.ServerProfile) (map[string]int
 	}
 	out["tls"] = tlsMap
 
-	return out, nil
+	return out
 }
 
 func compileRawShadowTLSOutbound(tag string, sMap, tsMap map[string]interface{}) map[string]interface{} {
@@ -89,6 +93,5 @@ func compileRawShadowTLSOutbound(tag string, sMap, tsMap map[string]interface{})
 			}
 		}
 	}
-	out, _ := buildShadowTLSOutbound(tag, node)
-	return out
+	return buildShadowTLSOutboundMap(tag, node)
 }
